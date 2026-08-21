@@ -5,153 +5,170 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Statement Analyser</title>
 <style>
+/* Monochrome by design: hierarchy comes from weight, fill and spacing rather
+   than hue. Status still has to read at a glance without colour, so each pill
+   carries a glyph (✓ ! ✕) as well as a fill weight. */
 :root{
-  --bg:#fbfbfd; --card:#fff; --fg:#1d1d1f; --mut:#6e6e73; --line:#d2d2d7;
-  --acc:#0071e3; --acc-fg:#fff; --ok:#1d8a4e; --warn:#9a6400; --bad:#c4271b;
-  --ok-bg:#e6f4ec; --warn-bg:#fdf3e0; --bad-bg:#fdeceb; --sunk:#f5f5f7;
-  --radius:18px; --shadow:0 1px 3px rgba(0,0,0,.06),0 8px 28px rgba(0,0,0,.05);
+  --bg:#fff; --sunk:#f5f5f5; --card:#fff; --fg:#111; --mut:#6b6b6b;
+  --line:#e3e3e3; --line2:#c9c9c9; --inv:#111; --inv-fg:#fff;
+  --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.05);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#000; --card:#1c1c1e; --fg:#f5f5f7; --mut:#98989d; --line:#38383a;
-  --acc:#0a84ff; --ok:#30d158; --warn:#ffd60a; --bad:#ff453a;
-  --ok-bg:#0e2a18; --warn-bg:#2b2410; --bad-bg:#2c1512; --sunk:#2c2c2e;
-  --shadow:0 1px 3px rgba(0,0,0,.5),0 8px 28px rgba(0,0,0,.4);
+  --bg:#000; --sunk:#191919; --card:#0e0e0e; --fg:#f2f2f2; --mut:#8e8e8e;
+  --line:#262626; --line2:#3d3d3d; --inv:#f2f2f2; --inv-fg:#000;
+  --shadow:0 1px 2px rgba(0,0,0,.6);
 }}
 :root[data-theme="dark"]{
-  --bg:#000; --card:#1c1c1e; --fg:#f5f5f7; --mut:#98989d; --line:#38383a;
-  --acc:#0a84ff; --ok:#30d158; --warn:#ffd60a; --bad:#ff453a;
-  --ok-bg:#0e2a18; --warn-bg:#2b2410; --bad-bg:#2c1512; --sunk:#2c2c2e;
-  --shadow:0 1px 3px rgba(0,0,0,.5),0 8px 28px rgba(0,0,0,.4);
+  --bg:#000; --sunk:#191919; --card:#0e0e0e; --fg:#f2f2f2; --mut:#8e8e8e;
+  --line:#262626; --line2:#3d3d3d; --inv:#f2f2f2; --inv-fg:#000;
+  --shadow:0 1px 2px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box}
-body{
-  margin:0; background:var(--bg); color:var(--fg);
+body{margin:0; background:var(--bg); color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
-}
-.wrap{max-width:820px; margin:0 auto; padding:0 22px 96px}
-header{text-align:center; padding:72px 0 40px}
-h1{font-size:44px; line-height:1.08; letter-spacing:-.022em; font-weight:600; margin:0 0 12px}
-header p{margin:0; color:var(--mut); font-size:19px; letter-spacing:-.01em}
-h2{font-size:22px; letter-spacing:-.015em; font-weight:600; margin:44px 0 14px}
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased}
 
-/* ---------- drop zone ---------- */
-.drop{
-  background:var(--card); border:1.5px dashed var(--line); border-radius:var(--radius);
-  padding:52px 28px; text-align:center; cursor:pointer;
-  transition:border-color .18s ease, background .18s ease, transform .18s ease;
-}
-.drop:hover{border-color:var(--acc)}
-.drop.hover{border-color:var(--acc); border-style:solid; transform:scale(1.006)}
-.drop .ico{font-size:34px; line-height:1; margin-bottom:14px}
-.drop .t{font-size:19px; font-weight:600; letter-spacing:-.012em}
-.drop .s{color:var(--mut); font-size:14.5px; margin-top:7px}
+.shell{max-width:1120px; margin:0 auto; padding:0 24px 90px;
+  display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:40px; align-items:start}
+header{grid-column:1/-1; padding:56px 0 32px; border-bottom:1px solid var(--line); margin-bottom:34px}
+h1{font-size:36px; line-height:1.1; letter-spacing:-.022em; font-weight:600; margin:0 0 8px}
+header p{margin:0; color:var(--mut); font-size:17px; letter-spacing:-.01em}
+h2{font-size:13px; text-transform:uppercase; letter-spacing:.07em; font-weight:600;
+  color:var(--mut); margin:0 0 14px}
 
-/* ---------- staged files ---------- */
+/* ---------- drop ---------- */
+.drop{background:var(--card); border:1.5px dashed var(--line2); border-radius:var(--radius);
+  padding:46px 26px; text-align:center; cursor:pointer;
+  transition:border-color .18s ease, background .18s ease}
+.drop:hover{border-color:var(--fg); background:var(--sunk)}
+.drop.hover{border-color:var(--fg); border-style:solid; background:var(--sunk)}
+.drop .t{font-size:18px; font-weight:600; letter-spacing:-.012em}
+.drop .s{color:var(--mut); font-size:14px; margin-top:6px}
+
+/* ---------- staged tray ---------- */
 .tray{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-  margin-top:18px; overflow:hidden; box-shadow:var(--shadow)}
-.trayhead{display:flex; align-items:center; gap:10px; padding:15px 20px;
-  border-bottom:1px solid var(--line); font-weight:600; letter-spacing:-.01em}
-.trayhead .n{color:var(--mut); font-weight:400; font-size:14.5px}
-.f{display:flex; align-items:center; gap:13px; padding:14px 20px; border-bottom:1px solid var(--line)}
+  margin-top:16px; overflow:hidden}
+.trayhead{padding:13px 18px; border-bottom:1px solid var(--line);
+  font-size:13px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:var(--mut)}
+.f{display:flex; align-items:center; gap:12px; padding:13px 18px; border-bottom:1px solid var(--line)}
 .f:last-child{border-bottom:0}
-.f .doc{width:30px; height:30px; border-radius:7px; background:var(--sunk); flex:none;
-  display:grid; place-items:center; font-size:13px}
-.f .info{min-width:0; flex:1}
-.f .nm{font-size:15px; font-weight:500; letter-spacing:-.008em;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.f .sz{color:var(--mut); font-size:13px; margin-top:1px}
-.f input[type=password]{
-  width:170px; flex:none; padding:8px 11px; font-size:14px; font-family:inherit;
-  border:1px solid var(--line); border-radius:9px; background:var(--bg); color:var(--fg);
-}
-.f input[type=password]:focus{outline:2px solid var(--acc); outline-offset:-1px; border-color:transparent}
-.f input.miss{border-color:var(--bad); background:var(--bad-bg)}
-.x{border:0; background:none; color:var(--mut); font-size:19px; cursor:pointer;
-  padding:2px 5px; border-radius:6px; line-height:1; flex:none}
-.x:hover{background:var(--sunk); color:var(--fg)}
-.lockmsg{font-size:12.5px; color:var(--warn); margin-top:2px}
+.f .doc{width:28px;height:28px;border-radius:6px;background:var(--sunk);flex:none;
+  display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--mut)}
+.f .info{min-width:0;flex:1}
+.f .nm{font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f .sz{color:var(--mut);font-size:12.5px;margin-top:1px}
+.f input[type=password]{width:160px;flex:none;padding:7px 10px;font-size:13.5px;font-family:inherit;
+  border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--fg)}
+.f input[type=password]:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
+.f input.miss{border-color:var(--fg);border-width:1.5px}
+.lockmsg{font-size:12px;color:var(--fg);margin-top:2px;font-weight:500}
+.x{border:0;background:none;color:var(--mut);font-size:18px;cursor:pointer;
+  padding:2px 5px;border-radius:5px;line-height:1;flex:none}
+.x:hover{background:var(--sunk);color:var(--fg)}
 
 /* ---------- controls ---------- */
-.row{display:flex; gap:12px; align-items:center; margin-top:18px; flex-wrap:wrap}
-input[type=text]{
-  flex:1; min-width:240px; padding:12px 15px; font-size:15px; font-family:inherit;
-  border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg);
-}
-input[type=text]:focus{outline:2px solid var(--acc); outline-offset:-1px; border-color:transparent}
-button{font-family:inherit; font-size:15px; cursor:pointer}
-.go{
-  background:var(--acc); color:var(--acc-fg); border:0; border-radius:999px;
-  padding:13px 26px; font-weight:500; letter-spacing:-.01em; transition:opacity .18s ease;
-}
-.go:hover{opacity:.86}
-.go:disabled{opacity:.4; cursor:not-allowed}
-.ghost{background:var(--card); color:var(--fg); border:1px solid var(--line);
-  border-radius:999px; padding:7px 15px; font-size:14px}
+.row{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:220px;padding:11px 14px;font-size:14.5px;font-family:inherit;
+  border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--fg)}
+input[type=text]:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
+button{font-family:inherit;font-size:14.5px;cursor:pointer}
+.go{background:var(--inv);color:var(--inv-fg);border:0;border-radius:999px;
+  padding:12px 24px;font-weight:500;transition:opacity .18s ease}
+.go:hover{opacity:.82}
+.go:disabled{opacity:.32;cursor:not-allowed}
+.ghost{background:var(--card);color:var(--fg);border:1px solid var(--line2);
+  border-radius:999px;padding:6px 14px;font-size:13.5px}
 .ghost:hover{background:var(--sunk)}
-.hint{color:var(--mut); font-size:13.5px; width:100%}
+.hint{color:var(--mut);font-size:13px;width:100%}
 
-/* ---------- job cards ---------- */
-.job{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-  padding:19px 21px; margin-bottom:13px; box-shadow:var(--shadow)}
-.job .top{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
-.job .nm{font-weight:600; letter-spacing:-.01em; margin-right:auto}
-.pill{font-size:12.5px; padding:3.5px 11px; border-radius:999px; font-weight:500; white-space:nowrap}
-.p-done{background:var(--ok-bg); color:var(--ok)}
-.p-needs_review{background:var(--warn-bg); color:var(--warn)}
-.p-failed,.p-password_required{background:var(--bad-bg); color:var(--bad)}
-.p-processing,.p-awaiting_upload{background:var(--sunk); color:var(--mut)}
-.job .meta{color:var(--mut); font-size:14px; margin-top:9px}
-.cats{display:flex; flex-wrap:wrap; gap:7px; margin-top:11px}
-.cats span{background:var(--sunk); color:var(--mut); font-size:12.5px; padding:3.5px 10px; border-radius:999px}
-.err{background:var(--bad-bg); color:var(--bad); font-size:13.5px; padding:10px 13px;
-  border-radius:11px; margin-top:11px; word-break:break-word}
-.acts{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap}
-.empty{color:var(--mut); text-align:center; padding:44px 0; font-size:15px}
+/* ---------- report ---------- */
+.job{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:20px 22px;box-shadow:var(--shadow)}
+.job .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.job .nm{font-weight:600;letter-spacing:-.01em;margin-right:auto;font-size:16px}
+.pill{font-size:12px;padding:3px 10px;border-radius:999px;font-weight:600;white-space:nowrap;
+  border:1px solid var(--line2);color:var(--mut)}
+.pill.solid{background:var(--inv);color:var(--inv-fg);border-color:var(--inv)}
+.pill.strong{border-color:var(--fg);border-width:1.5px;color:var(--fg)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);border-radius:11px;
+  overflow:hidden;margin-top:16px}
+.stat{background:var(--card);padding:12px 14px}
+.stat b{display:block;font-size:20px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.cats span{background:var(--sunk);color:var(--mut);font-size:12px;padding:3px 9px;border-radius:999px}
+.err{background:var(--sunk);color:var(--fg);font-size:13px;padding:10px 12px;
+  border-radius:10px;margin-top:12px;border-left:3px solid var(--fg);word-break:break-word}
+.acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.empty{color:var(--mut);text-align:center;padding:38px 0;font-size:14.5px;
+  border:1px dashed var(--line);border-radius:var(--radius)}
 
-/* ---------- preview dialog ---------- */
-dialog{border:0; border-radius:var(--radius); padding:0; background:var(--card); color:var(--fg);
-  max-width:min(980px,94vw); width:100%; box-shadow:var(--shadow)}
-dialog::backdrop{background:rgba(0,0,0,.45); backdrop-filter:blur(3px)}
-.dh{display:flex; align-items:center; gap:12px; padding:17px 21px; border-bottom:1px solid var(--line)}
-.dh b{letter-spacing:-.01em}
-.db{max-height:72vh; overflow:auto; padding:0}
-table{border-collapse:collapse; width:100%; font-size:13.5px}
-th{position:sticky; top:0; background:var(--card); text-align:left; font-weight:600;
-  padding:11px 13px; border-bottom:1px solid var(--line); white-space:nowrap}
-td{padding:9px 13px; border-bottom:1px solid var(--line); vertical-align:top}
-.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
-.neg{color:var(--bad)} .pos{color:var(--ok)}
-@media(max-width:560px){
-  header{padding:48px 0 30px} h1{font-size:33px}
-  .f{flex-wrap:wrap} .f input[type=password]{width:100%}
+/* ---------- sidebar ---------- */
+aside{position:sticky;top:26px}
+.hist{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--card)}
+.h-item{display:block;width:100%;text-align:left;background:none;border:0;
+  border-bottom:1px solid var(--line);padding:12px 15px;cursor:pointer;font-family:inherit}
+.h-item:last-child{border-bottom:0}
+.h-item:hover{background:var(--sunk)}
+.h-item.sel{background:var(--sunk);box-shadow:inset 3px 0 0 var(--fg)}
+.h-nm{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;letter-spacing:-.005em}
+.h-sub{color:var(--mut);font-size:12px;margin-top:2px;display:flex;gap:6px;align-items:center}
+.h-g{font-weight:700}
+.side-empty{color:var(--mut);font-size:13px;padding:20px 15px;text-align:center}
+
+@media(max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  aside{position:static}
+  header{padding:40px 0 26px} h1{font-size:29px}
 }
+
+/* ---------- dialog ---------- */
+dialog{border:0;border-radius:var(--radius);padding:0;background:var(--card);color:var(--fg);
+  max-width:min(980px,94vw);width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.dh{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.db{max-height:72vh;overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{position:sticky;top:0;background:var(--card);text-align:left;font-weight:600;
+  padding:10px 12px;border-bottom:1px solid var(--line2);white-space:nowrap;
+  font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dr{color:var(--mut)}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="shell">
   <header>
     <h1>Bank Statement Analyser</h1>
     <p>Drop in a year of statements. Get one categorised, balance-checked report.</p>
   </header>
 
-  <div class="drop" id="drop">
-    <div class="ico">📄</div>
-    <div class="t">Drop PDFs here, or click to choose</div>
-    <div class="s">Upload several at once — they're merged into a single report</div>
-    <input type="file" id="file" accept="application/pdf" multiple hidden>
-  </div>
+  <main>
+    <div class="drop" id="drop">
+      <div class="t">Drop PDFs here, or click to choose</div>
+      <div class="s">Upload several at once — merged into a single report</div>
+      <input type="file" id="file" accept="application/pdf" multiple hidden>
+    </div>
 
-  <div id="tray"></div>
+    <div id="tray"></div>
 
-  <div class="row" id="controls" hidden>
-    <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
-    <button class="go" id="go">Analyse</button>
-    <span class="hint" id="hint"></span>
-  </div>
+    <div class="row" id="controls" hidden>
+      <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
+      <button class="go" id="go">Analyse</button>
+      <span class="hint" id="hint"></span>
+    </div>
 
-  <h2>Reports</h2>
-  <div id="jobs"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+    <h2 style="margin-top:38px">Report</h2>
+    <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+  </main>
+
+  <aside>
+    <h2>History</h2>
+    <div class="hist" id="hist"><div class="side-empty">No previous reports</div></div>
+  </aside>
 </div>
 
 <dialog id="pv">
@@ -166,24 +183,31 @@ td{padding:9px 13px; border-bottom:1px solid var(--line); vertical-align:top}
 const API = window.BSA_API;
 const $ = id => document.getElementById(id);
 const esc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const kb = n => n < 1024*1024 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
+const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
+const nfmt = n => Number(n||0).toLocaleString('en-IN');
 
-let staged = [];   // {file, name, size, locked, pw, id}
-let seq = 0;
+let staged = [], seq = 0;
+let jobs = [], activeId = null;
+
+/* Status has to read without colour, so each state gets a glyph as well as a
+   fill weight: solid = finished clean, strong outline = needs attention. */
+const GLYPH = {done:'✓', needs_review:'!', failed:'✕', password_required:'✕',
+               processing:'•', awaiting_upload:'•'};
+const pillClass = s => s==='done' ? 'solid'
+  : (s==='failed'||s==='password_required'||s==='needs_review') ? 'strong' : '';
 
 /* ---------- encryption detection ----------
-   An encrypted PDF carries /Encrypt in its trailer. Detecting it here means we
-   can ask for the password up front, instead of the user waiting for the job to
-   come back password_required. */
+   An encrypted PDF carries /Encrypt in its trailer. Detecting it here lets us
+   ask for the password up front rather than after a failed job. */
 async function isEncrypted(file){
   try{
     const buf = new Uint8Array(await file.arrayBuffer());
-    const needle = [0x2f,0x45,0x6e,0x63,0x72,0x79,0x70,0x74];   // "/Encrypt"
-    outer: for(let i=0;i<=buf.length-needle.length;i++){
-      for(let j=0;j<needle.length;j++) if(buf[i+j]!==needle[j]) continue outer;
+    const n = [0x2f,0x45,0x6e,0x63,0x72,0x79,0x70,0x74];   // "/Encrypt"
+    outer: for(let i=0;i<=buf.length-n.length;i++){
+      for(let j=0;j<n.length;j++) if(buf[i+j]!==n[j]) continue outer;
       return true;
     }
-  }catch(e){ /* unreadable -> let the backend decide */ }
+  }catch(e){}
   return false;
 }
 
@@ -199,14 +223,11 @@ async function stage(files){
   for(const f of files){
     if(!/\.pdf$/i.test(f.name)) continue;
     if(staged.length >= 20){ alert('Up to 20 statements per report.'); break; }
-    const item = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
-    staged.push(item);
-    renderTray();
-    item.locked = await isEncrypted(f);
-    renderTray();
+    const it = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
+    staged.push(it); renderTray();
+    it.locked = await isEncrypted(f); renderTray();
   }
 }
-
 function removeFile(id){ staged = staged.filter(s=>s.id!==id); renderTray(); }
 function setPw(id,v){ const s=staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
 
@@ -215,19 +236,18 @@ function renderTray(){
   if(!staged.length){ t.innerHTML=''; $('controls').hidden=true; return; }
   $('controls').hidden=false;
   t.innerHTML = `<div class="tray">
-    <div class="trayhead">Ready to merge <span class="n">· ${staged.length} file${staged.length>1?'s':''} → 1 report</span></div>
+    <div class="trayhead">${staged.length} file${staged.length>1?'s':''} → 1 report</div>
     ${staged.map(s=>`<div class="f">
-      <div class="doc">${s.locked?'🔒':'📄'}</div>
+      <div class="doc">${s.locked?'🔒':'PDF'}</div>
       <div class="info">
         <div class="nm">${esc(s.name)}</div>
-        <div class="sz">${kb(s.size)}${s.locked?' · password protected':''}</div>
+        <div class="sz">${kb(s.size)}${s.locked?' · protected':''}</div>
         ${s.locked&&!s.pw?'<div class="lockmsg">Password required</div>':''}
       </div>
       ${s.locked?`<input type="password" placeholder="Password" value="${esc(s.pw)}"
          oninput="setPw(${s.id},this.value)" class="${s.pw?'':'miss'}">`:''}
       <button class="x" title="Remove" onclick="removeFile(${s.id})">×</button>
-    </div>`).join('')}
-  </div>`;
+    </div>`).join('')}</div>`;
   updateGo();
 }
 
@@ -237,7 +257,7 @@ function updateGo(){
   $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
   $('hint').textContent = missing
     ? `${missing} file${missing>1?'s need':' needs'} a password before you can continue.`
-    : (staged.length>1 ? 'All statements are merged into one report, duplicates removed.' : '');
+    : (staged.length>1 ? 'Merged into one report, overlapping rows removed.' : '');
 }
 
 /* ---------- upload ---------- */
@@ -254,50 +274,47 @@ $('go').onclick = async () => {
     const body = { files: files.map(s=>({filename:s.name, password:s.pw||undefined})) };
     const parties = $('parties').value.split(',').map(x=>x.trim()).filter(Boolean);
     if(parties.length) body.related_parties = parties;
-
     go.textContent='Creating report…';
-    const { uploads } = await api('/jobs', {method:'POST',
+    const { job_id, uploads } = await api('/jobs', {method:'POST',
       headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
-
     for(let i=0;i<files.length;i++){
       go.textContent = `Uploading ${i+1} of ${files.length}…`;
       const res = await fetch(uploads[i].upload_url, {method:'PUT',
         headers:{'content-type':'application/pdf'}, body:files[i].file});
       if(!res.ok) throw new Error(`upload failed for ${files[i].name}`);
     }
-    staged=[]; $('parties').value=''; renderTray(); refresh();
-  }catch(e){
-    alert('Upload failed: '+e.message);
-  }finally{
-    go.disabled=false; updateGo();
-  }
+    staged=[]; $('parties').value=''; activeId=job_id; renderTray(); refresh();
+  }catch(e){ alert('Upload failed: '+e.message); }
+  finally{ go.disabled=false; updateGo(); }
 };
 
-/* ---------- reports ---------- */
+/* ---------- rendering ---------- */
 const fmtAmt = a => {
   const s = Math.abs(a).toLocaleString('en-IN',{minimumFractionDigits:2});
-  return a<0 ? `<span class="neg">(${s})</span>` : `<span class="pos">${s}</span>`;
+  return a<0 ? `<span class="dr">(${s})</span>` : s;      // debits in parentheses
 };
 
-function jobCard(j){
+function activeCard(j){
+  if(!j) return '<div class="empty">Nothing yet — upload statements to begin.</div>';
   const s=j.summary||{};
-  const cats=Object.entries(s.categories||{}).sort((a,b)=>b[1]-a[1]).slice(0,6)
+  const cats=Object.entries(s.categories||{}).sort((a,b)=>b[1]-a[1]).slice(0,8)
     .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
   const ready=['done','needs_review'].includes(j.status);
-  const busy=['processing','awaiting_upload'].includes(j.status);
-  const bits=[];
-  if(s.rows) bits.push(`${s.rows} transactions`);
-  if(s.files>1) bits.push(`${s.files} statements merged`);
-  if(s.bank) bits.push(esc(s.bank));
-  if(s.account_no) bits.push(esc(s.account_no));
-  if(s.period_from) bits.push(`${esc(s.period_from)} → ${esc(s.period_to||'')}`);
+  const stats = ready ? `<div class="stats">
+      <div class="stat"><b>${nfmt(s.rows)}</b><span>Transactions</span></div>
+      ${s.files>1?`<div class="stat"><b>${esc(String(s.files))}</b><span>Statements</span></div>`:''}
+      <div class="stat"><b>${esc(s.validation||'—')}</b><span>Balance check</span></div>
+      <div class="stat"><b>${nfmt(s.issues||0)}</b><span>Rows to review</span></div>
+    </div>` : '';
+  const period = s.period_from ? `${esc(s.period_from)} → ${esc(s.period_to||'')}` : '';
+  const sub=[esc(s.bank||''), esc(s.account_no||''), period].filter(Boolean).join(' · ');
   return `<div class="job">
     <div class="top">
       <span class="nm">${esc(j.filename)}</span>
-      <span class="pill p-${j.status}">${esc(j.status.replace(/_/g,' '))}${busy?'…':''}</span>
-      ${s.validation?`<span class="pill ${s.validation==='passed'?'p-done':'p-needs_review'}">balance ${esc(s.validation)}${s.issues?` · ${s.issues}`:''}</span>`:''}
+      <span class="pill ${pillClass(j.status)}">${GLYPH[j.status]||'•'} ${esc(j.status.replace(/_/g,' '))}</span>
     </div>
-    <div class="meta">${bits.length?bits.join(' · '):new Date((j.created_at||0)*1000).toLocaleString()}</div>
+    ${sub?`<div class="cats" style="margin-top:6px"><span style="background:none;padding:0">${sub}</span></div>`:''}
+    ${stats}
     ${cats?`<div class="cats">${cats}</div>`:''}
     ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
     ${ready?`<div class="acts">
@@ -308,11 +325,34 @@ function jobCard(j){
   </div>`;
 }
 
+function histItem(j){
+  const s=j.summary||{};
+  const when=new Date((j.created_at||0)*1000)
+    .toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  const rows = s.rows ? `${nfmt(s.rows)} txns` : esc(j.status.replace(/_/g,' '));
+  return `<button class="h-item ${j.job_id===activeId?'sel':''}" onclick="select('${j.job_id}')">
+    <div class="h-nm">${esc(j.filename)}</div>
+    <div class="h-sub"><span class="h-g">${GLYPH[j.status]||'•'}</span><span>${rows}</span>
+      <span style="margin-left:auto">${when}</span></div>
+  </button>`;
+}
+
+function select(id){ activeId=id; render(); }
+
+function render(){
+  const j = jobs.find(x=>x.job_id===activeId) || jobs[0];
+  activeId = j ? j.job_id : null;
+  $('active').innerHTML = activeCard(j);
+  $('hist').innerHTML = jobs.length
+    ? jobs.map(histItem).join('')
+    : '<div class="side-empty">No previous reports</div>';
+}
+
 async function refresh(){
   try{
-    const {jobs}=await api('/jobs');
-    $('jobs').innerHTML = jobs.length ? jobs.map(jobCard).join('')
-      : '<div class="empty">Nothing yet — upload statements to begin.</div>';
+    const r = await api('/jobs');
+    jobs = r.jobs || [];
+    render();
     if(jobs.some(j=>['processing','awaiting_upload'].includes(j.status))) setTimeout(refresh,3000);
   }catch(e){ console.error(e); }
 }
