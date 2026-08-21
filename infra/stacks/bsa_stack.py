@@ -88,14 +88,21 @@ class BsaStack(Stack):
             environment={
                 "DATA_BUCKET": data_bucket.bucket_name,
                 "JOBS_TABLE": jobs_table.table_name,
-                # Claude via Bedrock global cross-region inference profile.
-                # NOTE: inference may process outside ap-south-1.
-                # Newest Sonnet this account is entitled to invoke; sonnet-5 is
-                # listed ACTIVE but returns AccessDenied ("not available for
-                # this account"). Smoke-test with bedrock-runtime converse
-                # before changing — ACTIVE in list-inference-profiles is not
-                # the same as invocable.
-                "BEDROCK_MODEL_ID": "global.anthropic.claude-sonnet-4-6",
+                # Claude via Bedrock APAC cross-region inference profile, so
+                # inference stays inside APAC (statements are Indian financial
+                # data). A global.* profile may process outside ap-south-1.
+                #
+                # Sonnet 4.5/4.6/5 and Opus 4.7/4.8/5 all require a fresh AWS
+                # Marketplace agreement this account cannot complete yet
+                # (INVALID_PAYMENT_INSTRUMENT on an AWS India / AISPL account).
+                # The apac.* and older global.* profiles already carry
+                # entitlements and work today. Revisit once Marketplace clears.
+                #
+                # ACTIVE in list-inference-profiles does NOT mean invocable —
+                # always smoke-test with `aws bedrock-runtime converse` before
+                # changing this value.
+                "BEDROCK_MODEL_ID":
+                    "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
                 "BEDROCK_REGION": "ap-south-1",
             },
         )
