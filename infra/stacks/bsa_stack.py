@@ -24,6 +24,7 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
     aws_s3_notifications as s3n,
+    aws_secretsmanager as secretsmanager,
     BundlingOptions,
 )
 from constructs import Construct
@@ -65,6 +66,19 @@ class BsaStack(Stack):
             time_to_live_attribute="ttl",
         )
 
+        # ---------- llm provider credentials ----------
+        # CDK seeds a random value; put the real key in after deploy with
+        #   aws secretsmanager put-secret-value --secret-id bsa/llm-api-key \
+        #     --secret-string '{"gemini":"...","anthropic":"...","openai":"..."}'
+        # A bare string works too. Keyed JSON lets one secret serve every
+        # provider, so switching LLM_PROVIDER needs no credential change.
+        llm_secret = secretsmanager.Secret(
+            self, "LlmApiKey",
+            secret_name="bsa/llm-api-key",
+            description="API keys for the statement-extraction LLM providers",
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+
         # ---------- processor lambda (bsa pipeline + deps, docker-bundled) ----------
         processor = _lambda.Function(
             self, "Processor",
@@ -74,7 +88,10 @@ class BsaStack(Stack):
             architecture=_lambda.Architecture.ARM_64,
             handler="handler.lambda_handler",
             memory_size=2048,
-            timeout=Duration.minutes(10),   # LLM path on long statements
+            # A 978-row statement took 7m13s via the LLM path; 10 min was not
+            # enough for a larger one. 15 min is Lambda's ceiling — past that
+            # the work has to be split (Step Functions) rather than stretched.
+            timeout=Duration.minutes(15),
             code=_lambda.Code.from_asset(
                 os.path.join(ROOT, "backend", "processor"),
                 bundling=BundlingOptions(
@@ -88,19 +105,20 @@ class BsaStack(Stack):
             environment={
                 "DATA_BUCKET": data_bucket.bucket_name,
                 "JOBS_TABLE": jobs_table.table_name,
-                # Claude via Bedrock APAC cross-region inference profile, so
-                # inference stays inside APAC (statements are Indian financial
-                # data). A global.* profile may process outside ap-south-1.
-                #
-                # Sonnet 4.5/4.6/5 and Opus 4.7/4.8/5 all require a fresh AWS
-                # Marketplace agreement this account cannot complete yet
-                # (INVALID_PAYMENT_INSTRUMENT on an AWS India / AISPL account).
-                # The apac.* and older global.* profiles already carry
-                # entitlements and work today. Revisit once Marketplace clears.
-                #
-                # ACTIVE in list-inference-profiles does NOT mean invocable —
-                # always smoke-test with `aws bedrock-runtime converse` before
-                # changing this value.
+                # LLM extraction provider. Switch provider or model here (or
+                # straight on the Lambda in the console) with no code change —
+                # llm_providers.py resolves both at call time.
+                #   LLM_PROVIDER: gemini | anthropic | openai | bedrock
+                #   LLM_MODEL   : optional; omit to use that provider's default
+                "LLM_PROVIDER": "openai",
+                "LLM_MODEL": "gpt-5.1",
+                "LLM_API_KEY_SECRET": llm_secret.secret_name,
+                # Bedrock is kept as a selectable provider, but is currently
+                # blocked on this account: every Anthropic model fails its AWS
+                # Marketplace subscription (INVALID_PAYMENT_INSTRUMENT on an
+                # AWS India / AISPL account). ACTIVE in list-inference-profiles
+                # does NOT mean invocable — smoke-test with
+                # `aws bedrock-runtime converse` before relying on it.
                 "BEDROCK_MODEL_ID":
                     "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
                 "BEDROCK_REGION": "ap-south-1",
@@ -110,6 +128,10 @@ class BsaStack(Stack):
             actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
             resources=["*"],   # global profile fans out across regions; MVP scope
         ))
+        # S3 delivers this event asynchronously, so a timeout would otherwise be
+        # retried twice — each retry re-running the whole paid LLM extraction.
+        processor.configure_async_invoke(retry_attempts=0)
+        llm_secret.grant_read(processor)
         data_bucket.grant_read_write(processor)
         jobs_table.grant_read_write_data(processor)
         data_bucket.add_event_notification(
@@ -183,3 +205,4 @@ class BsaStack(Stack):
         CfnOutput(self, "ApiUrl", value=api.api_endpoint)
         CfnOutput(self, "DataBucketName", value=data_bucket.bucket_name)
         CfnOutput(self, "JobsTableName", value=jobs_table.table_name)
+        CfnOutput(self, "LlmApiKeySecret", value=llm_secret.secret_name)

@@ -1,28 +1,23 @@
-"""LLM extraction fallback — Claude on Amazon Bedrock.
+"""LLM extraction fallback — provider-agnostic.
 
 Used when classify() finds no known layout, or when the PDF is scanned.
-Digital PDFs send page text; scanned PDFs send page images (Claude vision).
-Output is forced through a tool schema, so no free-text parsing is needed.
+Digital PDFs send page text; scanned PDFs send page images (vision).
+Output is forced through a JSON schema, so no free-text parsing is needed.
 The balance validator downstream is the correctness gate for this path.
 
-Model access: enable Anthropic Claude models in the Bedrock console once per
-account, then invoke via a global cross-region inference profile (that is how
-Claude is reached from ap-south-1). Note: inference may process outside the
-region; data at rest stays in-region.
+This module owns *what* to ask for — chunking, prompt, schema, assembly. It
+does not know which vendor answers: llm_providers.call_structured() picks that
+from LLM_PROVIDER (gemini | anthropic | openai | bedrock) at call time, so
+switching provider or model is an env change, not a code edit.
 """
 from __future__ import annotations
 
 import io
-import json
-import os
 
 import pdfplumber
 
 from ..models import RawRow, StatementMeta, StatementExtract
-
-DEFAULT_MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-4-5-20250929-v1:0")
-BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "ap-south-1")
+from .llm_providers import call_structured
 
 PAGES_PER_CHUNK_TEXT = 4
 PAGES_PER_CHUNK_VISION = 2
@@ -67,33 +62,6 @@ Rules:
 - If a page contains no transaction rows, return an empty rows list for it."""
 
 
-def _tool_config():
-    return {
-        "tools": [{
-            "toolSpec": {
-                "name": "record_statement",
-                "description": "Record the extracted statement rows",
-                "inputSchema": {"json": EXTRACTION_SCHEMA},
-            }
-        }],
-        "toolChoice": {"tool": {"name": "record_statement"}},
-    }
-
-
-def _converse(client, model_id: str, content_blocks: list[dict]) -> dict:
-    resp = client.converse(
-        modelId=model_id,
-        system=[{"text": SYSTEM_PROMPT}],
-        messages=[{"role": "user", "content": content_blocks}],
-        toolConfig=_tool_config(),
-        inferenceConfig={"maxTokens": 32000, "temperature": 0},
-    )
-    for block in resp["output"]["message"]["content"]:
-        if "toolUse" in block:
-            return block["toolUse"]["input"]
-    raise RuntimeError("model returned no toolUse block")
-
-
 def _page_images(pdf, page_indexes: list[int]) -> list[bytes]:
     """Render pages to PNG via pypdfium2 (already a pdfplumber dependency)."""
     import pypdfium2 as pdfium
@@ -109,12 +77,38 @@ def _page_images(pdf, page_indexes: list[int]) -> list[bytes]:
     return out
 
 
-def extract_with_llm(pdf_path: str, source_file: str,
-                     model_id: str = DEFAULT_MODEL_ID,
-                     region: str = BEDROCK_REGION) -> StatementExtract:
-    import boto3
-    client = boto3.client("bedrock-runtime", region_name=region)
+def _reconcile_direction(rows: list[RawRow]) -> int:
+    """Derive debit/credit from the running balance instead of trusting the model.
 
+    Models copy the printed balance reliably but misjudge direction on roughly
+    one row in ten — on a real 978-row statement, 95 of 107 balance mismatches
+    were pure sign flips (a credit filed as a withdrawal). The balance column is
+    the statement's own arithmetic, so where |balance delta| matches the row
+    amount, the delta's sign decides and the model's classification is overruled.
+
+    Rows whose amount does not match the delta are left untouched: those are
+    genuine extraction errors (a missed or misread row), not sign errors, and
+    validate() must still fail them rather than have them silently "corrected".
+    Returns the number of rows flipped.
+    """
+    flipped = 0
+    for prev, row in zip(rows, rows[1:]):
+        amount = (row.withdrawal or 0.0) or (row.deposit or 0.0)
+        if not amount:
+            continue
+        delta = round(row.balance - prev.balance, 2)
+        if abs(abs(delta) - abs(amount)) > 0.01:
+            continue                      # not a sign problem — leave for validate()
+        if delta > 0 and not row.deposit:
+            row.withdrawal, row.deposit = None, abs(amount)
+            flipped += 1
+        elif delta < 0 and not row.withdrawal:
+            row.withdrawal, row.deposit = abs(amount), None
+            flipped += 1
+    return flipped
+
+
+def extract_with_llm(pdf_path: str, source_file: str) -> StatementExtract:
     with pdfplumber.open(pdf_path) as pdf:
         n = len(pdf.pages)
         texts = [(p.extract_text() or "") for p in pdf.pages]
@@ -140,10 +134,9 @@ def extract_with_llm(pdf_path: str, source_file: str,
                 blocks = [{"text": f"Statement pages {idx[0]+1}-{idx[-1]+1} of {n} "
                                    f"as images. Extract every transaction row."}]
                 for png in _page_images(pdf, idx):
-                    blocks.append({"image": {"format": "png",
-                                             "source": {"bytes": png}}})
+                    blocks.append({"image_png": png})
 
-            result = _converse(client, model_id, blocks)
+            result = call_structured(SYSTEM_PROMPT, blocks, EXTRACTION_SCHEMA)
             if merged_meta is None:
                 merged_meta = result
             for r in result.get("rows", []):
@@ -166,6 +159,10 @@ def extract_with_llm(pdf_path: str, source_file: str,
             continue
         seen.add(key)
         rows.append(r)
+
+    if flipped := _reconcile_direction(rows):
+        print(f"llm_fallback: corrected direction on {flipped}/{len(rows)} rows "
+              f"from running-balance deltas")
 
     meta = StatementMeta(
         bank=(merged_meta or {}).get("bank", "Unknown"),
