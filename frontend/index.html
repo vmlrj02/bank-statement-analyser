@@ -1,187 +1,341 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Statement Analyser</title>
 <style>
-  :root {
-    --bg:#f1f5f9; --card:#ffffff; --ink:#0f172a; --mut:#64748b;
-    --line:#e2e8f0; --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626;
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-         font:14px/1.5 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
-  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 24px;
-           display:flex; align-items:center; gap:10px; }
-  header h1 { font-size:16px; margin:0; }
-  header .sub { color:var(--mut); font-size:12px; }
-  main { max-width:1000px; margin:24px auto; padding:0 16px; }
-  .drop { background:var(--card); border:2px dashed #cbd5e1; border-radius:12px;
-          padding:34px; text-align:center; cursor:pointer; transition:.15s; }
-  .drop.hover { border-color:var(--acc); background:#eff6ff; }
-  .drop b { color:var(--acc); }
-  .opts { display:flex; gap:10px; margin:12px 0 26px; flex-wrap:wrap; }
-  .opts input { padding:8px 10px; border:1px solid var(--line); border-radius:8px;
-                font:inherit; min-width:240px; }
-  .opts .hint { color:var(--mut); font-size:12px; align-self:center; }
-  h2 { font-size:14px; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; }
-  .job { background:var(--card); border:1px solid var(--line); border-radius:12px;
-         padding:14px 16px; margin-bottom:10px; }
-  .job .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .job .name { font-weight:600; }
-  .chip { font-size:11.5px; padding:2px 9px; border-radius:99px; font-weight:600; }
-  .s-done { background:#dcfce7; color:var(--ok); }
-  .s-processing,.s-awaiting_upload,.s-uploading { background:#e0e7ff; color:#4338ca; }
-  .s-needs_review { background:#fef3c7; color:var(--warn); }
-  .s-failed,.s-password_required { background:#fee2e2; color:var(--bad); }
-  .meta { color:var(--mut); font-size:12.5px; margin-top:4px; }
-  .cats { margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; }
-  .cats span { background:#f1f5f9; border:1px solid var(--line); border-radius:6px;
-               padding:1px 7px; font-size:11.5px; color:#334155; }
-  .btns { margin-left:auto; display:flex; gap:6px; }
-  button { font:inherit; font-size:12.5px; padding:6px 12px; border-radius:8px;
-           border:1px solid var(--line); background:#fff; cursor:pointer; }
-  button:hover { border-color:var(--acc); color:var(--acc); }
-  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
-  .err { color:var(--bad); font-size:12.5px; margin-top:6px; }
-  dialog { border:none; border-radius:12px; max-width:920px; width:94vw; max-height:86vh;
-           padding:0; box-shadow:0 10px 40px rgba(2,6,23,.25); }
-  dialog .dhead { display:flex; align-items:center; padding:12px 18px;
-                  border-bottom:1px solid var(--line); }
-  dialog .dbody { overflow:auto; max-height:70vh; padding:0 18px 18px; }
-  table { border-collapse:collapse; width:100%; font-size:12.5px; margin-top:10px; }
-  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line);
-          vertical-align:top; }
-  th { position:sticky; top:0; background:#f8fafc; color:var(--mut); }
-  td.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
-  td .neg { color:var(--bad); } td .pos { color:var(--ok); }
-  .empty { color:var(--mut); text-align:center; padding:30px; }
+:root{
+  --bg:#fbfbfd; --card:#fff; --fg:#1d1d1f; --mut:#6e6e73; --line:#d2d2d7;
+  --acc:#0071e3; --acc-fg:#fff; --ok:#1d8a4e; --warn:#9a6400; --bad:#c4271b;
+  --ok-bg:#e6f4ec; --warn-bg:#fdf3e0; --bad-bg:#fdeceb; --sunk:#f5f5f7;
+  --radius:18px; --shadow:0 1px 3px rgba(0,0,0,.06),0 8px 28px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#000; --card:#1c1c1e; --fg:#f5f5f7; --mut:#98989d; --line:#38383a;
+  --acc:#0a84ff; --ok:#30d158; --warn:#ffd60a; --bad:#ff453a;
+  --ok-bg:#0e2a18; --warn-bg:#2b2410; --bad-bg:#2c1512; --sunk:#2c2c2e;
+  --shadow:0 1px 3px rgba(0,0,0,.5),0 8px 28px rgba(0,0,0,.4);
+}}
+:root[data-theme="dark"]{
+  --bg:#000; --card:#1c1c1e; --fg:#f5f5f7; --mut:#98989d; --line:#38383a;
+  --acc:#0a84ff; --ok:#30d158; --warn:#ffd60a; --bad:#ff453a;
+  --ok-bg:#0e2a18; --warn-bg:#2b2410; --bad-bg:#2c1512; --sunk:#2c2c2e;
+  --shadow:0 1px 3px rgba(0,0,0,.5),0 8px 28px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:820px; margin:0 auto; padding:0 22px 96px}
+header{text-align:center; padding:72px 0 40px}
+h1{font-size:44px; line-height:1.08; letter-spacing:-.022em; font-weight:600; margin:0 0 12px}
+header p{margin:0; color:var(--mut); font-size:19px; letter-spacing:-.01em}
+h2{font-size:22px; letter-spacing:-.015em; font-weight:600; margin:44px 0 14px}
+
+/* ---------- drop zone ---------- */
+.drop{
+  background:var(--card); border:1.5px dashed var(--line); border-radius:var(--radius);
+  padding:52px 28px; text-align:center; cursor:pointer;
+  transition:border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.drop:hover{border-color:var(--acc)}
+.drop.hover{border-color:var(--acc); border-style:solid; transform:scale(1.006)}
+.drop .ico{font-size:34px; line-height:1; margin-bottom:14px}
+.drop .t{font-size:19px; font-weight:600; letter-spacing:-.012em}
+.drop .s{color:var(--mut); font-size:14.5px; margin-top:7px}
+
+/* ---------- staged files ---------- */
+.tray{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  margin-top:18px; overflow:hidden; box-shadow:var(--shadow)}
+.trayhead{display:flex; align-items:center; gap:10px; padding:15px 20px;
+  border-bottom:1px solid var(--line); font-weight:600; letter-spacing:-.01em}
+.trayhead .n{color:var(--mut); font-weight:400; font-size:14.5px}
+.f{display:flex; align-items:center; gap:13px; padding:14px 20px; border-bottom:1px solid var(--line)}
+.f:last-child{border-bottom:0}
+.f .doc{width:30px; height:30px; border-radius:7px; background:var(--sunk); flex:none;
+  display:grid; place-items:center; font-size:13px}
+.f .info{min-width:0; flex:1}
+.f .nm{font-size:15px; font-weight:500; letter-spacing:-.008em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.f .sz{color:var(--mut); font-size:13px; margin-top:1px}
+.f input[type=password]{
+  width:170px; flex:none; padding:8px 11px; font-size:14px; font-family:inherit;
+  border:1px solid var(--line); border-radius:9px; background:var(--bg); color:var(--fg);
+}
+.f input[type=password]:focus{outline:2px solid var(--acc); outline-offset:-1px; border-color:transparent}
+.f input.miss{border-color:var(--bad); background:var(--bad-bg)}
+.x{border:0; background:none; color:var(--mut); font-size:19px; cursor:pointer;
+  padding:2px 5px; border-radius:6px; line-height:1; flex:none}
+.x:hover{background:var(--sunk); color:var(--fg)}
+.lockmsg{font-size:12.5px; color:var(--warn); margin-top:2px}
+
+/* ---------- controls ---------- */
+.row{display:flex; gap:12px; align-items:center; margin-top:18px; flex-wrap:wrap}
+input[type=text]{
+  flex:1; min-width:240px; padding:12px 15px; font-size:15px; font-family:inherit;
+  border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg);
+}
+input[type=text]:focus{outline:2px solid var(--acc); outline-offset:-1px; border-color:transparent}
+button{font-family:inherit; font-size:15px; cursor:pointer}
+.go{
+  background:var(--acc); color:var(--acc-fg); border:0; border-radius:999px;
+  padding:13px 26px; font-weight:500; letter-spacing:-.01em; transition:opacity .18s ease;
+}
+.go:hover{opacity:.86}
+.go:disabled{opacity:.4; cursor:not-allowed}
+.ghost{background:var(--card); color:var(--fg); border:1px solid var(--line);
+  border-radius:999px; padding:7px 15px; font-size:14px}
+.ghost:hover{background:var(--sunk)}
+.hint{color:var(--mut); font-size:13.5px; width:100%}
+
+/* ---------- job cards ---------- */
+.job{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:19px 21px; margin-bottom:13px; box-shadow:var(--shadow)}
+.job .top{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.job .nm{font-weight:600; letter-spacing:-.01em; margin-right:auto}
+.pill{font-size:12.5px; padding:3.5px 11px; border-radius:999px; font-weight:500; white-space:nowrap}
+.p-done{background:var(--ok-bg); color:var(--ok)}
+.p-needs_review{background:var(--warn-bg); color:var(--warn)}
+.p-failed,.p-password_required{background:var(--bad-bg); color:var(--bad)}
+.p-processing,.p-awaiting_upload{background:var(--sunk); color:var(--mut)}
+.job .meta{color:var(--mut); font-size:14px; margin-top:9px}
+.cats{display:flex; flex-wrap:wrap; gap:7px; margin-top:11px}
+.cats span{background:var(--sunk); color:var(--mut); font-size:12.5px; padding:3.5px 10px; border-radius:999px}
+.err{background:var(--bad-bg); color:var(--bad); font-size:13.5px; padding:10px 13px;
+  border-radius:11px; margin-top:11px; word-break:break-word}
+.acts{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap}
+.empty{color:var(--mut); text-align:center; padding:44px 0; font-size:15px}
+
+/* ---------- preview dialog ---------- */
+dialog{border:0; border-radius:var(--radius); padding:0; background:var(--card); color:var(--fg);
+  max-width:min(980px,94vw); width:100%; box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(0,0,0,.45); backdrop-filter:blur(3px)}
+.dh{display:flex; align-items:center; gap:12px; padding:17px 21px; border-bottom:1px solid var(--line)}
+.dh b{letter-spacing:-.01em}
+.db{max-height:72vh; overflow:auto; padding:0}
+table{border-collapse:collapse; width:100%; font-size:13.5px}
+th{position:sticky; top:0; background:var(--card); text-align:left; font-weight:600;
+  padding:11px 13px; border-bottom:1px solid var(--line); white-space:nowrap}
+td{padding:9px 13px; border-bottom:1px solid var(--line); vertical-align:top}
+.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+.neg{color:var(--bad)} .pos{color:var(--ok)}
+@media(max-width:560px){
+  header{padding:48px 0 30px} h1{font-size:33px}
+  .f{flex-wrap:wrap} .f input[type=password]{width:100%}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>Bank Statement Analyser</h1>
-  <span class="sub">PDF → categorized transactions · balance-validated</span>
-</header>
-<main>
+<div class="wrap">
+  <header>
+    <h1>Bank Statement Analyser</h1>
+    <p>Drop in a year of statements. Get one categorised, balance-checked report.</p>
+  </header>
+
   <div class="drop" id="drop">
-    Drop bank statement PDFs here or <b>click to choose</b>
-    <div class="sub" style="margin-top:6px;color:var(--mut)">Each file becomes one job. Password-protected PDFs: fill the password below first.</div>
+    <div class="ico">📄</div>
+    <div class="t">Drop PDFs here, or click to choose</div>
+    <div class="s">Upload several at once — they're merged into a single report</div>
     <input type="file" id="file" accept="application/pdf" multiple hidden>
   </div>
-  <div class="opts">
-    <input type="password" id="pwd" placeholder="PDF password (optional)">
+
+  <div id="tray"></div>
+
+  <div class="row" id="controls" hidden>
     <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
-    <span class="hint">Applied to files uploaded after you set them.</span>
+    <button class="go" id="go">Analyse</button>
+    <span class="hint" id="hint"></span>
   </div>
-  <h2>Jobs</h2>
-  <div id="jobs"><div class="empty">No jobs yet — upload a statement to begin.</div></div>
-</main>
+
+  <h2>Reports</h2>
+  <div id="jobs"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+</div>
 
 <dialog id="pv">
-  <div class="dhead">
-    <b id="pvTitle">Preview</b>
-    <span style="margin-left:auto"><button onclick="document.getElementById('pv').close()">Close</button></span>
+  <div class="dh"><b id="pvTitle">Preview</b>
+    <span style="margin-left:auto"><button class="ghost" onclick="pv.close()">Done</button></span>
   </div>
-  <div class="dbody" id="pvBody"></div>
+  <div class="db" id="pvBody"></div>
 </dialog>
 
 <script src="config.js"></script>
 <script>
 const API = window.BSA_API;
 const $ = id => document.getElementById(id);
-const drop = $('drop'), fileIn = $('file');
+const esc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kb = n => n < 1024*1024 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
 
+let staged = [];   // {file, name, size, locked, pw, id}
+let seq = 0;
+
+/* ---------- encryption detection ----------
+   An encrypted PDF carries /Encrypt in its trailer. Detecting it here means we
+   can ask for the password up front, instead of the user waiting for the job to
+   come back password_required. */
+async function isEncrypted(file){
+  try{
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const needle = [0x2f,0x45,0x6e,0x63,0x72,0x79,0x70,0x74];   // "/Encrypt"
+    outer: for(let i=0;i<=buf.length-needle.length;i++){
+      for(let j=0;j<needle.length;j++) if(buf[i+j]!==needle[j]) continue outer;
+      return true;
+    }
+  }catch(e){ /* unreadable -> let the backend decide */ }
+  return false;
+}
+
+/* ---------- staging ---------- */
+const drop = $('drop'), fileIn = $('file');
 drop.onclick = () => fileIn.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('hover'); upload([...e.dataTransfer.files]); };
-fileIn.onchange = () => upload([...fileIn.files]);
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('hover'); stage([...e.dataTransfer.files]); };
+fileIn.onchange = () => { stage([...fileIn.files]); fileIn.value=''; };
 
-async function api(path, opts) {
-  const r = await fetch(API + path, opts);
-  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+async function stage(files){
+  for(const f of files){
+    if(!/\.pdf$/i.test(f.name)) continue;
+    if(staged.length >= 20){ alert('Up to 20 statements per report.'); break; }
+    const item = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
+    staged.push(item);
+    renderTray();
+    item.locked = await isEncrypted(f);
+    renderTray();
+  }
+}
+
+function removeFile(id){ staged = staged.filter(s=>s.id!==id); renderTray(); }
+function setPw(id,v){ const s=staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
+
+function renderTray(){
+  const t=$('tray');
+  if(!staged.length){ t.innerHTML=''; $('controls').hidden=true; return; }
+  $('controls').hidden=false;
+  t.innerHTML = `<div class="tray">
+    <div class="trayhead">Ready to merge <span class="n">· ${staged.length} file${staged.length>1?'s':''} → 1 report</span></div>
+    ${staged.map(s=>`<div class="f">
+      <div class="doc">${s.locked?'🔒':'📄'}</div>
+      <div class="info">
+        <div class="nm">${esc(s.name)}</div>
+        <div class="sz">${kb(s.size)}${s.locked?' · password protected':''}</div>
+        ${s.locked&&!s.pw?'<div class="lockmsg">Password required</div>':''}
+      </div>
+      ${s.locked?`<input type="password" placeholder="Password" value="${esc(s.pw)}"
+         oninput="setPw(${s.id},this.value)" class="${s.pw?'':'miss'}">`:''}
+      <button class="x" title="Remove" onclick="removeFile(${s.id})">×</button>
+    </div>`).join('')}
+  </div>`;
+  updateGo();
+}
+
+function updateGo(){
+  const missing = staged.filter(s=>s.locked && !s.pw).length;
+  $('go').disabled = !staged.length || missing>0;
+  $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
+  $('hint').textContent = missing
+    ? `${missing} file${missing>1?'s need':' needs'} a password before you can continue.`
+    : (staged.length>1 ? 'All statements are merged into one report, duplicates removed.' : '');
+}
+
+/* ---------- upload ---------- */
+async function api(path, opts){
+  const r = await fetch(API+path, opts);
+  if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
   return r.json();
 }
 
-async function upload(files) {
-  for (const f of files) {
-    if (!/pdf$/i.test(f.name)) continue;
-    const body = { filename: f.name };
-    if ($('pwd').value) body.password = $('pwd').value;
-    const parties = $('parties').value.split(',').map(s=>s.trim()).filter(Boolean);
-    if (parties.length) body.related_parties = parties;
-    try {
-      const { upload_url } = await api('/jobs', { method:'POST',
-        headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-      await fetch(upload_url, { method:'PUT',
-        headers:{'content-type':'application/pdf'}, body: f });
-    } catch (e) { alert('Upload failed: ' + e.message); }
-  }
-  refresh();
-}
+$('go').onclick = async () => {
+  const go=$('go'); go.disabled=true;
+  const files = staged.slice();
+  try{
+    const body = { files: files.map(s=>({filename:s.name, password:s.pw||undefined})) };
+    const parties = $('parties').value.split(',').map(x=>x.trim()).filter(Boolean);
+    if(parties.length) body.related_parties = parties;
 
+    go.textContent='Creating report…';
+    const { uploads } = await api('/jobs', {method:'POST',
+      headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+
+    for(let i=0;i<files.length;i++){
+      go.textContent = `Uploading ${i+1} of ${files.length}…`;
+      const res = await fetch(uploads[i].upload_url, {method:'PUT',
+        headers:{'content-type':'application/pdf'}, body:files[i].file});
+      if(!res.ok) throw new Error(`upload failed for ${files[i].name}`);
+    }
+    staged=[]; $('parties').value=''; renderTray(); refresh();
+  }catch(e){
+    alert('Upload failed: '+e.message);
+  }finally{
+    go.disabled=false; updateGo();
+  }
+};
+
+/* ---------- reports ---------- */
 const fmtAmt = a => {
   const s = Math.abs(a).toLocaleString('en-IN',{minimumFractionDigits:2});
-  return a < 0 ? `<span class="neg">(${s})</span>` : `<span class="pos">${s}</span>`;
+  return a<0 ? `<span class="neg">(${s})</span>` : `<span class="pos">${s}</span>`;
 };
-const esc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-function jobCard(j) {
-  const s = j.summary || {};
-  const cats = Object.entries(s.categories || {}).sort((a,b)=>b[1]-a[1]).slice(0,6)
+function jobCard(j){
+  const s=j.summary||{};
+  const cats=Object.entries(s.categories||{}).sort((a,b)=>b[1]-a[1]).slice(0,6)
     .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
-  const busy = ['processing','awaiting_upload'].includes(j.status);
+  const ready=['done','needs_review'].includes(j.status);
+  const busy=['processing','awaiting_upload'].includes(j.status);
+  const bits=[];
+  if(s.rows) bits.push(`${s.rows} transactions`);
+  if(s.files>1) bits.push(`${s.files} statements merged`);
+  if(s.bank) bits.push(esc(s.bank));
+  if(s.account_no) bits.push(esc(s.account_no));
+  if(s.period_from) bits.push(`${esc(s.period_from)} → ${esc(s.period_to||'')}`);
   return `<div class="job">
     <div class="top">
-      <span class="name">${esc(j.filename)}</span>
-      <span class="chip s-${j.status}">${j.status.replace(/_/g,' ')}${busy?'…':''}</span>
-      ${s.validation ? `<span class="chip ${s.validation==='passed'?'s-done':'s-needs_review'}">balance ${esc(s.validation)}</span>` : ''}
-      <span class="btns">${j.status==='done'||j.status==='needs_review' ? `
-        <button class="primary" onclick="preview('${j.job_id}','${esc(j.filename)}')">Preview</button>
-        <button onclick="dl('${j.job_id}','csv')">CSV</button>
-        <button onclick="dl('${j.job_id}','xlsx')">Excel</button>
-        <button onclick="dl('${j.job_id}','json')">JSON</button>` : ''}</span>
+      <span class="nm">${esc(j.filename)}</span>
+      <span class="pill p-${j.status}">${esc(j.status.replace(/_/g,' '))}${busy?'…':''}</span>
+      ${s.validation?`<span class="pill ${s.validation==='passed'?'p-done':'p-needs_review'}">balance ${esc(s.validation)}${s.issues?` · ${s.issues}`:''}</span>`:''}
     </div>
-    <div class="meta">${s.rows ? `${s.rows} transactions · ${esc(s.bank||'')} · ${esc(s.account_no||'')} · ${esc(s.period_from||'')} → ${esc(s.period_to||'')}` : new Date((j.created_at||0)*1000).toLocaleString()}</div>
-    ${cats ? `<div class="cats">${cats}</div>` : ''}
-    ${j.error ? `<div class="err">${esc(j.error)}</div>` : ''}
+    <div class="meta">${bits.length?bits.join(' · '):new Date((j.created_at||0)*1000).toLocaleString()}</div>
+    ${cats?`<div class="cats">${cats}</div>`:''}
+    ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
+    ${ready?`<div class="acts">
+      <button class="ghost" onclick="preview('${j.job_id}','${esc(j.filename)}')">Preview</button>
+      <button class="ghost" onclick="dl('${j.job_id}','csv')">CSV</button>
+      <button class="ghost" onclick="dl('${j.job_id}','xlsx')">Excel</button>
+      <button class="ghost" onclick="dl('${j.job_id}','json')">JSON</button></div>`:''}
   </div>`;
 }
 
-async function refresh() {
-  try {
-    const { jobs } = await api('/jobs');
+async function refresh(){
+  try{
+    const {jobs}=await api('/jobs');
     $('jobs').innerHTML = jobs.length ? jobs.map(jobCard).join('')
-      : '<div class="empty">No jobs yet — upload a statement to begin.</div>';
-    if (jobs.some(j => ['processing','awaiting_upload'].includes(j.status)))
-      setTimeout(refresh, 3000);
-  } catch (e) { console.error(e); }
+      : '<div class="empty">Nothing yet — upload statements to begin.</div>';
+    if(jobs.some(j=>['processing','awaiting_upload'].includes(j.status))) setTimeout(refresh,3000);
+  }catch(e){ console.error(e); }
 }
 
-async function dl(id, fmt) {
-  const { url } = await api(`/jobs/${id}/download?format=${fmt}`);
-  location.href = url;
-}
+async function dl(id,fmt){ const {url}=await api(`/jobs/${id}/download?format=${fmt}`); location.href=url; }
 
-async function preview(id, name) {
-  const { url } = await api(`/jobs/${id}/download?format=preview`);
-  const data = await (await fetch(url)).json();
-  $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
-  $('pvBody').innerHTML = `<table><thead><tr>
-      <th>Date</th><th>Description</th><th style="text-align:right">Amount</th>
-      <th>Category</th><th style="text-align:right">Balance</th></tr></thead><tbody>` +
-    data.rows.map(r => `<tr><td style="white-space:nowrap">${r.date}</td>
+async function preview(id,name){
+  const {url}=await api(`/jobs/${id}/download?format=preview`);
+  const data=await (await fetch(url)).json();
+  $('pvTitle').textContent=`${name} — first ${data.rows.length} of ${data.total} rows`;
+  $('pvBody').innerHTML=`<table><thead><tr>
+      <th>Date</th><th>Description</th><th class="num">Amount</th>
+      <th>Category</th><th class="num">Balance</th></tr></thead><tbody>`+
+    data.rows.map(r=>`<tr><td style="white-space:nowrap">${esc(r.date)}</td>
       <td>${esc(r.description)}</td><td class="num">${fmtAmt(r.amount)}</td>
       <td>${esc(r.category)}</td>
-      <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('') +
+      <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')+
     '</tbody></table>';
   $('pv').showModal();
 }
 
 refresh();
-setInterval(refresh, 15000);
+setInterval(refresh,15000);
 </script>
 </body>
 </html>

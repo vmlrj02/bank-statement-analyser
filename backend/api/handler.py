@@ -28,6 +28,8 @@ ddb = boto3.resource("dynamodb")
 TABLE = ddb.Table(os.environ["JOBS_TABLE"])
 BUCKET = os.environ["DATA_BUCKET"]
 
+MAX_FILES_PER_JOB = 20
+
 FORMAT_KEYS = {
     "csv": ("statement_transactions.csv", "text/csv"),
     "xlsx": ("statement_analysis.xlsx",
@@ -35,6 +37,15 @@ FORMAT_KEYS = {
     "json": ("statement.json", "application/json"),
     "preview": ("preview.json", "application/json"),
 }
+
+
+def _scrub(item):
+    """Never return PDF passwords — they now live per file inside `files`."""
+    item.pop("password", None)
+    for f in item.get("files") or []:
+        if isinstance(f, dict):
+            f.pop("password", None)
+    return item
 
 
 def _resp(code, body):
@@ -51,33 +62,58 @@ def lambda_handler(event, _ctx):
 
     if route == "POST /jobs":
         body = json.loads(event.get("body") or "{}")
-        filename = (body.get("filename") or "statement.pdf")[:200]
+        # One job spans N statements and produces ONE merged output. Accepts
+        # {files:[{filename, password?}]}; the single-file {filename, password}
+        # shape is still honoured so older clients keep working.
+        files = body.get("files")
+        if not isinstance(files, list) or not files:
+            files = [{"filename": body.get("filename") or "statement.pdf",
+                      "password": body.get("password")}]
+        files = files[:MAX_FILES_PER_JOB]
+
         job_id = uuid.uuid4().hex[:12]
-        key = f"uploads/{job_id}.pdf"
+        now = int(time.time())
+        entries, uploads = [], []
+        for i, f in enumerate(files):
+            name = str(f.get("filename") or f"statement_{i+1}.pdf")[:200]
+            key = f"uploads/{job_id}/{i}.pdf"
+            entry = {"idx": i, "key": key, "filename": name}
+            if f.get("password"):
+                entry["password"] = str(f["password"])   # cleared after processing
+            entries.append(entry)
+            uploads.append({
+                "filename": name,
+                "upload_url": s3.generate_presigned_url(
+                    "put_object",
+                    Params={"Bucket": BUCKET, "Key": key,
+                            "ContentType": "application/pdf"},
+                    ExpiresIn=900),
+            })
+
+        label = entries[0]["filename"] if len(entries) == 1 else \
+            f"{len(entries)} statements — {entries[0]['filename']}"
         item = {
             "job_id": job_id,
             "status": "awaiting_upload",
-            "filename": filename,
-            "created_at": int(time.time()),
-            "ttl": int(time.time()) + 180 * 24 * 3600,
+            "filename": label,
+            "files": entries,
+            "expected": len(entries),
+            "uploaded": 0,
+            "created_at": now,
+            "ttl": now + 180 * 24 * 3600,
         }
-        if body.get("password"):
-            item["password"] = body["password"]        # deleted after processing
         if body.get("related_parties"):
             item["related_parties"] = [str(p)[:80] for p in body["related_parties"]][:20]
         TABLE.put_item(Item=item)
-        url = s3.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": BUCKET, "Key": key, "ContentType": "application/pdf"},
-            ExpiresIn=900,
-        )
-        return _resp(200, {"job_id": job_id, "upload_url": url})
+        # upload_url kept at top level so a single-file client needs no change
+        return _resp(200, {"job_id": job_id, "uploads": uploads,
+                           "upload_url": uploads[0]["upload_url"]})
 
     if route == "GET /jobs":
         # MVP single-tenant: scan and sort client-side (bounded)
         items = TABLE.scan(Limit=200).get("Items", [])
         for it in items:
-            it.pop("password", None)
+            _scrub(it)
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return _resp(200, {"jobs": items[:60]})
 
@@ -85,8 +121,7 @@ def lambda_handler(event, _ctx):
         it = TABLE.get_item(Key={"job_id": path_id}).get("Item")
         if not it:
             return _resp(404, {"error": "not found"})
-        it.pop("password", None)
-        return _resp(200, it)
+        return _resp(200, _scrub(it))
 
     if route == "GET /jobs/{id}/download" and path_id:
         fmt = qs.get("format", "csv")
