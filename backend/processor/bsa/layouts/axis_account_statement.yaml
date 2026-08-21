@@ -1,0 +1,41 @@
+# Layout descriptor: Axis Bank — account statement (Burgundy/savings export)
+# Driven by the generic layout parser, so this file is the whole parser: no
+# bank-specific Python. Geometry captured from a 595x842pt statement.
+id: axis_account_statement
+bank: Axis Bank
+layout_name: Axis Account Statement
+version: 1
+parser: generic
+fingerprints:
+  any_of:
+    - "Statement of Axis Account No"
+  all_of: []
+header:
+  # named groups are required: account_no, period_from, period_to
+  account_line: 'Statement of Axis Account No :(?P<account_no>\d+) for the period \(From : (?P<period_from>[\d-]+) To : (?P<period_to>[\d-]+)\)'
+  period_date_format: "%d-%m-%Y"
+  account_name_line: 0            # account holder is the first line of page 1
+parse:
+  table_header_words: ["Particulars", "Debit", "Credit", "Balance"]
+  header_offset: 14
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'   # the anchor's first token is the date
+  date_format: "%d-%m-%Y"
+  continuation: above                 # narration wraps ABOVE its dated line
+  skip_rows:
+    - "OPENING BALANCE"
+    - "CLOSING BALANCE"
+    - "TRANSACTION TOTAL"
+  columns:
+    # amounts are right-aligned, so numeric columns are keyed by right edge (x1)
+    date_x_max: 90
+    cheque_x_min: 90
+    cheque_x_max: 128
+    remarks_x_min: 128
+    remarks_x_max: 335
+    withdrawal_x1_max: 385          # Debit   — observed right edge ~379
+    deposit_x1_max: 450             # Credit  — observed right edge ~442
+    balance_x1_max: 535             # Balance — observed right edge ~531
+    tail_x_min: 536                 # Init.Br branch code — ignore
+  footer_markers:
+    - "This is a computer generated statement"
+    - "Registered Office"
