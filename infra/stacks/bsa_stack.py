@@ -68,6 +68,9 @@ class BsaStack(Stack):
         processor = _lambda.Function(
             self, "Processor",
             runtime=_lambda.Runtime.PYTHON_3_12,
+            # ARM matches the wheels the bundling container downloads on
+            # Apple-Silicon Macs (and is cheaper); keep these two in sync.
+            architecture=_lambda.Architecture.ARM_64,
             handler="handler.lambda_handler",
             memory_size=2048,
             timeout=Duration.minutes(5),
@@ -76,7 +79,8 @@ class BsaStack(Stack):
                 bundling=BundlingOptions(
                     image=_lambda.Runtime.PYTHON_3_12.bundling_image,
                     command=["bash", "-c",
-                             "pip install -r requirements.txt -t /asset-output "
+                             "pip install --retries 10 --timeout 60 "
+                             "-r requirements.txt -t /asset-output "
                              "&& cp -r . /asset-output"],
                 ),
             ),
@@ -97,6 +101,7 @@ class BsaStack(Stack):
         api_fn = _lambda.Function(
             self, "ApiFn",
             runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.ARM_64,
             handler="handler.lambda_handler",
             memory_size=256,
             timeout=Duration.seconds(15),
