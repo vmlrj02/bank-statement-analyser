@@ -148,7 +148,11 @@ def _call_anthropic(system: str, blocks: list[dict], schema: dict, model: str) -
                 "data": base64.b64encode(b["image_png"]).decode()}})
     # Forced tool use is the most reliable structured-output path here: it is
     # supported on every current model and needs no schema rewriting.
-    msg = client.messages.create(
+    # Must stream: the SDK refuses a non-streaming request whose max_tokens
+    # could exceed the 10-minute HTTP ceiling, and MAX_OUTPUT_TOKENS trips it.
+    # This is a client-side guard, so testing the endpoint over raw HTTP does
+    # not exercise it — that gap let a broken adapter reach a real upload.
+    with client.messages.stream(
         model=model,
         max_tokens=MAX_OUTPUT_TOKENS,
         system=system,
@@ -157,7 +161,8 @@ def _call_anthropic(system: str, blocks: list[dict], schema: dict, model: str) -
                 "description": "Record the extracted statement rows",
                 "input_schema": schema}],
         tool_choice={"type": "tool", "name": TOOL_NAME},
-    )
+    ) as stream:
+        msg = stream.get_final_message()
     for block in msg.content:
         if block.type == "tool_use":
             return block.input
