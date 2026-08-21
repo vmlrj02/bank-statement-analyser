@@ -1,19 +1,33 @@
-"""Processor Lambda — runs the bsa pipeline on each uploaded PDF.
+"""Processor Lambda — extracts one statement per invocation, then merges.
 
-Trigger: S3 ObjectCreated on uploads/{job_id}.pdf
-Writes : outputs/{job_id}/statement_transactions.csv, statement_analysis.xlsx,
+Trigger: S3 ObjectCreated on uploads/{job_id}/{i}.pdf (legacy: uploads/{id}.pdf)
+
+Each uploaded file fires its own event, and each invocation handles only its
+own file: extract, normalise, write the rows to work/{job_id}/{i}.json. The
+invocation that completes the final file merges every part, validates and
+publishes. That gives each statement a full Lambda timeout of its own and lets
+files process in parallel, so a twenty-file job costs about as long as its
+slowest single statement rather than the sum of all of them.
+
+Persisting per-file results also means a failed or timed-out job can be retried
+without re-running — and re-paying for — the extractions that already finished.
+
+Writes : work/{job_id}/{i}.json (intermediate, expires after 7 days)
+         outputs/{job_id}/statement_transactions.csv, statement_analysis.xlsx,
          statement.json, preview.json ; job status + summary in DynamoDB.
 """
 import json
 import os
 import shutil
 import traceback
+from dataclasses import asdict
+from types import SimpleNamespace
 
 import boto3
 
 from bsa.categorize import categorize, category_detail
 from bsa.ingest import PasswordRequired
-from bsa.models import JobResult
+from bsa.models import JobResult, StatementMeta, Txn
 from bsa.normalize import normalize, dedup_merge
 from bsa.pipeline import extract_one
 from bsa.publish import publish
@@ -67,34 +81,59 @@ def _job_id_from_key(key: str) -> str:
     return rest.split("/", 1)[0] if "/" in rest else rest.rsplit(".", 1)[0]
 
 
-def _all_uploaded(job_id: str, key: str, expected: int) -> bool:
-    """Record this key and report whether the whole set has now arrived.
+def _work_key(job_id: str, idx: int) -> str:
+    return f"work/{job_id}/{idx}.json"
 
-    Tracked as a set rather than a counter so re-uploading the same file (or
-    re-triggering a job) cannot inflate the count.
+
+def _work_exists(job_id: str, idx: int) -> bool:
+    try:
+        s3.head_object(Bucket=BUCKET, Key=_work_key(job_id, idx))
+        return True
+    except Exception:
+        return False
+
+
+def _write_work(job_id: str, idx: int, meta, txns) -> None:
+    s3.put_object(
+        Bucket=BUCKET, Key=_work_key(job_id, idx), ContentType="application/json",
+        Body=json.dumps({"meta": asdict(meta),
+                         "txns": [asdict(t) for t in txns]}).encode(),
+    )
+
+
+def _read_work(job_id: str, idx: int):
+    body = s3.get_object(Bucket=BUCKET, Key=_work_key(job_id, idx))["Body"].read()
+    d = json.loads(body)
+    return StatementMeta(**d["meta"]), [Txn(**t) for t in d["txns"]]
+
+
+def _mark_extracted(job_id: str, idx: int) -> int:
+    """Record that this file is extracted; return how many are done.
+
+    A set, not a counter, so a re-delivered event cannot inflate the total.
     """
     attrs = TABLE.update_item(
         Key={"job_id": job_id},
-        UpdateExpression="ADD uploaded_keys :k",
-        ExpressionAttributeValues={":k": {key}},
+        UpdateExpression="ADD extracted :k",
+        ExpressionAttributeValues={":k": {str(idx)}},
         ReturnValues="UPDATED_NEW",
     ).get("Attributes", {})
-    return len(attrs.get("uploaded_keys", set())) >= expected
+    return len(attrs.get("extracted", set()))
 
 
-def _claim(job_id: str) -> bool:
-    """Exactly one invocation may run the merge; the rest bow out.
+def _claim_merge(job_id: str) -> bool:
+    """Exactly one invocation performs the merge; the rest bow out.
 
-    Every file's upload fires its own event, so without this the last few
-    would each start processing the same job.
+    Several files can finish at nearly the same moment, and each would
+    otherwise merge and publish the same job concurrently.
     """
     try:
         TABLE.update_item(
             Key={"job_id": job_id},
-            UpdateExpression="SET #s = :p",
-            ConditionExpression="attribute_not_exists(#s) OR #s <> :p",
+            UpdateExpression="SET #s = :m",
+            ConditionExpression="attribute_not_exists(#s) OR #s <> :m",
             ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":p": "processing"},
+            ExpressionAttributeValues={":m": "merging"},
         )
         return True
     except ddb.meta.client.exceptions.ConditionalCheckFailedException:
@@ -113,25 +152,51 @@ def lambda_handler(event, _ctx):
                                        "password": item.get("password")}]
         expected = int(item.get("expected", len(files)))
 
-        if not _all_uploaded(job_id, key, expected):
-            continue                      # still waiting on the rest of the set
-        if not _claim(job_id):
-            continue                      # another invocation is already on it
-
-        workdir = f"/tmp/{job_id}"
+        # ---- phase 1: extract THIS file only -------------------------------
+        # Each upload fires its own event, so each file gets its own Lambda and
+        # its own 15 minutes. Extracting all N in one invocation is what pushed
+        # a ten-file job past the ceiling, discarding every finished extraction
+        # with it. Results are persisted, so a retry only redoes what is missing.
+        entry = next((f for f in files if f.get("key") == key), files[0])
+        idx = int(entry.get("idx", 0))
+        workdir = f"/tmp/{job_id}_{idx}"
         os.makedirs(workdir, exist_ok=True)
         try:
-            # Extract every statement, then merge into one result. dedup_merge
-            # drops rows that overlap where statement periods abut.
+            if not _work_exists(job_id, idx):
+                _update(job_id, **{"status": "processing"})
+                local_pdf = os.path.join(workdir, "in.pdf")
+                s3.download_file(BUCKET, entry.get("key", key), local_pdf)
+                ex = extract_one(
+                    local_pdf, password=entry.get("password"),
+                    time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None))
+                _write_work(job_id, idx, ex.meta, normalize(ex))
+        except PasswordRequired:
+            _update(job_id, **{"status": "password_required",
+                               "error": f"{entry.get('filename', 'A file')} is "
+                                        "password-protected — recreate the job "
+                                        "with the correct password."})
+            continue
+        except Exception as e:                            # noqa: BLE001
+            print(traceback.format_exc())
+            _update(job_id, **{"status": "failed",
+                               "error": f"{entry.get('filename', 'file')}: "
+                                        f"{str(e)[:350]}"})
+            continue
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+        # ---- phase 2: last one in merges -----------------------------------
+        if _mark_extracted(job_id, idx) < expected:
+            continue                      # other statements still extracting
+        if not _claim_merge(job_id):
+            continue                      # another invocation got there first
+
+        try:
             extracts, txn_lists = [], []
             for f in sorted(files, key=lambda x: int(x.get("idx", 0))):
-                local_pdf = os.path.join(workdir, f"in_{f.get('idx', 0)}.pdf")
-                s3.download_file(BUCKET, f.get("key", key), local_pdf)
-                ex = extract_one(
-                    local_pdf, password=f.get("password"),
-                    time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None))
-                extracts.append(ex)
-                txn_lists.append(normalize(ex))
+                meta, txns = _read_work(job_id, int(f.get("idx", 0)))
+                extracts.append(SimpleNamespace(meta=meta))
+                txn_lists.append(txns)
 
             extract = extracts[0]
             txns = dedup_merge(txn_lists) if len(txn_lists) > 1 else txn_lists[0]
@@ -146,7 +211,8 @@ def lambda_handler(event, _ctx):
             extract.meta.source_file = item.get("filename", "statement.pdf")
             result = JobResult(meta=extract.meta, txns=txns, validation=report)
 
-            outdir = os.path.join(workdir, "out")
+            # phase 1's workdir is already gone; the merge needs its own
+            outdir = f"/tmp/{job_id}_merge"
             paths = publish(result, outdir, basename="statement")
 
             preview = [{
@@ -191,20 +257,11 @@ def lambda_handler(event, _ctx):
                     "categories": cats,
                 },
             })
-        except PasswordRequired:
-            _update(job_id, **{"status": "password_required",
-                               "error": "PDF is password-protected — recreate the "
-                                        "job with the correct password."})
-        except NotImplementedError:
-            _update(job_id, **{"status": "failed",
-                               "error": "This bank layout isn't in the template "
-                                        "registry yet, and the LLM fallback "
-                                        "(Bedrock) is not wired up in this MVP "
-                                        "deployment."})
         except Exception as e:                            # noqa: BLE001
             print(traceback.format_exc())
-            _update(job_id, **{"status": "failed", "error": str(e)[:400]})
+            _update(job_id, **{"status": "failed",
+                               "error": f"merge: {str(e)[:380]}"})
         finally:
             _clear_password(job_id)
-            shutil.rmtree(workdir, ignore_errors=True)
+            shutil.rmtree(f"/tmp/{job_id}_merge", ignore_errors=True)
     return {"ok": True}

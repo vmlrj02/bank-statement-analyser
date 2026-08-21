@@ -54,6 +54,9 @@ class BsaStack(Stack):
                     prefix="uploads/", expiration=Duration.days(30)),
                 s3.LifecycleRule(
                     prefix="outputs/", expiration=Duration.days(180)),
+                s3.LifecycleRule(            # per-file extraction results, kept
+                    prefix="work/",          # only long enough to retry a merge
+                    expiration=Duration.days(7)),
             ],
         )
 
