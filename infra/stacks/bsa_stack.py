@@ -110,8 +110,8 @@ class BsaStack(Stack):
                 # llm_providers.py resolves both at call time.
                 #   LLM_PROVIDER: gemini | anthropic | openai | bedrock
                 #   LLM_MODEL   : optional; omit to use that provider's default
-                "LLM_PROVIDER": "openai",
-                "LLM_MODEL": "gpt-5.1",
+                "LLM_PROVIDER": "anthropic",
+                "LLM_MODEL": "claude-sonnet-5",
                 "LLM_API_KEY_SECRET": llm_secret.secret_name,
                 # Bedrock is kept as a selectable provider, but is currently
                 # blocked on this account: every Anthropic model fails its AWS
