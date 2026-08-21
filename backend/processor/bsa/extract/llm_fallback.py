@@ -13,11 +13,18 @@ switching provider or model is an env change, not a code edit.
 from __future__ import annotations
 
 import io
+from concurrent.futures import ThreadPoolExecutor, wait
 
 import pdfplumber
 
 from ..models import RawRow, StatementMeta, StatementExtract
 from .llm_providers import call_structured
+
+# Chunks are independent API calls, so run several at once — a 15-minute
+# sequential run is what pushed one real statement past Lambda's hard ceiling.
+MAX_PARALLEL_CHUNKS = 5
+# Leave enough time after the last call to normalise, publish and write status.
+DEADLINE_MARGIN_MS = 60_000
 
 PAGES_PER_CHUNK_TEXT = 4
 PAGES_PER_CHUNK_VISION = 2
@@ -108,13 +115,18 @@ def _reconcile_direction(rows: list[RawRow]) -> int:
     return flipped
 
 
-def extract_with_llm(pdf_path: str, source_file: str) -> StatementExtract:
+def extract_with_llm(pdf_path: str, source_file: str,
+                     time_left_ms=None) -> StatementExtract:
+    """`time_left_ms` is Lambda's get_remaining_time_in_millis (or None locally)."""
+    # Build every chunk's payload first (local work: text slicing and page
+    # rendering), then fan the API calls out. Chunks are independent — seam
+    # context comes from the raw previous page, not from the previous chunk's
+    # result — so ordering only matters when reassembling.
+    chunks: list[tuple[list[int], list[dict]]] = []
     with pdfplumber.open(pdf_path) as pdf:
         n = len(pdf.pages)
         texts = [(p.extract_text() or "") for p in pdf.pages]
         digital = sum(len(t) for t in texts[:3]) / max(min(3, n), 1) > 200
-
-        merged_meta, all_rows = None, []
         chunk_size = PAGES_PER_CHUNK_TEXT if digital else PAGES_PER_CHUNK_VISION
 
         for start in range(0, n, chunk_size):
@@ -135,21 +147,45 @@ def extract_with_llm(pdf_path: str, source_file: str) -> StatementExtract:
                                    f"as images. Extract every transaction row."}]
                 for png in _page_images(pdf, idx):
                     blocks.append({"image_png": png})
+            chunks.append((idx, blocks))
 
-            result = call_structured(SYSTEM_PROMPT, blocks, EXTRACTION_SCHEMA)
-            if merged_meta is None:
-                merged_meta = result
-            for r in result.get("rows", []):
-                all_rows.append(RawRow(
-                    sl_no=None,
-                    date=str(r.get("date", "")),
-                    cheque_no=str(r.get("cheque_no", "") or ""),
-                    description=str(r.get("description", "")).strip(),
-                    withdrawal=r.get("withdrawal"),
-                    deposit=r.get("deposit"),
-                    balance=float(r["balance"]),
-                    page=idx[0] + 1,
-                ))
+    results: list[dict | None] = [None] * len(chunks)
+    with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_CHUNKS, len(chunks))) as pool:
+        futures = {pool.submit(call_structured, SYSTEM_PROMPT, blocks,
+                               EXTRACTION_SCHEMA): i
+                   for i, (_idx, blocks) in enumerate(chunks)}
+        # Stop with a reportable error instead of letting Lambda hard-kill the
+        # process, which leaves the job stuck on "processing" forever.
+        budget = None
+        if time_left_ms is not None:
+            budget = max((time_left_ms() - DEADLINE_MARGIN_MS) / 1000.0, 1.0)
+        done, pending = wait(futures, timeout=budget)
+        for fut in pending:
+            fut.cancel()
+        if pending:
+            raise TimeoutError(
+                f"extraction ran out of time with {len(pending)}/{len(chunks)} "
+                f"page chunks unfinished — statement too large for one Lambda")
+        for fut in done:
+            results[futures[fut]] = fut.result()
+
+    merged_meta, all_rows = None, []
+    for (idx, _blocks), result in zip(chunks, results):
+        if result is None:
+            continue
+        if merged_meta is None:
+            merged_meta = result
+        for r in result.get("rows", []):
+            all_rows.append(RawRow(
+                sl_no=None,
+                date=str(r.get("date", "")),
+                cheque_no=str(r.get("cheque_no", "") or ""),
+                description=str(r.get("description", "")).strip(),
+                withdrawal=r.get("withdrawal"),
+                deposit=r.get("deposit"),
+                balance=float(r["balance"]),
+                page=idx[0] + 1,
+            ))
 
     # de-duplicate seam repeats (same date+amounts+balance emitted twice)
     seen, rows = set(), []

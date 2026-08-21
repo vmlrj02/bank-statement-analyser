@@ -17,7 +17,8 @@ TEMPLATE_PARSERS = {
 }
 
 
-def extract_one(path: str, password: str | None = None) -> StatementExtract:
+def extract_one(path: str, password: str | None = None,
+                time_left_ms=None) -> StatementExtract:
     ing = ingest(path, password=password)
     cls = classify(ing.path)
     if cls.layout_id and ing.is_digital_text and cls.layout_id in TEMPLATE_PARSERS:
@@ -26,7 +27,8 @@ def extract_one(path: str, password: str | None = None) -> StatementExtract:
                            layout=get_layout(cls.layout_id))
     # unknown layout or scanned -> LLM path
     from .extract.llm_fallback import extract_with_llm
-    return extract_with_llm(ing.path, source_file=path.split("/")[-1])
+    return extract_with_llm(ing.path, source_file=path.split("/")[-1],
+                            time_left_ms=time_left_ms)
 
 
 def run(paths: list[str], out_dir: str, password: str | None = None,

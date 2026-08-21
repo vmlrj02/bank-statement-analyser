@@ -61,7 +61,9 @@ def lambda_handler(event, _ctx):
             _update(job_id, **{"status": "processing"})
             s3.download_file(BUCKET, key, local_pdf)
 
-            extract = extract_one(local_pdf, password=password)
+            extract = extract_one(
+                local_pdf, password=password,
+                time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None))
             txns = normalize(extract)
             categorize(txns, related_parties=related)
             report = validate(txns)
@@ -90,6 +92,9 @@ def lambda_handler(event, _ctx):
             status = "done" if report.status == "passed" else "needs_review"
             _update(job_id, **{
                 "status": status,
+                # clear any error left over from a previous failed attempt,
+                # otherwise a job reads "done" while still showing an old error
+                "error": "",
                 "summary": {
                     "rows": len(txns),
                     "validation": report.status,
