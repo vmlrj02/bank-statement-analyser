@@ -8,7 +8,11 @@ from .models import RawRow, StatementExtract, Txn
 
 DATE_FORMATS = ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y",
                 "%d %b %Y", "%d/%m/%y", "%d-%m-%y", "%b %d, %Y", "%d %B %Y",
-                "%Y-%m-%d")
+                "%Y-%m-%d",
+                # slash/dot forms with a month name — "02/Jan/2026" appears in
+                # real statements and cost a 6-file job before it was covered
+                "%d/%b/%Y", "%d/%b/%y", "%d.%b.%Y", "%d.%b.%y",
+                "%d %b, %Y", "%d-%B-%Y", "%d/%B/%Y", "%Y/%m/%d")
 
 # Word-boundary patterns: descriptions are usually prefixed by a bold title
 # ("SATHYA PRASAD B RTGS-…"), so modes must match mid-string, never only at ^.
@@ -124,8 +128,16 @@ def normalize(extract: StatementExtract) -> list[Txn]:
             continue  # balance-only row (B/F etc.) — not a transaction
         desc = re.sub(r"\s+", " ", r.description).strip()
         mode = detect_mode(desc)
+        try:
+            iso_date = parse_date(r.date)
+        except ValueError as e:
+            # name the offending statement and row: a bulk job may hold twenty
+            # files, and "unparseable date" alone says nothing about which.
+            raise ValueError(
+                f"{e} in {extract.meta.source_file or 'statement'} "
+                f"(page {r.page}): {desc[:60]}") from None
         txns.append(Txn(
-            date=parse_date(r.date), cheque_no=r.cheque_no, description=desc,
+            date=iso_date, cheque_no=r.cheque_no, description=desc,
             amount=round(amount, 2), balance=r.balance, mode=mode,
             counterparty=extract_counterparty(desc, mode),
             page=r.page, source_file=extract.meta.source_file,

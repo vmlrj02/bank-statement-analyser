@@ -84,6 +84,26 @@ def _page_images(pdf, page_indexes: list[int]) -> list[bytes]:
     return out
 
 
+def _num(v) -> float | None:
+    """Coerce a model-supplied amount to float; None if it isn't one.
+
+    Models sometimes return "1,200.00" or "" where a number was asked for.
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.replace(",", "").replace("₹", "").strip()
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    return None
+
+
 def _reconcile_direction(rows: list[RawRow]) -> int:
     """Derive debit/credit from the running balance instead of trusting the model.
 
@@ -169,23 +189,42 @@ def extract_with_llm(pdf_path: str, source_file: str,
         for fut in done:
             results[futures[fut]] = fut.result()
 
-    merged_meta, all_rows = None, []
+    merged_meta, all_rows, malformed = None, [], 0
     for (idx, _blocks), result in zip(chunks, results):
-        if result is None:
+        if not isinstance(result, dict):
+            malformed += 1
             continue
         if merged_meta is None:
             merged_meta = result
-        for r in result.get("rows", []):
+        rows = result.get("rows")
+        if not isinstance(rows, list):
+            malformed += 1
+            continue
+        for r in rows:
+            # A tool schema is guidance, not a guarantee: models occasionally
+            # emit a row as a bare string or omit the balance. One bad row must
+            # not abort a whole statement after minutes of paid extraction —
+            # skip it and let validate() flag the gap it leaves in the chain.
+            if not isinstance(r, dict):
+                malformed += 1
+                continue
+            balance = _num(r.get("balance"))
+            if balance is None:
+                malformed += 1
+                continue
             all_rows.append(RawRow(
                 sl_no=None,
                 date=str(r.get("date", "")),
                 cheque_no=str(r.get("cheque_no", "") or ""),
                 description=str(r.get("description", "")).strip(),
-                withdrawal=r.get("withdrawal"),
-                deposit=r.get("deposit"),
-                balance=float(r["balance"]),
+                withdrawal=_num(r.get("withdrawal")),
+                deposit=_num(r.get("deposit")),
+                balance=balance,
                 page=idx[0] + 1,
             ))
+    if malformed:
+        print(f"llm_fallback: skipped {malformed} malformed row(s)/chunk(s) — "
+              f"validate() will flag any resulting gap in the balance chain")
 
     # de-duplicate seam repeats (same date+amounts+balance emitted twice)
     seen, rows = set(), []
@@ -200,13 +239,20 @@ def extract_with_llm(pdf_path: str, source_file: str,
         print(f"llm_fallback: corrected direction on {flipped}/{len(rows)} rows "
               f"from running-balance deltas")
 
+    # Coerce: these feed account grouping and the masking step, so a dict or
+    # list slipping through from the model would break both.
+    m = merged_meta if isinstance(merged_meta, dict) else {}
+    def _s(key, default=""):
+        v = m.get(key, default)
+        return v.strip() if isinstance(v, str) else (default if v is None else str(v))
+
     meta = StatementMeta(
-        bank=(merged_meta or {}).get("bank", "Unknown"),
+        bank=_s("bank", "Unknown") or "Unknown",
         layout="llm_fallback",
-        account_no=(merged_meta or {}).get("account_no", ""),
-        account_name=(merged_meta or {}).get("account_name", ""),
-        period_from=(merged_meta or {}).get("period_from", ""),
-        period_to=(merged_meta or {}).get("period_to", ""),
+        account_no=_s("account_no"),
+        account_name=_s("account_name"),
+        period_from=_s("period_from"),
+        period_to=_s("period_to"),
         source_file=source_file,
         is_digital_text=digital,
     )
