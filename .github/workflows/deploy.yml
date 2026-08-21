@@ -1,0 +1,40 @@
+# Deploys BsaStack to AWS on every push to main.
+# Setup (one time): add repository secrets AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY (Settings -> Secrets and variables -> Actions).
+# Better long-term: switch to OIDC role assumption instead of access keys.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Deploy
+        working-directory: infra
+        run: |
+          pip install -r requirements.txt
+          cdk deploy --require-approval never

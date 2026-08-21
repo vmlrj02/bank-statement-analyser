@@ -1,0 +1,4 @@
+pdfplumber>=0.11
+pikepdf>=8
+PyYAML>=6
+openpyxl>=3.1

@@ -1,0 +1,42 @@
+"""End-to-end pipeline: the same stages Lambda will run, callable locally."""
+from __future__ import annotations
+
+import importlib
+
+from .classify import classify
+from .categorize import categorize
+from .ingest import ingest
+from .models import JobResult, StatementExtract
+from .normalize import normalize, dedup_merge
+from .publish import publish
+from .registry import get_layout
+from .validate import validate
+
+TEMPLATE_PARSERS = {
+    "icici_optransactionhistory": "bsa.extract.icici_optransactionhistory",
+}
+
+
+def extract_one(path: str, password: str | None = None) -> StatementExtract:
+    ing = ingest(path, password=password)
+    cls = classify(ing.path)
+    if cls.layout_id and ing.is_digital_text and cls.layout_id in TEMPLATE_PARSERS:
+        mod = importlib.import_module(TEMPLATE_PARSERS[cls.layout_id])
+        return mod.extract(ing.path, source_file=path.split("/")[-1],
+                           layout=get_layout(cls.layout_id))
+    # unknown layout or scanned -> LLM path
+    from .extract.llm_fallback import extract_with_llm
+    return extract_with_llm(ing.path, source_file=path.split("/")[-1])
+
+
+def run(paths: list[str], out_dir: str, password: str | None = None,
+        related_parties: list[str] | None = None,
+        basename: str = "statement") -> JobResult:
+    extracts = [extract_one(p, password=password) for p in paths]
+    txn_lists = [normalize(e) for e in extracts]
+    txns = dedup_merge(txn_lists) if len(txn_lists) > 1 else txn_lists[0]
+    categorize(txns, related_parties=related_parties)
+    report = validate(txns)
+    result = JobResult(meta=extracts[0].meta, txns=txns, validation=report)
+    publish(result, out_dir, basename=basename)
+    return result

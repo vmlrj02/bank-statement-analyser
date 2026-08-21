@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bank Statement Analyser</title>
+<style>
+  :root {
+    --bg:#f1f5f9; --card:#ffffff; --ink:#0f172a; --mut:#64748b;
+    --line:#e2e8f0; --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.5 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 24px;
+           display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:16px; margin:0; }
+  header .sub { color:var(--mut); font-size:12px; }
+  main { max-width:1000px; margin:24px auto; padding:0 16px; }
+  .drop { background:var(--card); border:2px dashed #cbd5e1; border-radius:12px;
+          padding:34px; text-align:center; cursor:pointer; transition:.15s; }
+  .drop.hover { border-color:var(--acc); background:#eff6ff; }
+  .drop b { color:var(--acc); }
+  .opts { display:flex; gap:10px; margin:12px 0 26px; flex-wrap:wrap; }
+  .opts input { padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+                font:inherit; min-width:240px; }
+  .opts .hint { color:var(--mut); font-size:12px; align-self:center; }
+  h2 { font-size:14px; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; }
+  .job { background:var(--card); border:1px solid var(--line); border-radius:12px;
+         padding:14px 16px; margin-bottom:10px; }
+  .job .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .job .name { font-weight:600; }
+  .chip { font-size:11.5px; padding:2px 9px; border-radius:99px; font-weight:600; }
+  .s-done { background:#dcfce7; color:var(--ok); }
+  .s-processing,.s-awaiting_upload,.s-uploading { background:#e0e7ff; color:#4338ca; }
+  .s-needs_review { background:#fef3c7; color:var(--warn); }
+  .s-failed,.s-password_required { background:#fee2e2; color:var(--bad); }
+  .meta { color:var(--mut); font-size:12.5px; margin-top:4px; }
+  .cats { margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; }
+  .cats span { background:#f1f5f9; border:1px solid var(--line); border-radius:6px;
+               padding:1px 7px; font-size:11.5px; color:#334155; }
+  .btns { margin-left:auto; display:flex; gap:6px; }
+  button { font:inherit; font-size:12.5px; padding:6px 12px; border-radius:8px;
+           border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button:hover { border-color:var(--acc); color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .err { color:var(--bad); font-size:12.5px; margin-top:6px; }
+  dialog { border:none; border-radius:12px; max-width:920px; width:94vw; max-height:86vh;
+           padding:0; box-shadow:0 10px 40px rgba(2,6,23,.25); }
+  dialog .dhead { display:flex; align-items:center; padding:12px 18px;
+                  border-bottom:1px solid var(--line); }
+  dialog .dbody { overflow:auto; max-height:70vh; padding:0 18px 18px; }
+  table { border-collapse:collapse; width:100%; font-size:12.5px; margin-top:10px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line);
+          vertical-align:top; }
+  th { position:sticky; top:0; background:#f8fafc; color:var(--mut); }
+  td.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  td .neg { color:var(--bad); } td .pos { color:var(--ok); }
+  .empty { color:var(--mut); text-align:center; padding:30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bank Statement Analyser</h1>
+  <span class="sub">PDF → categorized transactions · balance-validated</span>
+</header>
+<main>
+  <div class="drop" id="drop">
+    Drop bank statement PDFs here or <b>click to choose</b>
+    <div class="sub" style="margin-top:6px;color:var(--mut)">Each file becomes one job. Password-protected PDFs: fill the password below first.</div>
+    <input type="file" id="file" accept="application/pdf" multiple hidden>
+  </div>
+  <div class="opts">
+    <input type="password" id="pwd" placeholder="PDF password (optional)">
+    <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
+    <span class="hint">Applied to files uploaded after you set them.</span>
+  </div>
+  <h2>Jobs</h2>
+  <div id="jobs"><div class="empty">No jobs yet — upload a statement to begin.</div></div>
+</main>
+
+<dialog id="pv">
+  <div class="dhead">
+    <b id="pvTitle">Preview</b>
+    <span style="margin-left:auto"><button onclick="document.getElementById('pv').close()">Close</button></span>
+  </div>
+  <div class="dbody" id="pvBody"></div>
+</dialog>
+
+<script src="config.js"></script>
+<script>
+const API = window.BSA_API;
+const $ = id => document.getElementById(id);
+const drop = $('drop'), fileIn = $('file');
+
+drop.onclick = () => fileIn.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
+drop.ondragleave = () => drop.classList.remove('hover');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('hover'); upload([...e.dataTransfer.files]); };
+fileIn.onchange = () => upload([...fileIn.files]);
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+  return r.json();
+}
+
+async function upload(files) {
+  for (const f of files) {
+    if (!/pdf$/i.test(f.name)) continue;
+    const body = { filename: f.name };
+    if ($('pwd').value) body.password = $('pwd').value;
+    const parties = $('parties').value.split(',').map(s=>s.trim()).filter(Boolean);
+    if (parties.length) body.related_parties = parties;
+    try {
+      const { upload_url } = await api('/jobs', { method:'POST',
+        headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+      await fetch(upload_url, { method:'PUT',
+        headers:{'content-type':'application/pdf'}, body: f });
+    } catch (e) { alert('Upload failed: ' + e.message); }
+  }
+  refresh();
+}
+
+const fmtAmt = a => {
+  const s = Math.abs(a).toLocaleString('en-IN',{minimumFractionDigits:2});
+  return a < 0 ? `<span class="neg">(${s})</span>` : `<span class="pos">${s}</span>`;
+};
+const esc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function jobCard(j) {
+  const s = j.summary || {};
+  const cats = Object.entries(s.categories || {}).sort((a,b)=>b[1]-a[1]).slice(0,6)
+    .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
+  const busy = ['processing','awaiting_upload'].includes(j.status);
+  return `<div class="job">
+    <div class="top">
+      <span class="name">${esc(j.filename)}</span>
+      <span class="chip s-${j.status}">${j.status.replace(/_/g,' ')}${busy?'…':''}</span>
+      ${s.validation ? `<span class="chip ${s.validation==='passed'?'s-done':'s-needs_review'}">balance ${esc(s.validation)}</span>` : ''}
+      <span class="btns">${j.status==='done'||j.status==='needs_review' ? `
+        <button class="primary" onclick="preview('${j.job_id}','${esc(j.filename)}')">Preview</button>
+        <button onclick="dl('${j.job_id}','csv')">CSV</button>
+        <button onclick="dl('${j.job_id}','xlsx')">Excel</button>
+        <button onclick="dl('${j.job_id}','json')">JSON</button>` : ''}</span>
+    </div>
+    <div class="meta">${s.rows ? `${s.rows} transactions · ${esc(s.bank||'')} · ${esc(s.account_no||'')} · ${esc(s.period_from||'')} → ${esc(s.period_to||'')}` : new Date((j.created_at||0)*1000).toLocaleString()}</div>
+    ${cats ? `<div class="cats">${cats}</div>` : ''}
+    ${j.error ? `<div class="err">${esc(j.error)}</div>` : ''}
+  </div>`;
+}
+
+async function refresh() {
+  try {
+    const { jobs } = await api('/jobs');
+    $('jobs').innerHTML = jobs.length ? jobs.map(jobCard).join('')
+      : '<div class="empty">No jobs yet — upload a statement to begin.</div>';
+    if (jobs.some(j => ['processing','awaiting_upload'].includes(j.status)))
+      setTimeout(refresh, 3000);
+  } catch (e) { console.error(e); }
+}
+
+async function dl(id, fmt) {
+  const { url } = await api(`/jobs/${id}/download?format=${fmt}`);
+  location.href = url;
+}
+
+async function preview(id, name) {
+  const { url } = await api(`/jobs/${id}/download?format=preview`);
+  const data = await (await fetch(url)).json();
+  $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
+  $('pvBody').innerHTML = `<table><thead><tr>
+      <th>Date</th><th>Description</th><th style="text-align:right">Amount</th>
+      <th>Category</th><th style="text-align:right">Balance</th></tr></thead><tbody>` +
+    data.rows.map(r => `<tr><td style="white-space:nowrap">${r.date}</td>
+      <td>${esc(r.description)}</td><td class="num">${fmtAmt(r.amount)}</td>
+      <td>${esc(r.category)}</td>
+      <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('') +
+    '</tbody></table>';
+  $('pv').showModal();
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# Layout descriptor: ICICI Bank — internet-banking "OpTransactionHistory" export
+# Versioned registry entry. fingerprints identify the layout; parse holds the
+# geometric rules the template parser uses.
+id: icici_optransactionhistory
+bank: ICICI Bank
+layout_name: OpTransactionHistory
+version: 1
+fingerprints:
+  any_of:
+    - "Statement of Transactions in Saving Account no."
+    - "Statement of Transactions in Current Account no."
+  all_of: []
+header:
+  # regex over page-1 text
+  account_line: 'Statement of Transactions in \w+ Account no\. (\d+) in (\w+) for the period (.+?) - (.+)$'
+  period_date_format: "%B %d, %Y"        # "July 1, 2025"
+parse:
+  table_header_words: ["Withdrawal", "Deposit", "Balance"]
+  columns:
+    # x1 (right edge) cutoffs for right-aligned numeric columns, in PDF points
+    sl_no_x_max: 55
+    date_x_min: 55
+    date_x_max: 120
+    cheque_x_min: 120
+    cheque_x_max: 188
+    remarks_x_min: 188
+    withdrawal_x1_max: 468
+    deposit_x1_max: 530
+  date_format: "%d.%m.%Y"
+  row_anchor: '^\d+$'                     # S No. token
