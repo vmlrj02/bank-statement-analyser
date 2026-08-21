@@ -19,6 +19,7 @@ from aws_cdk import (
     aws_cloudfront as cf,
     aws_cloudfront_origins as origins,
     aws_dynamodb as ddb,
+    aws_iam as iam,
     aws_lambda as _lambda,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
@@ -73,7 +74,7 @@ class BsaStack(Stack):
             architecture=_lambda.Architecture.ARM_64,
             handler="handler.lambda_handler",
             memory_size=2048,
-            timeout=Duration.minutes(5),
+            timeout=Duration.minutes(10),   # LLM path on long statements
             code=_lambda.Code.from_asset(
                 os.path.join(ROOT, "backend", "processor"),
                 bundling=BundlingOptions(
@@ -87,8 +88,21 @@ class BsaStack(Stack):
             environment={
                 "DATA_BUCKET": data_bucket.bucket_name,
                 "JOBS_TABLE": jobs_table.table_name,
+                # Claude via Bedrock global cross-region inference profile.
+                # NOTE: inference may process outside ap-south-1.
+                # Newest Sonnet this account is entitled to invoke; sonnet-5 is
+                # listed ACTIVE but returns AccessDenied ("not available for
+                # this account"). Smoke-test with bedrock-runtime converse
+                # before changing — ACTIVE in list-inference-profiles is not
+                # the same as invocable.
+                "BEDROCK_MODEL_ID": "global.anthropic.claude-sonnet-4-6",
+                "BEDROCK_REGION": "ap-south-1",
             },
         )
+        processor.add_to_role_policy(iam.PolicyStatement(
+            actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+            resources=["*"],   # global profile fans out across regions; MVP scope
+        ))
         data_bucket.grant_read_write(processor)
         jobs_table.grant_read_write_data(processor)
         data_bucket.add_event_notification(

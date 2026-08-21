@@ -6,23 +6,27 @@ from datetime import datetime
 
 from .models import RawRow, StatementExtract, Txn
 
-DATE_FORMATS = ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y", "%d %b %Y")
+DATE_FORMATS = ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y",
+                "%d %b %Y", "%d/%m/%y", "%d-%m-%y", "%b %d, %Y", "%d %B %Y",
+                "%Y-%m-%d")
 
+# Word-boundary patterns: descriptions are usually prefixed by a bold title
+# ("SATHYA PRASAD B RTGS-…"), so modes must match mid-string, never only at ^.
 MODE_RULES = [
-    (r"^UPI/|\bUPI/", "upi"),
-    (r"^MMT/IMPS|/IMPS/", "imps"),
-    (r"^NEFT-|^NEFT/|NEFT-", "neft"),
-    (r"^RTGS[-/:]|/RTGS", "rtgs"),
-    (r"^ACH/|^NACH|NACH trxn|^ECS(?!RTN)", "nach"),
-    (r"ECSRTN|RTN CHG|RET CHG", "ecs-return"),
-    (r"^BIL/|Bil Payment", "billpay"),
-    (r"NFS/CASH WDL|ATM/|ATM trxn", "atm-cash"),
-    (r"^CLG/|/CLG", "clearing"),
-    (r"BY CASH|CASH DEP|CDM", "cash-deposit"),
-    (r"^CMS/|CMS/", "cms"),
-    (r"^SMP/", "standing-instruction"),
+    (r"\bUPI/", "upi"),
+    (r"\bMMT/IMPS|/IMPS/|\bIMPS[/:]", "imps"),
+    (r"\bNEFT[-/:]", "neft"),
+    (r"\bRTGS[-/:]", "rtgs"),
+    (r"\bECSRTN|\bRTN CHG|\bRET CHG", "ecs-return"),
+    (r"\bACH/|\bNACH\b|\bECS(?!RTN)", "nach"),
+    (r"\bBIL/|Bil Payment", "billpay"),
+    (r"NFS/CASH WDL|\bATM[/ ]|ATM trxn", "atm-cash"),
+    (r"\bCLG/", "clearing"),
+    (r"BY CASH|CASH DEP|\bCDM\b", "cash-deposit"),
+    (r"\bCMS/", "cms"),
+    (r"\bSMP/", "standing-instruction"),
     (r"Int\.Pd", "interest"),
-    (r"^TRFR|TRFR TO|TRFR FROM", "transfer"),
+    (r"\bTRFR\b", "transfer"),
 ]
 
 _IFSC = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
@@ -68,19 +72,18 @@ def extract_counterparty(desc: str, mode: str) -> str:
                     continue
                 return s
     if mode == "neft":
-        parts = [p for p in d.split("-") if p.strip()]
-        # NEFT-<ref>-<NAME>-...
-        if len(parts) >= 3:
-            return _clean_segment(parts[2])
+        # NEFT-<ref>-<NAME>-… (name may be followed by empty segment: "--")
+        m = re.search(r"NEFT-[A-Z0-9]+-([^-]+)", d)
+        if m and not _REFNUM.match(m.group(1).strip()):
+            return _clean_segment(m.group(1))
     if mode == "rtgs":
-        if "RTGS-" in d:
-            parts = [p for p in d.split("-") if p.strip()]
-            for p in parts[2:3]:
-                return _clean_segment(p)
-        m = re.search(r"RTGS[/:][A-Z0-9]+[/:](.+)$", d)
+        m = re.search(r"RTGS-[A-Z0-9]+-([^-]+)", d)      # RTGS-<ref>-<NAME>-…
+        if m and not _REFNUM.match(m.group(1).strip()):
+            return _clean_segment(m.group(1))
+        m = re.search(r"RTGS[/:][A-Z0-9]+[/:](.+)$", d)  # RTGS/<ref>/<bank>/<NAME>
         if m:
             segs = [_clean_segment(s) for s in re.split(r"[/:]", m.group(1)) if s.strip()]
-            # last non-IFSC segment is usually the name
+            # last non-IFSC, non-numeric segment is the name
             for s in reversed(segs):
                 if not _IFSC.match(s.upper().replace(" ", "")) and not _REFNUM.match(s):
                     return s
@@ -98,6 +101,10 @@ def extract_counterparty(desc: str, mode: str) -> str:
             return _clean_segment(m.group(1))
     if mode == "transfer":
         m = re.search(r"TRFR (?:TO|FROM):?\s*(.+)$", d, re.I)
+        if m:
+            return _clean_segment(m.group(1))
+    if mode == "standing-instruction":
+        m = re.search(r"SMP/\w+_(.+)$", d)               # SMP/<ref>_<NAME>
         if m:
             return _clean_segment(m.group(1))
     return ""
