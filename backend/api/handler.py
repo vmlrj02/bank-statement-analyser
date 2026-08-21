@@ -14,7 +14,16 @@ import uuid
 
 import boto3
 
-s3 = boto3.client("s3")
+from botocore.config import Config
+
+REGION = os.environ.get("AWS_REGION", "ap-south-1")
+s3 = boto3.client(
+    "s3",
+    region_name=REGION,
+    endpoint_url=f"https://s3.{REGION}.amazonaws.com",
+    config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+)
+
 ddb = boto3.resource("dynamodb")
 TABLE = ddb.Table(os.environ["JOBS_TABLE"])
 BUCKET = os.environ["DATA_BUCKET"]
