@@ -55,6 +55,10 @@ class Txn:
     category: str = ""            # filled by categorize stage
     category_source: str = ""     # rule | counterparty | dictionary | llm | fallback
     page: int = 0
+    # Account identity travels with the row: one job may merge statements from
+    # several banks/accounts, and a balance chain is only meaningful per account.
+    account_no: str = ""
+    bank: str = ""
     source_file: str = ""
     uid: str = ""
     is_duplicate: bool = False

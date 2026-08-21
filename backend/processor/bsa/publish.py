@@ -46,8 +46,10 @@ SHEET_ORDER = ["Summary", "EOD Balances", "EMI Xns", "ECS Xns",
                "Loan Disbursed Xns", "Bounced-Penal Xns", "Outward Bounced Xns",
                "Regular credits", "Regular debits", "Other Xns"]
 
-HEADERS = ["Sl. No.", "Date", "Cheque No.", "Description", "Amount",
-           "Category", "Category Detail", "Party", "Balance"]
+# Account is a column because one report may merge several banks/accounts;
+# without it the Balance column is unreadable across a multi-account job.
+HEADERS = ["Sl. No.", "Date", "Account", "Bank", "Cheque No.", "Description",
+           "Amount", "Category", "Category Detail", "Party", "Balance"]
 
 
 def _fmt_amount(a: float) -> str:
@@ -63,8 +65,8 @@ def _fmt_date(iso: str) -> str:
 
 
 def _row(i: int, t: Txn) -> list:
-    return [i, _fmt_date(t.date), t.cheque_no, t.description,
-            _fmt_amount(t.amount), t.category, category_detail(t),
+    return [i, _fmt_date(t.date), t.account_no, t.bank, t.cheque_no,
+            t.description, _fmt_amount(t.amount), t.category, category_detail(t),
             t.counterparty or "unknown party", f"{t.balance:,.2f}"]
 
 
@@ -85,20 +87,30 @@ def write_json(result: JobResult, path: str) -> None:
         }, f, indent=1)
 
 
-def _eod_balances(txns: list[Txn]) -> list[tuple[str, float]]:
+def _eod_balances(txns: list[Txn]) -> list[tuple[str, str, float]]:
+    """(account, date, balance) carried forward — one series per account.
+
+    A single series across several accounts would be meaningless, so each
+    account gets its own run over its own date range.
+    """
     if not txns:
         return []
-    by_day: dict[str, float] = {}
+    by_account: dict[str, dict[str, float]] = defaultdict(dict)
+    labels: dict[str, str] = {}
     for t in txns:                       # last balance of each day wins
-        by_day[t.date] = t.balance
-    d0 = date.fromisoformat(min(by_day))
-    d1 = date.fromisoformat(max(by_day))
-    out, cur = [], None
-    d = d0
-    while d <= d1:
-        cur = by_day.get(d.isoformat(), cur)
-        out.append((d.isoformat(), cur))
-        d += timedelta(days=1)
+        k = f"{t.bank}|{t.account_no}"
+        by_account[k][t.date] = t.balance
+        labels[k] = t.account_no or t.bank or "—"
+
+    out: list[tuple[str, str, float]] = []
+    for k, by_day in by_account.items():
+        d = date.fromisoformat(min(by_day))
+        d1 = date.fromisoformat(max(by_day))
+        cur = None
+        while d <= d1:
+            cur = by_day.get(d.isoformat(), cur)
+            out.append((labels[k], d.isoformat(), cur))
+            d += timedelta(days=1)
     return out
 
 
@@ -120,14 +132,27 @@ def write_workbook(result: JobResult, path: str) -> None:
             monthly[mk][0] += t.amount
         else:
             monthly[mk][1] += -t.amount
-    ws.append(["Account", result.meta.account_no, result.meta.account_name])
-    ws.append(["Bank", result.meta.bank, result.meta.layout])
-    ws.append(["Period", result.meta.period_from, result.meta.period_to])
-    ws.append(["Validation", result.validation.status,
-               f"{result.validation.checked_rows} rows checked"])
+    # One row per account in the job, so a multi-bank merge is legible.
+    accounts: dict[str, list] = {}
+    for t in txns:
+        k = f"{t.bank}|{t.account_no}"
+        a = accounts.setdefault(k, [t.bank, t.account_no, t.date, t.date, 0])
+        a[2] = min(a[2], t.date)
+        a[3] = max(a[3], t.date)
+        a[4] += 1
+    ws.append(["Bank", "Account", "From", "To", "Transactions"])
+    for c in ws[1]:
+        c.font = bold
+    for a in accounts.values():
+        ws.append(a)
     ws.append([])
+    ws.append(["Validation", result.validation.status,
+               f"{result.validation.checked_rows} rows checked",
+               f"{len(result.validation.issues)} issues"])
+    ws.append([])
+    hdr_row = ws.max_row + 1
     ws.append(["Category", "Count", "Net Amount"])
-    for c in ws[6]:
+    for c in ws[hdr_row]:
         c.font = bold
     for tag in sorted(agg, key=lambda k: -abs(agg[k][1])):
         ws.append([tag, agg[tag][0], round(agg[tag][1], 2)])
@@ -141,11 +166,11 @@ def write_workbook(result: JobResult, path: str) -> None:
 
     # --- EOD Balances ---
     ws = wb.create_sheet("EOD Balances")
-    ws.append(["Date", "EOD Balance"])
+    ws.append(["Account", "Date", "EOD Balance"])
     for c in ws[1]:
         c.font = bold
-    for d, b in _eod_balances(txns):
-        ws.append([d, b])
+    for acct, d, b in _eod_balances(txns):
+        ws.append([acct, d, b])
 
     # --- category sheets ---
     sheets = {name: wb.create_sheet(name) for name in SHEET_ORDER[2:]}

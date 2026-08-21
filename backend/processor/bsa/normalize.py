@@ -129,6 +129,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
             amount=round(amount, 2), balance=r.balance, mode=mode,
             counterparty=extract_counterparty(desc, mode),
             page=r.page, source_file=extract.meta.source_file,
+            account_no=extract.meta.account_no, bank=extract.meta.bank,
         ))
 
     # "New Criteria": statements ordered latest-to-oldest — detect & flip
@@ -148,17 +149,39 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     return txns
 
 
+def account_key(t: Txn) -> str:
+    """Identity of the account a row belongs to."""
+    return f"{(t.bank or '').strip()}|{(t.account_no or '').strip()}"
+
+
 def dedup_merge(txn_lists: list[list[Txn]]) -> list[Txn]:
-    """Merge transactions from multiple statements of the same account,
-    dropping rows whose uid already appeared (overlapping periods)."""
-    out: list[Txn] = []
+    """Merge statements into one ordered list, dropping overlap duplicates.
+
+    A bulk upload can span several years AND several banks, so rows are grouped
+    by account first and only ordered by date within an account. Interleaving
+    accounts by date would produce a running-balance column that jumps between
+    unrelated ledgers, which then fails validation for every row.
+
+    uid already embeds the account number, so an overlapping period between two
+    statements of the same account de-duplicates, while an identical amount on
+    the same day in a different account does not collide.
+    """
+    groups: dict[str, list[Txn]] = {}
     seen: set[str] = set()
+    order: list[str] = []
     for txns in txn_lists:
         for t in txns:
             if t.uid in seen:
                 t.is_duplicate = True
                 continue
             seen.add(t.uid)
-            out.append(t)
-    out.sort(key=lambda t: t.date)
+            k = account_key(t)
+            if k not in groups:
+                groups[k] = []
+                order.append(k)
+            groups[k].append(t)
+
+    out: list[Txn] = []
+    for k in order:                      # accounts in first-seen order
+        out.extend(sorted(groups[k], key=lambda t: t.date))
     return out

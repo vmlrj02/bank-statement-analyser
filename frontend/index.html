@@ -149,7 +149,7 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
   <main>
     <div class="drop" id="drop">
       <div class="t">Drop PDFs here, or click to choose</div>
-      <div class="s">Upload several at once — merged into a single report</div>
+      <div class="s">Any number of banks, accounts or years — merged into one report</div>
       <input type="file" id="file" accept="application/pdf" multiple hidden>
     </div>
 
@@ -303,6 +303,7 @@ function activeCard(j){
   const stats = ready ? `<div class="stats">
       <div class="stat"><b>${nfmt(s.rows)}</b><span>Transactions</span></div>
       ${s.files>1?`<div class="stat"><b>${esc(String(s.files))}</b><span>Statements</span></div>`:''}
+      ${(s.accounts||[]).length>1?`<div class="stat"><b>${(s.accounts||[]).length}</b><span>Accounts</span></div>`:''}
       <div class="stat"><b>${esc(s.validation||'—')}</b><span>Balance check</span></div>
       <div class="stat"><b>${nfmt(s.issues||0)}</b><span>Rows to review</span></div>
     </div>` : '';

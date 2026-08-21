@@ -137,7 +137,12 @@ def lambda_handler(event, _ctx):
             txns = dedup_merge(txn_lists) if len(txn_lists) > 1 else txn_lists[0]
             categorize(txns, related_parties=related)
             report = validate(txns)
-            extract.meta.account_no = _mask(extract.meta.account_no)
+            # Mask only after uid, dedup and validation have used the real
+            # numbers — published outputs must never carry a full account no.
+            for t in txns:
+                t.account_no = _mask(t.account_no)
+            for e in extracts:
+                e.meta.account_no = _mask(e.meta.account_no)
             extract.meta.source_file = item.get("filename", "statement.pdf")
             result = JobResult(meta=extract.meta, txns=txns, validation=report)
 
@@ -159,6 +164,9 @@ def lambda_handler(event, _ctx):
             cats = {}
             for t in txns:
                 cats[t.category] = cats.get(t.category, 0) + 1
+            # a bulk upload may span several banks/accounts and several years
+            accounts = sorted({t.account_no for t in txns if t.account_no})
+            banks = sorted({t.bank for t in txns if t.bank})
             status = "done" if report.status == "passed" else "needs_review"
             _update(job_id, **{
                 "status": status,
@@ -169,9 +177,11 @@ def lambda_handler(event, _ctx):
                     "rows": len(txns),
                     "validation": report.status,
                     "issues": len(report.issues),
-                    "account_no": extract.meta.account_no,
+                    "account_no": (accounts[0] if len(accounts) == 1
+                                   else f"{len(accounts)} accounts"),
                     "account_name": extract.meta.account_name,
-                    "bank": extract.meta.bank,
+                    "bank": ", ".join(banks) if banks else extract.meta.bank,
+                    "accounts": accounts,
                     # merged jobs span every statement's period, not just the first
                     "period_from": min((e.meta.period_from for e in extracts
                                         if e.meta.period_from), default=""),
