@@ -108,6 +108,10 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .empty{color:var(--mut);text-align:center;padding:32px 0;font-size:14px;
   border:1px dashed var(--line2);border-radius:var(--radius)}
 
+.uphead{border:2px solid var(--fg);border-radius:var(--radius);padding:16px 18px;margin-bottom:6px}
+.uphead .nm{font-weight:700;font-size:16px;margin-right:auto}
+.uphead .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+
 /* admin AI panel */
 .ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
 .ai h4{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--sunk);
@@ -206,8 +210,8 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   </main>
 
   <aside>
-    <h2>Accounts</h2>
-    <div class="hist" id="hist"><div class="side-empty">No reports yet</div></div>
+    <h2>Uploads</h2>
+    <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
   </aside>
 </div>
 
@@ -225,7 +229,7 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 const nfmt = n => Number(n||0).toLocaleString('en-IN');
 const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
 const TKEY = 'bsa.token';
-let IS_ADMIN = false, WHO = '', jobs = [], cards = [], activeKey = null;
+let IS_ADMIN = false, WHO = '', jobs = [], activeKey = null;
 let staged = [], seq = 0;
 
 /* ---------- auth: session token from our own API, no external service ---------- */
@@ -376,30 +380,49 @@ function validationChip(v){
   return '<span class="chip warn">Balance warnings</span>';
 }
 
-/* One card per ACCOUNT. A job holding ten files across three accounts becomes
-   three cards, each with its own merged CSV. */
-function buildCards(){
-  const out = [];
-  for(const j of jobs){
-    const s = j.summary || {};
-    const accts = s.accounts || [];
-    if(accts.length){
-      for(const a of accts) out.push({key:`${j.job_id}:${a.slug}`, job:j, acct:a});
-    } else {
-      out.push({key:`${j.job_id}:`, job:j, acct:null});   // pending or failed
-    }
-  }
-  return out;
+/* Navigation is upload-first: the sidebar lists uploads, and selecting one
+   shows every account inside it. Flattening all accounts from all uploads into
+   a single list made it impossible to tell which report came from which batch. */
+function jobLabel(j){
+  const d = new Date((j.created_at||0)*1000);
+  const when = d.toLocaleDateString(undefined,{day:'numeric',month:'short'})
+             + ' ' + d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+  return when;
 }
 
-function cardHtml(c){
-  const j = c.job, a = c.acct, s = j.summary || {};
+function accountCard(j, a){
+  const cats = Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,8)
+      .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
+  const period = (a.periods||[]).length
+    ? `<div class="meta">Period: <b>${esc(fmtPeriods(a.periods))}</b></div>` : '';
+  return `<div class="job">
+    <div class="top"><span class="nm">${esc(a.title || (a.bank+' - '+a.account_no))}</span>
+      ${validationChip(a.validation)}</div>
+    ${period}
+    <div class="stats">
+      <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
+      <div class="stat"><b>${nfmt(a.pages)}</b><span>Total pages</span></div>
+      <div class="stat"><b>${nfmt(a.statements)}</b><span>Statements</span></div>
+      <div class="stat"><b>${nfmt(a.issues||0)}</b><span>Rows to review</span></div>
+    </div>
+    <div class="meta">From: ${esc((a.files||[]).join(', '))}</div>
+    ${cats?`<div class="cats">${cats}</div>`:''}
+    <div class="acts">
+      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Preview</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','xlsx')">Excel</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>
+    </div></div>`;
+}
+
+function uploadView(j){
+  if(!j) return '<div class="empty">Nothing yet — upload statements to begin.</div>';
+  const s = j.summary || {};
+  const accts = s.accounts || [];
   const busy = ['processing','awaiting_upload','merging'].includes(j.status);
-  const title = a ? (a.title || `${a.bank} - ${a.account_no}`) : esc(j.filename);
-  const cats = a ? Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,8)
-      .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('') : '';
   const ai = s.ai;
   const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
+  // AI accounting belongs to the upload, not to each account inside it.
   const aiPanel = (IS_ADMIN && ai) ? `<div class="ai"><h4>AI usage for this upload · admin only</h4>
       <div class="grid">
         <div class="g"><b>${ai.used?'Yes':'No'}</b><span>AI used</span></div>
@@ -416,47 +439,45 @@ function cardHtml(c){
           <td class="num">${f.ai?nfmt(f.tokens_out):'—'}</td>
           <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('')+
         `</tbody></table>`:''}</div>` : '';
-  const stats = a ? `<div class="stats">
-      <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
-      <div class="stat"><b>${nfmt(a.pages)}</b><span>Total pages</span></div>
-      <div class="stat"><b>${nfmt(a.statements)}</b><span>Statements</span></div>
-      <div class="stat"><b>${nfmt(a.issues||0)}</b><span>Rows to review</span></div>
-    </div>` : '';
-  const period = a && (a.periods||[]).length
-    ? `<div class="meta">Period: <b>${esc(fmtPeriods(a.periods))}</b></div>` : '';
-  const src = a ? `<div class="meta">From: ${esc((a.files||[]).join(', '))}</div>` : '';
-  return `<div class="job ${c.key===activeKey?'sel':''}">
-    <div class="top"><span class="nm">${esc(title)}</span>
-      ${statusChip(j.status)}${a?validationChip(a.validation):''}</div>
-    ${period}${stats}${src}
-    ${cats?`<div class="cats">${cats}</div>`:''}
-    ${aiPanel}
-    ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
-    ${(a && !busy)?`<div class="acts">
-      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(title)}')">Preview</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','xlsx')">Excel</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button></div>`:''}
-  </div>`;
+
+  const names = s.filenames || [];
+  const head = `<div class="uphead">
+      <div class="top"><span class="nm">Upload · ${esc(jobLabel(j))}</span>${statusChip(j.status)}</div>
+      <div class="stats">
+        <div class="stat"><b>${nfmt(s.files||names.length||0)}</b><span>Statements</span></div>
+        <div class="stat"><b>${nfmt(accts.length)}</b><span>Accounts</span></div>
+        <div class="stat"><b>${nfmt(s.pages||0)}</b><span>Total pages</span></div>
+        <div class="stat"><b>${nfmt(s.rows||0)}</b><span>Transactions</span></div>
+      </div>
+      ${names.length?`<div class="meta">Files: ${esc(names.join(', '))}</div>`:''}
+      ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
+      ${aiPanel}
+    </div>`;
+
+  if(busy) return head + '<div class="empty">Processing — accounts appear when this upload finishes.</div>';
+  if(!accts.length) return head;
+  return head + `<h2 style="margin:22px 0 12px">Accounts in this upload (${accts.length})</h2>`
+       + accts.map(a=>accountCard(j,a)).join('');
 }
 
-function select(k){ activeKey = k; render(); }
+function select(id){ activeKey = id; render(); }
 
 function render(){
-  cards = buildCards();
-  if(!cards.some(c=>c.key===activeKey)) activeKey = cards.length ? cards[0].key : null;
-  const cur = cards.find(c=>c.key===activeKey);
-  $('active').innerHTML = cur ? cardHtml(cur)
-    : '<div class="empty">Nothing yet — upload statements to begin.</div>';
-  $('hist').innerHTML = cards.length ? cards.map(c=>{
-      const a = c.acct, s = c.job.summary||{};
-      return `<button class="h-item ${c.key===activeKey?'sel':''}" onclick="select('${c.key}')">
-        <div class="h-nm">${esc(a ? (a.title||a.account_no) : c.job.filename)}</div>
-        <div class="h-sub"><span>${a?nfmt(a.rows)+' txns':esc(c.job.status.replace(/_/g,' '))}</span>
-          <span style="margin-left:auto">${a?nfmt(a.pages)+' pp':''}</span></div></button>`;
-    }).join('') : '<div class="side-empty">No reports yet</div>';
+  if(!jobs.some(j=>j.job_id===activeKey)) activeKey = jobs.length ? jobs[0].job_id : null;
+  const cur = jobs.find(j=>j.job_id===activeKey);
+  $('active').innerHTML = uploadView(cur);
 
-  // Total statements uploaded, with the file names on hover.
+  $('hist').innerHTML = jobs.length ? jobs.map(j=>{
+      const s = j.summary || {};
+      const n = (s.accounts||[]).length;
+      const busy = ['processing','awaiting_upload','merging'].includes(j.status);
+      return `<button class="h-item ${j.job_id===activeKey?'sel':''}" onclick="select('${j.job_id}')">
+        <div class="h-nm">${esc(jobLabel(j))}</div>
+        <div class="h-sub"><span>${nfmt(s.files||0)} file${(s.files||0)===1?'':'s'}</span>
+          <span>${busy?'…':(n+' acct'+(n===1?'':'s'))}</span>
+          <span style="margin-left:auto">${nfmt(s.rows||0)} txns</span></div></button>`;
+    }).join('') : '<div class="side-empty">No uploads yet</div>';
+
   const names = jobs.flatMap(j => (j.summary&&j.summary.filenames) || []);
   $('counter').childNodes[0].nodeValue = `Total statements uploaded: ${names.length} `;
   $('pop').innerHTML = names.length
