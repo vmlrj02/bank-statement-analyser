@@ -9,11 +9,26 @@ call_structured() below.
 
 Config is env-driven so switching provider or model needs no code edit:
 
-    LLM_PROVIDER        anthropic | gemini | bedrock   (default anthropic)
+    LLM_FALLBACK        on | off              (default OFF — see below)
+    ALLOW_EXTERNAL_LLM  true | false          (default FALSE — see below)
+    LLM_PROVIDER        anthropic | gemini | bedrock   (default bedrock)
     LLM_MODEL           model id override; else DEFAULT_MODELS
     LLM_API_KEY_SECRET  Secrets Manager id holding the key (Lambda)
     LLM_API_KEY         plain key, for local runs
     BEDROCK_REGION      bedrock adapter only
+
+DATA RESIDENCY. Statement data must not leave the AWS account, and an LLM call
+is the only thing in this pipeline that could send it anywhere. Two separate
+switches guard that, both default-closed, because one flag is one accident:
+
+  * LLM_FALLBACK=off means an unrecognised bank fails with "no layout yet"
+    and no page of the statement is ever serialised into a request body.
+  * ALLOW_EXTERNAL_LLM=false means that even with the fallback switched on,
+    only an IN_ACCOUNT provider may be called. Selecting anthropic/gemini
+    raises ResidencyError before the client is constructed.
+
+Turning both on is a deliberate, auditable decision to send customer statement
+data to a third party. Do not do it on an account that holds real customers.
 
 The balance validator downstream is the correctness gate for every provider,
 so an adapter only has to be faithful, not clever.
@@ -77,8 +92,67 @@ class LLMError(RuntimeError):
     """Raised when a provider call fails in a way the pipeline should report."""
 
 
+class ResidencyError(LLMError):
+    """Raised when a call would send statement data outside the AWS account.
+
+    A subclass of LLMError so existing handling still reports it, but a
+    distinct type so the caller can tell a policy refusal (nothing was sent)
+    from a provider failure (something was).
+    """
+
+
+class NoLayoutError(RuntimeError):
+    """No layout matched and the LLM fallback is switched off.
+
+    Not an LLMError: no provider was involved and nothing was transmitted.
+    """
+
+
+# Providers whose inference runs inside our own AWS account. Anything not
+# listed here sends statement text or page images to a third party, and is
+# gated behind ALLOW_EXTERNAL_LLM.
+IN_ACCOUNT_PROVIDERS = frozenset({"bedrock"})
+
+
+def _flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def provider() -> str:
-    return os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
+    # Defaults to bedrock: the residency-safe choice is the one you get by
+    # forgetting to set anything.
+    return os.environ.get("LLM_PROVIDER", "bedrock").strip().lower()
+
+
+def fallback_enabled() -> bool:
+    """Is the LLM path allowed to run at all for an unrecognised bank?"""
+    return _flag("LLM_FALLBACK", False)
+
+
+def external_llm_allowed() -> bool:
+    """May we call a provider outside this AWS account?"""
+    return _flag("ALLOW_EXTERNAL_LLM", False)
+
+
+def residency_block(name: str | None = None) -> str | None:
+    """Why this provider may not be called, or None if it may.
+
+    Kept separate from the call itself so the pipeline can refuse *before*
+    reading and rendering the PDF, and so a test can assert the policy without
+    reaching a network client.
+    """
+    name = (name or provider()).strip().lower()
+    if name in IN_ACCOUNT_PROVIDERS:
+        return None
+    if external_llm_allowed():
+        return None
+    return (f"LLM provider {name!r} runs outside this AWS account and "
+            f"ALLOW_EXTERNAL_LLM is not set — statement data must not leave "
+            f"the account. Write a layout for this bank, or select an "
+            f"in-account provider ({', '.join(sorted(IN_ACCOUNT_PROVIDERS))}).")
 
 
 def model_id() -> str:
@@ -259,6 +333,10 @@ def call_structured(system: str, blocks: list[dict], schema: dict):
     if name not in _ADAPTERS:
         raise LLMError(f"Unknown LLM_PROVIDER {name!r}; "
                        f"expected one of {sorted(_ADAPTERS)}")
+    # Last line of defence. The pipeline refuses earlier, before the PDF is
+    # even opened; this catches any other caller that reaches an adapter.
+    if block := residency_block(name):
+        raise ResidencyError(block)
     model = model_id()
     try:
         return _ADAPTERS[name](system, blocks, schema, model)

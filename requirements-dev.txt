@@ -1,0 +1,7 @@
+# Everything needed to run the test suite locally and in CI.
+#   python -m venv .venv-test
+#   .venv-test/bin/pip install -r requirements-dev.txt
+#   .venv-test/bin/pytest
+pytest>=8.0
+boto3>=1.34
+-r backend/processor/requirements.txt

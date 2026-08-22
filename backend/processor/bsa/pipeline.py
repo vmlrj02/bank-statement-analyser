@@ -5,6 +5,8 @@ import importlib
 
 from .classify import classify
 from .categorize import categorize
+from .extract.llm_providers import (
+    NoLayoutError, ResidencyError, fallback_enabled, residency_block)
 from .ingest import ingest
 from .models import JobResult, StatementExtract
 from .normalize import normalize, dedup_merge
@@ -24,6 +26,7 @@ def extract_one(path: str, password: str | None = None,
 
     def _stamp(extract):
         extract.meta.n_pages = ing.n_pages      # page count belongs to the file
+        extract.meta.unreadable_pages = list(ing.empty_pages or [])
         return extract
 
     if cls.layout_id and ing.is_digital_text:
@@ -47,10 +50,39 @@ def extract_one(path: str, password: str | None = None,
             mod = importlib.import_module(TEMPLATE_PARSERS[cls.layout_id])
             return _stamp(mod.extract(ing.path, source_file=source_file,
                                       layout=layout))
-    # unknown layout or scanned -> LLM path
+    # Unknown layout, or a scanned PDF with no text to parse. The only thing
+    # that can read it is an LLM — and that is the one step in this pipeline
+    # capable of sending statement data somewhere else, so it is refused here,
+    # before the PDF is chunked into a request body, rather than at the client.
+    if not fallback_enabled():
+        raise NoLayoutError(_why_unreadable(cls, ing) +
+                            " and the AI fallback is switched off")
+    if block := residency_block():
+        raise ResidencyError(block)
     from .extract.llm_fallback import extract_with_llm
     return _stamp(extract_with_llm(ing.path, source_file=path.split("/")[-1],
                                    time_left_ms=time_left_ms))
+
+
+def _why_unreadable(cls, ing) -> str:
+    """Name the actual reason no template could read this file.
+
+    Three different situations end up at the same fallback, and telling a
+    person "no layout for this bank" when a layout matched perfectly well — the
+    PDF was a scan — sends them off to write a descriptor that already exists.
+    """
+    if cls.layout_id and not ing.is_digital_text:
+        return (f"this file has no text layer (it is a scan), so the "
+                f"{cls.layout_id} template cannot read it")
+    if cls.layout_id:
+        # A descriptor matched but nothing claimed it: `parser: module` with no
+        # module registered in TEMPLATE_PARSERS. Only reachable via an S3
+        # descriptor, since a bundled one would have been caught in review.
+        return (f"layout {cls.layout_id} declares a bank-specific parser that "
+                f"this build does not have")
+    bank = f" ({cls.bank})" if cls.bank else ""
+    return (f"no layout for this statement{bank} — add a layout descriptor "
+            f"for this bank")
 
 
 def run(paths: list[str], out_dir: str, password: str | None = None,

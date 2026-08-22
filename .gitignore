@@ -2,3 +2,6 @@
 cdk.out/
 __pycache__/
 config.js
+.venv-test/
+.pytest_cache/
+.DS_Store

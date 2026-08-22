@@ -153,6 +153,20 @@ dialog{border:2px solid var(--fg);border-radius:var(--radius);padding:0;backgrou
 dialog::backdrop{background:rgba(0,0,0,.55)}
 .dh{display:flex;align-items:center;gap:12px;padding:13px 17px;border-bottom:1px solid var(--fg)}
 .db{max-height:72vh;overflow:auto}
+/* Review. An issue is a sentence about one row, so it reads as a list of
+   sentences, not a grid — and the monospace run keeps the two balances that
+   disagree in the same column, which is the whole point of looking. */
+.rv-note{padding:13px 17px;border-bottom:1px solid var(--line);font-size:13px;color:var(--mut)}
+.rv-stmt{padding:13px 17px;border-bottom:1px solid var(--line)}
+.rv-stmt h4{margin:0 0 3px;font-size:13px}
+.rv-stmt .sub{font-size:12px;color:var(--mut);margin-bottom:9px}
+.rv-issue{font-size:12.5px;padding:7px 0;border-top:1px dotted var(--line)}
+.rv-issue .k{font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;
+  color:var(--mut);margin-right:7px}
+.rv-issue code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+  white-space:pre-wrap;word-break:break-word}
+.rv-foot{padding:13px 17px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.rv-foot input{flex:1;min-width:200px}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
 th{position:sticky;top:0;background:var(--bg);text-align:left;font-weight:700;padding:9px 11px;
   border-bottom:2px solid var(--fg);white-space:nowrap;font-size:10.5px;
@@ -184,6 +198,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     </div>
     <div class="who">
       <span id="whoami"></span><span class="chip done" id="role" hidden></span>
+      <button class="ghost" id="chpw">Change password</button>
       <button class="ghost" id="out">Sign out</button>
     </div>
   </header>
@@ -214,6 +229,25 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
   </aside>
 </div>
+
+<dialog id="rv">
+  <div class="dh"><b id="rvTitle">Review</b>
+    <span style="margin-left:auto"><button class="ghost" onclick="rv.close()">Close</button></span></div>
+  <div class="db" id="rvBody"></div>
+</dialog>
+
+<dialog id="pwd">
+  <div class="dh"><b>Change password</b>
+    <span style="margin-left:auto"><button class="ghost" onclick="pwd.close()">Cancel</button></span></div>
+  <div class="db" style="padding:17px">
+    <label for="pwOld">Current password</label>
+    <input id="pwOld" type="password" autocomplete="current-password">
+    <label for="pwNew">New password</label>
+    <input id="pwNew" type="password" autocomplete="new-password">
+    <div class="msg" id="pwMsg" hidden></div>
+    <button class="go" id="pwGo" style="width:100%;margin-top:16px">Change password</button>
+  </div>
+</dialog>
 
 <dialog id="pv">
   <div class="dh"><b id="pvTitle">Preview</b>
@@ -260,7 +294,28 @@ $('signin').onclick = async () => {
 };
 $('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
 $('u').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
-$('out').onclick = () => { localStorage.removeItem(TKEY); location.reload(); };
+$('out').onclick = async () => {
+  // Tell the API first: a token left in the sessions table keeps working for
+  // up to twelve hours, so clearing only localStorage is not signing out.
+  try{ await api('/auth/logout', {method:'POST'}); }catch(e){}
+  localStorage.removeItem(TKEY); location.reload();
+};
+
+/* ---------- change password ---------- */
+$('chpw').onclick = () => { $('pwMsg').hidden = true; $('pwOld').value=''; $('pwNew').value=''; $('pwd').showModal(); };
+$('pwGo').onclick = async () => {
+  const b = $('pwGo'); b.disabled = true; $('pwMsg').hidden = true;
+  try{
+    await api('/auth/password', {method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({current_password:$('pwOld').value,
+                            new_password:$('pwNew').value})});
+    $('pwMsg').hidden = false;
+    $('pwMsg').textContent = 'Password changed. Other devices stay signed in until their session expires.';
+    $('pwOld').value=''; $('pwNew').value='';
+  }catch(e){ $('pwMsg').hidden = false; $('pwMsg').textContent = e.message; }
+  finally{ b.disabled = false; }
+};
 
 async function api(path, opts){
   const t = token();
@@ -368,6 +423,7 @@ const fmtPeriods = ps => (ps||[]).map(p=>`${shortDate(p[0])} to ${shortDate(p[1]
 
 function statusChip(st){
   if(st==='done')      return '<span class="chip done">Done</span>';
+  if(st==='reviewed')  return '<span class="chip done">Reviewed</span>';
   if(st==='needs_review') return '<span class="chip warn">Needs review</span>';
   if(st==='failed' || st==='password_required')
     return `<span class="chip fail">${st==='failed'?'Failed':'Password required'}</span>`;
@@ -406,8 +462,14 @@ function accountCard(j, a){
       <div class="stat"><b>${nfmt(a.issues||0)}</b><span>Rows to review</span></div>
     </div>
     <div class="meta">From: ${esc((a.files||[]).join(', '))}</div>
+    ${a.unreadable_pages ? `<div class="err"><b>${nfmt(a.unreadable_pages)} page(s) had no readable text</b>
+      — scanned or image-only pages. Any transactions printed on them are missing from
+      this report, which is the usual cause of a balance break.</div>` : ''}
     ${cats?`<div class="cats">${cats}</div>`:''}
     <div class="acts">
+      ${a.validation && a.validation!=='passed'
+        ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
+        : ''}
       <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Preview</button>
       <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
       <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','xlsx')">Excel</button>
@@ -454,6 +516,17 @@ function uploadView(j){
         (s.failed_files||[]).map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}</div>`).join('')+
         `</div>`:''}
       ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
+      ${j.status==='needs_review'
+        ? `<div class="rv-foot" style="padding-left:0;padding-right:0">
+             <input type="text" id="rvNote" placeholder="Note (optional) — what you checked">
+             <button class="go" onclick="markReviewed('${j.job_id}')">Mark reviewed</button>
+           </div>`
+        : ''}
+      ${j.review
+        ? `<div class="meta">Reviewed by <b>${esc(j.review.by||'')}</b> on
+             ${esc(new Date((j.review.at||0)*1000).toLocaleString())}${
+             j.review.note?` — ${esc(j.review.note)}`:''}</div>`
+        : ''}
       ${aiPanel}
     </div>`;
 
@@ -501,6 +574,53 @@ async function dl(id, acct, fmt){
   const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
   location.href = url;
 }
+/* Review. The reconciliation detail the pipeline produced, unedited: which
+   row broke the chain, what the statement said, and what the arithmetic
+   required. Marking an upload reviewed records that a person looked — it
+   never rewrites the validation result, so a failed chain still reads failed. */
+async function review(id, acct, name){
+  $('rvTitle').textContent = `${name} — reconciliation`;
+  $('rvBody').innerHTML = '<div class="rv-note">Loading…</div>';
+  $('rv').showModal();
+  try{
+    const {url} = await api(`/jobs/${id}/download?format=issues&account=${encodeURIComponent(acct)}`);
+    const d = await (await fetch(url)).json();
+    const stmts = d.statements || [];
+    if(!stmts.length){
+      $('rvBody').innerHTML = '<div class="rv-note">No row-level issues recorded for this account.</div>';
+      return;
+    }
+    $('rvBody').innerHTML =
+      `<div class="rv-note">Validation ran per source statement. A run of dropped rows
+         shows as ONE mismatch, where the chain picks up again — so the count below is
+         where the balance stopped agreeing, not how many rows are wrong.</div>` +
+      stmts.map(st=>`<div class="rv-stmt">
+        <h4>${esc(st.source_file||'statement')}</h4>
+        <div class="sub">${esc(st.status)} · ${nfmt(st.checked_rows||0)} rows checked ·
+          ${nfmt((st.issues||[]).length)} issue${(st.issues||[]).length===1?'':'s'}</div>
+        ${(st.unreadable_pages||[]).length ? `<div class="rv-issue">
+          <span class="k">no text</span><code>page${st.unreadable_pages.length===1?'':'s'} ${
+          esc(st.unreadable_pages.join(', '))} could not be read — scanned or image-only.
+          Transactions printed there are absent from this report.</code></div>` : ''}
+        ${(st.issues||[]).slice(0,200).map(i=>`<div class="rv-issue">
+          <span class="k">${esc(i.kind||'')}</span><code>${esc(i.detail||'')}</code></div>`).join('')}
+        ${(st.issues||[]).length>200?`<div class="rv-issue"><span class="k">…</span>
+          <code>${nfmt(st.issues.length-200)} further issues — download the JSON report for all of them</code></div>`:''}
+      </div>`).join('');
+  }catch(e){
+    $('rvBody').innerHTML = `<div class="rv-note">Could not load the detail: ${esc(e.message)}</div>`;
+  }
+}
+
+async function markReviewed(id){
+  const note = ($('rvNote')||{}).value || '';
+  try{
+    await api(`/jobs/${id}/review`, {method:'POST',
+      headers:{'content-type':'application/json'}, body: JSON.stringify({note})});
+    refresh();
+  }catch(e){ alert('Could not mark reviewed: '+e.message); }
+}
+
 async function preview(id, acct, name){
   const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
   const data = await (await fetch(url)).json();

@@ -1,4 +1,8 @@
-# Deploys BsaStack to AWS on every push to main.
+# Tests on every push and pull request; deploys to AWS only when they pass on
+# main. Deploying straight from a push with nothing run against it is how a
+# broken parser reaches real statements, so the deploy job depends on the test
+# job and CloudFormation is never reached if a test fails.
+#
 # Setup (one time): add repository secrets AWS_ACCESS_KEY_ID and
 # AWS_SECRET_ACCESS_KEY (Settings -> Secrets and variables -> Actions).
 # Better long-term: switch to OIDC role assumption instead of access keys.
@@ -7,10 +11,38 @@ name: deploy
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch: {}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: pip install --retries 10 --timeout 60 -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest
+
+      # The layout descriptors are read at runtime from S3 as well as from the
+      # bundle, so a malformed one is skipped with a log line nobody sees and
+      # that bank silently stops working. Fail the build instead.
+      - name: Validate every bundled layout descriptor
+        run: |
+          for f in backend/processor/bsa/layouts/*.yaml; do
+            python scripts/manage_layouts.py validate "$f"
+          done
+
   deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

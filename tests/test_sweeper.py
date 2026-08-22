@@ -1,0 +1,184 @@
+"""The sweeper exists because a hard-killed Lambda cannot write its own status.
+Its whole job is to make "processing forever" impossible, and to prefer
+publishing what worked over failing a whole upload."""
+import json
+
+import pytest
+
+
+def job(status="processing", idle=0, now=1_700_000_000, **extra):
+    return {"job_id": "j", "status": status, "created_at": now - idle,
+            "updated_at": now - idle, **extra}
+
+
+# ------------------------------------------------------------- staleness --
+
+def test_a_job_making_progress_is_left_alone(sweeper):
+    now = 1_700_000_000
+    assert sweeper._stale_reason(job(idle=60, now=now), now) is None
+
+
+def test_a_long_but_live_job_is_left_alone(sweeper):
+    """A twenty-file upload legitimately runs a long time. Staleness is idle
+    time since the last progress stamp, never age since creation."""
+    now = 1_700_000_000
+    it = job(idle=0, now=now)
+    it["created_at"] = now - 3 * 60 * 60
+    assert sweeper._stale_reason(it, now) is None
+
+
+def test_a_stalled_job_is_reported_with_something_a_person_can_act_on(sweeper):
+    now = 1_700_000_000
+    reason = sweeper._stale_reason(job(idle=sweeper.PROCESS_GRACE_S + 60, now=now), now)
+    assert reason and "smaller parts" in reason
+
+
+def test_an_abandoned_upload_gets_a_longer_grace_and_its_own_message(sweeper):
+    now = 1_700_000_000
+    early = job(status="awaiting_upload", idle=sweeper.PROCESS_GRACE_S + 60, now=now)
+    assert sweeper._stale_reason(early, now) is None       # not yet
+    late = job(status="awaiting_upload", idle=sweeper.UPLOAD_GRACE_S + 60, now=now)
+    assert "upload never finished" in sweeper._stale_reason(late, now)
+
+
+def test_a_stale_merge_claim_is_swept_too(sweeper):
+    now = 1_700_000_000
+    assert sweeper._stale_reason(
+        job(status="merging", idle=sweeper.PROCESS_GRACE_S + 60, now=now), now)
+
+
+@pytest.mark.parametrize("status", ["done", "failed", "needs_review", "reviewed"])
+def test_finished_jobs_are_never_touched(sweeper, status):
+    now = 1_700_000_000
+    assert sweeper._stale_reason(job(status=status, idle=10**6, now=now), now) is None
+
+
+def test_a_job_with_no_timestamps_at_all_is_still_swept(sweeper):
+    """An item written before updated_at existed must not be immortal."""
+    now = 1_700_000_000
+    assert sweeper._stale_reason({"job_id": "j", "status": "processing"}, now)
+
+
+# ---------------------------------------------------------------- sweeping --
+
+def test_a_stuck_job_with_nothing_salvageable_is_failed(sweeper, jobs_table):
+    import time
+    old = int(time.time()) - sweeper.PROCESS_GRACE_S - 120
+    jobs_table.put_item(Item={"job_id": "j", "status": "processing",
+                              "created_at": old, "updated_at": old,
+                              "files": [{"idx": 0, "key": "uploads/j/0.pdf",
+                                         "filename": "a.pdf"}]})
+    out = sweeper.lambda_handler({"source": "aws.events"}, None)
+    assert out["failed"] == 1
+    assert jobs_table.items["j"]["status"] == "failed"
+    assert "no progress" in jobs_table.items["j"]["error"]
+
+
+def test_a_stuck_job_with_finished_work_is_re_driven_instead(sweeper, jobs_table, s3):
+    """The other statements are extracted and already paid for. Failing the
+    whole upload would throw them away."""
+    import time
+    old = int(time.time()) - sweeper.PROCESS_GRACE_S - 120
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "processing", "created_at": old, "updated_at": old,
+        "expected": 2, "extracted": {"0"},
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"},
+                  {"idx": 1, "key": "uploads/j/1.pdf", "filename": "b.pdf"}]})
+    s3.objects[("bucket", "work/j/0.json")] = b"{}"
+    out = sweeper.lambda_handler({"source": "aws.events"}, None)
+    assert out["redriven"] == 1 and out["failed"] == 0
+    fn, payload = sweeper._fake_lambda.invocations[0]
+    assert fn == "proc-fn"
+    assert json.loads(payload)["Records"][0]["s3"]["object"]["key"] == \
+        "uploads/j/0.pdf"
+
+
+def test_a_stale_merge_claim_is_cleared_before_re_driving(sweeper, jobs_table, s3):
+    """The processor refuses to take a merge that another invocation holds, so
+    the claim has to be released or the re-drive is a no-op."""
+    import time
+    old = int(time.time()) - sweeper.PROCESS_GRACE_S - 120
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "merging", "created_at": old, "updated_at": old,
+        "merging_at": old, "expected": 1, "extracted": {"0"},
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"}]})
+    s3.objects[("bucket", "work/j/0.json")] = b"{}"
+    sweeper.lambda_handler({"source": "aws.events"}, None)
+    assert jobs_table.items["j"]["status"] == "processing"
+    assert "merging_at" not in jobs_table.items["j"]
+    assert sweeper._fake_lambda.invocations
+
+
+# ------------------------------------------------- on-failure destination --
+
+def _failure_event(key, message="2026-08-22T00:00:00Z Task timed out after 900.00 seconds"):
+    return {"version": "1.0", "requestPayload": {"Records": [
+                {"s3": {"object": {"key": key}}}]},
+            "responsePayload": {"errorType": "Sandbox.Timedout",
+                                "errorMessage": message}}
+
+
+def test_a_killed_invocation_settles_its_own_file_at_once(sweeper, jobs_table, s3):
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "processing", "expected": 2, "extracted": {"0"},
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"},
+                  {"idx": 1, "key": "uploads/j/1.pdf", "filename": "b.pdf"}]})
+    s3.objects[("bucket", "work/j/0.json")] = b"{}"
+    out = sweeper.lambda_handler(_failure_event("uploads/j/1.pdf"), None)
+    assert out["mode"] == "on_failure"
+    failed = jobs_table.items["j"]["failed_files"]["1"]
+    assert failed["filename"] == "b.pdf"
+    assert "smaller parts" in failed["error"]
+    # and the file counts as settled, so the merge is no longer waiting on it
+    assert "1" in jobs_table.items["j"]["extracted"]
+    assert sweeper._fake_lambda.invocations                # merge re-driven
+
+
+def test_the_last_file_failing_with_nothing_salvageable_fails_the_job(
+        sweeper, jobs_table):
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "processing", "expected": 1,
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"}]})
+    sweeper.lambda_handler(_failure_event("uploads/j/0.pdf", "boom"), None)
+    assert jobs_table.items["j"]["status"] == "failed"
+    assert "a.pdf" in jobs_table.items["j"]["error"]
+
+
+def test_a_file_already_settled_is_not_settled_twice(sweeper, jobs_table):
+    """The processor may have caught and recorded the error itself before the
+    destination fired; overwriting it would replace a precise reason with a
+    generic one."""
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "processing", "expected": 1, "extracted": {"0"},
+        "failed_files": {"0": {"filename": "a.pdf", "error": "wrong password"}},
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"}]})
+    sweeper.lambda_handler(_failure_event("uploads/j/0.pdf"), None)
+    assert jobs_table.items["j"]["failed_files"]["0"]["error"] == "wrong password"
+
+
+def test_an_unrelated_key_is_ignored(sweeper, jobs_table):
+    sweeper.lambda_handler(_failure_event("outputs/j/report.csv"), None)
+    assert jobs_table.items == {}
+
+
+def test_the_scan_projects_every_attribute_the_sweep_reads(sweeper, jobs_table, s3):
+    """The scan projects a subset to keep it cheap. DynamoDB returns ONLY what
+    is projected, so a field left out of the list simply reads as absent — in
+    production, silently. This exercises the sweep against a table whose items
+    are trimmed to exactly the projection."""
+    import time
+    old = int(time.time()) - sweeper.PROCESS_GRACE_S - 120
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "merging", "created_at": old, "updated_at": old,
+        "merging_at": old, "expected": 2, "extracted": {"0"},
+        "failed_files": {"1": {"filename": "b.pdf", "error": "no layout"}},
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"},
+                  {"idx": 1, "key": "uploads/j/1.pdf", "filename": "b.pdf"}],
+        # bulky attributes deliberately NOT projected
+        "summary": {"accounts": [{"slug": "a"} for _ in range(50)]},
+        "owner": "u@x", "related_parties": ["x"],
+    })
+    s3.objects[("bucket", "work/j/0.json")] = b"{}"
+    out = sweeper.lambda_handler({"source": "aws.events"}, None)
+    assert out["redriven"] == 1
+    assert sweeper._fake_lambda.invocations

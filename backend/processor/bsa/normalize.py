@@ -12,7 +12,12 @@ DATE_FORMATS = ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y",
                 # slash/dot forms with a month name — "02/Jan/2026" appears in
                 # real statements and cost a 6-file job before it was covered
                 "%d/%b/%Y", "%d/%b/%y", "%d.%b.%Y", "%d.%b.%y",
-                "%d %b, %Y", "%d-%B-%Y", "%d/%B/%Y", "%Y/%m/%d")
+                "%d %b, %Y", "%d-%B-%Y", "%d/%B/%Y", "%Y/%m/%d",
+                # Full month name in the American order. The ICICI
+                # OpTransactionHistory layout declares "%B %d, %Y" for its
+                # header period, so that bank prints month names in full and a
+                # row date in the same form would otherwise be unparseable.
+                "%B %d, %Y")
 
 # Word-boundary patterns: descriptions are usually prefixed by a bold title
 # ("SATHYA PRASAD B RTGS-…"), so modes must match mid-string, never only at ^.

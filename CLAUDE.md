@@ -9,9 +9,12 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
 
 ## Layout
 - backend/processor/bsa/ — the pipeline package (ingest → classify → extract →
-  normalize → categorize → validate → publish). Layouts live in bsa/layouts/*.yaml
-  and are matched by page-1 fingerprints; LLM fallback in extract/llm_fallback.py
-  handles anything unrecognised.
+  normalize → categorize → validate → publish). Layouts come from TWO places:
+  bsa/layouts/*.yaml in the bundle, overlaid by s3://$DATA_BUCKET/layouts/*.yaml
+  read at runtime (see "Layout registry"); both are matched by page-1
+  fingerprints. The LLM fallback in extract/llm_fallback.py is OFF by default
+  (see "Data residency"), so an unrecognised bank fails with a clear message
+  rather than being sent anywhere.
 - backend/processor/bsa/extract/ — four parser modes, chosen by `parser:` in
   the layout descriptor (see "Working today" for which bank uses which):
   - generic_layout.py  — one line per row, amounts on the dated anchor line.
@@ -20,11 +23,24 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
   - grouped_layout.py  — the amount line is the row; sparse dates and balances.
   - icici_optransactionhistory.py — bank-specific module, for what YAML cannot
     express (ICICI marks a row's title line by font face).
+- backend/sweeper/handler.py — makes "stuck on processing" impossible. Runs
+  both as the processor's on-failure destination (fast, exact) and on a 15-min
+  EventBridge schedule (the backstop). Settles the dead file, then RE-DRIVES
+  the merge by re-invoking the processor with a synthetic event for a file
+  that succeeded, so there is only ever one merge implementation.
 - backend/api/handler.py — jobs API (presigned S3 upload/download, DynamoDB).
   There is NO Cognito: every /jobs* route requires a bearer session token that
   the Lambda itself validates against AuthTable. Roles come from the session
   record: `admin` sees all jobs plus AI usage/cost; `customer` sees only their
-  own uploads and never the AI block. POST /auth/login is the only public route.
+  own uploads and never the AI block. POST /auth/login is the only public route,
+  and it is throttled: MAX_FAILED_LOGINS failures on an email lock it for
+  LOCKOUT_S, counted for unknown emails too so a 429 cannot confirm that an
+  address is registered. Also POST /auth/logout (deletes the session row, so a
+  sign-out is immediate rather than TTL-eventual), POST /auth/password
+  (self-service change, requires the current password), and
+  POST /jobs/{id}/review.
+  A customer's job list is a QUERY on the owner-created_at-index GSI, never a
+  filtered scan — see gotcha 14.
 - frontend/index.html — no-build SPA served via CloudFront.
 - infra/ — CDK (Python). Deploy: `cd infra && source .venv/bin/activate && cdk deploy`.
 
@@ -39,13 +55,15 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
 5. Categorization = SME lending taxonomy (EMI/ECS/cash/bounce/disbursal/
    related-party/regular transfers), tiers: rules → NACH recurrence → merchant
    dictionary → LLM. Don't replace with consumer spend categories.
-6. LLM calls should go through Bedrock only — statement data must not leave the
-   AWS account. CURRENTLY VIOLATED BY DESIGN: Bedrock is blocked on this account
-   (every Anthropic model fails its AWS Marketplace subscription with
-   INVALID_PAYMENT_INSTRUMENT), so extraction runs against the Anthropic API
-   directly with a key in Secrets Manager (`bsa/llm-api-key`), selected by
-   LLM_PROVIDER / LLM_MODEL. This must be resolved before real customers upload
-   their statements — same gate as Cognito auth.
+6. Statement data must not leave the AWS account. This was violated by design
+   for a while — the fallback called the Anthropic API directly — and is now
+   CLOSED IN CODE by two default-off switches, LLM_FALLBACK and
+   ALLOW_EXTERNAL_LLM. See "Data residency" below for what each one gates and
+   which tests pin it. Bedrock is still blocked on this account
+   (INVALID_PAYMENT_INSTRUMENT on its AWS Marketplace subscription), so there
+   is no working in-account inference either: an unknown bank simply cannot be
+   read, and the answer is to write a layout. Do not "temporarily" flip
+   ALLOW_EXTERNAL_LLM on an account that holds real customers.
 7. Issue count is NOT a measure of how many rows are wrong. A contiguous run of
    dropped rows produces only ONE balance_mismatch, at the point the chain
    resumes. A real case: the LLM reported "17 issues" on a 1595-row statement
@@ -87,6 +105,87 @@ their own uploads and never the AI block.
     statement's status. Pinned by tests/test_period_gap.py.
 13. The UI is strictly black/white/grey. Status is carried by words plus fill
     and border weight, never colour; debits use accounting parentheses.
+14. Listing a customer's jobs must be a QUERY on the owner index, never a
+    scan filtered by owner. A scan returns items in key order, so once the
+    table outgrew the scanned page a customer could see none of their own jobs
+    while other tenants' rows filled it. Pinned by tests/test_api.py.
+15. Anything that reads per-page text for a WHOLE document must go through
+    pypdfium2 (bsa.ingest.unreadable_pages), not pdfplumber. pdfminer does full
+    layout analysis, which costs about as long again as the entire extraction —
+    measured at 4.1s vs 0.13s on a 58-page statement, for the same answer.
+16. A merge claim expires (MERGE_CLAIM_TTL_S). An invocation killed mid-merge
+    used to hold "merging" forever, and nothing — retry or sweeper — could
+    take the job back.
+17. Every job status write goes through processor._update, which stamps
+    updated_at. The sweeper measures staleness from that, never from
+    created_at: a twenty-file job legitimately runs for a long time after it
+    was created.
+
+## Data residency — the gate that was blocking real customers
+
+An LLM call is the only thing in this pipeline that can send statement data
+anywhere, so it is guarded by two switches, both default-closed, because one
+flag is one accident:
+
+    LLM_FALLBACK        off (default) | on
+    ALLOW_EXTERNAL_LLM  false (default) | true
+    LLM_PROVIDER        bedrock (default) | anthropic | gemini
+
+With the defaults, a bank with no layout fails as "this bank has no layout yet"
+and no page of the statement is ever put in a request body — the refusal
+happens in pipeline.extract_one, before the PDF is chunked, not at the client.
+`ALLOW_EXTERNAL_LLM` is a second, independent gate: even with the fallback on,
+only a provider in IN_ACCOUNT_PROVIDERS (bedrock) may be called, and anything
+else raises ResidencyError. Turning both on is a deliberate, auditable decision
+to send customer statements to a third party. Pinned by tests/test_residency.py
+and tests/test_pipeline_gate.py — if those stop passing, the gate is open.
+
+Bedrock is still blocked on this account (INVALID_PAYMENT_INSTRUMENT on its AWS
+Marketplace subscription), so in practice an unknown bank cannot be extracted at
+all. That is the intended behaviour, and the answer is to write a layout.
+
+## Layout registry — bundled, overlaid from S3
+
+registry.py loads bsa/layouts/*.yaml from the bundle, then overlays
+s3://$DATA_BUCKET/layouts/*.yaml. An S3 descriptor whose `id` matches a bundled
+one REPLACES it, so a new bank — or a fix to an existing descriptor — is a file
+upload, not a release:
+
+    python scripts/manage_layouts.py validate path/to/hdfc_savings.yaml
+    python scripts/manage_layouts.py put      path/to/hdfc_savings.yaml
+    python scripts/manage_layouts.py list     # shows which S3 entries override
+    python scripts/manage_layouts.py rm       hdfc_savings
+
+Live within LAYOUT_CACHE_TTL_S (300s) on a warm container, immediately on a
+cold start. Three properties matter and are pinned by tests/test_registry.py:
+
+- `parser` is an ALLOW-LIST, not a hint. A descriptor arrives from S3 at
+  runtime and must never be able to name an arbitrary import.
+- Match order is deterministic: sorted by descending `priority` then id.
+  classify() takes the first fingerprint match, and glob order used to decide
+  that, which is to say nothing did.
+- Nothing here can take the pipeline down. A malformed descriptor is skipped;
+  unreachable S3 degrades to the bundled set.
+
+## Tests
+
+    python -m venv .venv-test
+    .venv-test/bin/pip install -r requirements-dev.txt
+    .venv-test/bin/pytest                     # ~150 tests, no AWS, no network
+
+tests/conftest.py loads each of the three handler.py files by path under its own
+module name, with the environment set and boto3 replaced by in-memory fakes. The
+fakes model the parts that carry behaviour — condition expressions, string-set
+ADD, ProjectionExpression (real DynamoDB returns only what is projected, so a
+field left out of the list reads as absent, silently, in production).
+
+Real statements are the only honest check on a layout, and they cannot be
+committed. Point the runner at a folder of them:
+
+    BSA_SAMPLE_DIR=/path/to/statements .venv-test/bin/pytest tests/test_layout_samples.py -v
+
+CI runs pytest and validates every bundled descriptor on every push and PR; the
+deploy job depends on it, so CloudFormation is never reached if a test fails.
 
 ## Adding a new bank
 Preferred path is a YAML descriptor with no Python:
@@ -131,27 +230,46 @@ exports three different shapes, so "we support ICICI" is not a meaningful claim)
     State Bank of India            Account Statement           generic
     Vasavi MSCM Co-operative Bank  Account Statement           grouped
 
-A bank with NO layout falls to the LLM — but every LLM key on this project is
-currently out of credit (Anthropic, OpenAI and Gemini alike), so in practice an
-unknown bank cannot be extracted at all right now. The answer is to write a
-layout, not to top up: a descriptor against an existing parser mode is roughly
-an hour with one sample PDF, and it is free, deterministic and balance-verified
-forever after. A genuinely new SHAPE costs more, because it needs a new mode
-first (that is what `grouped` was).
+A bank with NO layout is refused: the LLM fallback is off by default, and even
+switched on it may only use an in-account provider, which is currently
+unavailable. That is deliberate — the answer was never to top up a key. A
+descriptor against an existing parser mode is roughly an hour with one sample
+PDF, and it is free, deterministic and balance-verified forever after. A
+genuinely new SHAPE costs more, because it needs a new mode first (that is what
+`grouped` was). With the S3 registry it no longer needs a deploy either.
+
+A page with NO TEXT LAYER is recorded separately (StatementMeta.unreadable_pages)
+and surfaced on the account card and the review screen. Nothing is extracted
+from such a page, so its transactions are simply absent and the balance chain
+breaks with no other visible cause — seen for real in a statement PDF assembled
+by hand, with one month scanned in among digital exports. No layout can fix
+that, and saying so is the only useful thing the report can do.
 
 An upload where some files fail still publishes the accounts that worked; the
 failed files are listed on the upload with a plain reason.
 
 ## Current next steps
-1. The gotcha-6 data-residency fix — statement data still leaves AWS whenever a
-   bank has no layout. This is the last item gating real customers now that
-   auth is in place.
-2. More bank layouts (HDFC, Kotak, and whatever else customers send) as YAML
-   descriptors — needs one sample statement per bank. Each one also shrinks the
-   residency exposure in (1) and removes a per-statement cost.
-3. S3-backed layout registry so a bank can be added without a redeploy
-   (registry.py currently globs a read-only directory inside the bundle).
-4. Human-review screen for needs_review jobs.
-5. A Lambda timeout still leaves a job stuck on "processing" — extraction now
-   bails early via get_remaining_time_in_millis, but a hard kill anywhere else
-   still cannot write status. A DLQ or status sweeper would close this.
+
+1. **More bank layouts** (HDFC, Kotak, and whatever else customers send) as
+   YAML descriptors — needs one sample statement per bank. This is now the
+   only thing that scales with the customer list, and with the S3 registry it
+   no longer needs a deploy. It is also the whole answer to an unknown bank,
+   since the LLM fallback is closed by default.
+2. **Bedrock.** Until its Marketplace subscription works on this account there
+   is no in-account inference at all, so a bank with no layout cannot be read.
+   Unblocking it is a billing task, not a code one.
+3. **Password reset by email.** Sign-in now has throttling, logout and a
+   self-service password change, but a forgotten password still needs an
+   operator running scripts/manage_users.py. A real reset needs a verified SES
+   identity — a separate decision, not a missing line of code.
+4. **Revoke other sessions on a password change.** Finding a user's other
+   sessions needs a secondary index on the auth table; today they stay valid
+   until their 12-hour TTL, and the UI says so rather than implying otherwise.
+5. **Sweeper at scale.** The scheduled sweep is a filtered scan of a table
+   holding 180 days of jobs. It is projected and runs every 15 minutes, and
+   the on-failure destination handles the common case exactly — but if the
+   table grows large, set a `live` attribute while a job runs and query a
+   sparse index instead of scanning.
+6. **Upload size limits.** A presigned PUT has no content-length ceiling, so a
+   client can upload an arbitrarily large object. MAX_FILES_PER_JOB caps count,
+   not bytes.

@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shutil
+import time
 import traceback
 from datetime import date
 from dataclasses import asdict
@@ -42,6 +43,14 @@ BUCKET = os.environ["DATA_BUCKET"]
 
 
 def _update(job_id, **attrs):
+    """Write job attributes, always stamping updated_at.
+
+    The sweeper decides a job is stuck from how long it has sat without
+    progress, and created_at cannot answer that: a twenty-file job legitimately
+    runs for a long time after it was created. Stamping here — the one place
+    every status change goes through — means no writer can forget to.
+    """
+    attrs = dict(attrs, updated_at=int(time.time()))
     expr = ", ".join(f"#k{i} = :v{i}" for i in range(len(attrs)))
     TABLE.update_item(
         Key={"job_id": job_id},
@@ -154,11 +163,45 @@ def _mark_extracted(job_id: str, idx: int) -> int:
     """
     attrs = TABLE.update_item(
         Key={"job_id": job_id},
-        UpdateExpression="ADD extracted :k",
-        ExpressionAttributeValues={":k": {str(idx)}},
+        UpdateExpression="SET updated_at = :t ADD extracted :k",
+        ExpressionAttributeValues={":k": {str(idx)}, ":t": int(time.time())},
         ReturnValues="UPDATED_NEW",
     ).get("Attributes", {})
     return len(attrs.get("extracted", set()))
+
+
+# Reconciliation issues are unbounded — a 5000-row statement whose chain breaks
+# early can produce thousands — so what travels in the job summary is a digest
+# and what travels in issues.json is everything.
+ISSUE_SAMPLE = 5
+
+
+def _issue_kinds(statement_issues) -> dict:
+    """{kind: count} across every statement in this account."""
+    kinds: dict[str, int] = {}
+    for st in statement_issues:
+        for i in st.get("issues", []):
+            k = i.get("kind", "other")
+            kinds[k] = kinds.get(k, 0) + 1
+    return kinds
+
+
+def _issue_sample(statement_issues) -> list:
+    """The first few issues, earliest row first, enough to see the shape.
+
+    Deliberately the FIRST ones and not a spread: a broken chain fails at the
+    point it breaks, and every later mismatch is usually the same break echoing.
+    """
+    out = []
+    for st in statement_issues:
+        for i in st.get("issues", []):
+            out.append({"source_file": st.get("source_file", ""),
+                        "row_index": i.get("row_index", 0),
+                        "kind": i.get("kind", ""),
+                        "detail": str(i.get("detail", ""))[:300]})
+            if len(out) >= ISSUE_SAMPLE:
+                return out
+    return out
 
 
 def _friendly(msg: str) -> str:
@@ -169,6 +212,16 @@ def _friendly(msg: str) -> str:
     account cannot pay for the fallback.
     """
     m = msg.lower()
+    # Both of these are policy refusals, not failures: nothing was read and
+    # nothing was transmitted. The pipeline has already said WHY in specific
+    # terms — no layout, a scanned file, a parser this build lacks — and those
+    # lead to different actions, so keep its wording rather than flattening all
+    # three into "no layout for this bank".
+    if "ai fallback is switched off" in m:
+        return msg.split(" and the AI fallback")[0].strip()[:300]
+    if "must not leave the account" in m:
+        return ("this bank has no layout yet, and AI extraction is restricted "
+                "to providers inside our own AWS account")
     if "credit balance is too low" in m:
         return ("no template for this bank yet, so it needs AI extraction — "
                 "and the AI account is out of credit")
@@ -192,19 +245,26 @@ def _mark_failed(job_id: str, idx: int, filename: str, msg: str) -> None:
     try:
         TABLE.update_item(
             Key={"job_id": job_id},
-            UpdateExpression="SET failed_files.#i = :v",
+            UpdateExpression="SET failed_files.#i = :v, updated_at = :t",
             ExpressionAttributeNames={"#i": str(idx)},
             ExpressionAttributeValues={
-                ":v": {"filename": filename, "error": _friendly(msg)}},
+                ":v": {"filename": filename, "error": _friendly(msg)},
+                ":t": int(time.time())},
             ConditionExpression="attribute_exists(failed_files)",
         )
     except Exception:
         TABLE.update_item(
             Key={"job_id": job_id},
-            UpdateExpression="SET failed_files = :m",
+            UpdateExpression="SET failed_files = :m, updated_at = :t",
             ExpressionAttributeValues={
-                ":m": {str(idx): {"filename": filename, "error": _friendly(msg)}}},
+                ":m": {str(idx): {"filename": filename, "error": _friendly(msg)}},
+                ":t": int(time.time())},
         )
+
+
+# A merge cannot outlive the Lambda that runs it, so a claim older than the
+# function timeout belongs to an invocation that is definitely gone.
+MERGE_CLAIM_TTL_S = 16 * 60
 
 
 def _claim_merge(job_id: str) -> bool:
@@ -212,14 +272,22 @@ def _claim_merge(job_id: str) -> bool:
 
     Several files can finish at nearly the same moment, and each would
     otherwise merge and publish the same job concurrently.
+
+    The claim expires. Without that, an invocation hard-killed mid-merge left
+    the job on "merging" forever and no later attempt — retry or sweeper —
+    could ever take it, which is one of the two ways a job used to get stuck.
     """
+    now = int(time.time())
     try:
         TABLE.update_item(
             Key={"job_id": job_id},
-            UpdateExpression="SET #s = :m",
-            ConditionExpression="attribute_not_exists(#s) OR #s <> :m",
+            UpdateExpression="SET #s = :m, merging_at = :now, updated_at = :now",
+            ConditionExpression=("attribute_not_exists(#s) OR #s <> :m "
+                                 "OR attribute_not_exists(merging_at) "
+                                 "OR merging_at < :stale"),
             ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":m": "merging"},
+            ExpressionAttributeValues={":m": "merging", ":now": now,
+                                       ":stale": now - MERGE_CLAIM_TTL_S},
         )
         return True
     except ddb.meta.client.exceptions.ConditionalCheckFailedException:
@@ -288,8 +356,15 @@ def lambda_handler(event, _ctx):
                     "error": "; ".join(f"{v.get('filename')}: {v.get('error')}"
                                        for v in failed.values())[:900]})
                 continue
-            for f in usable:
-                meta, txns = _read_work(job_id, int(f.get("idx", 0)))
+            # One record per uploaded file, in upload order, carrying the file
+            # entry alongside what came out of it. Grouping used to discard that
+            # pairing and the AI cost table was rebuilt by zipping the upload
+            # order against the group order — which only agree when no two
+            # accounts interleave, so a mixed upload reported one file's tokens
+            # under another file's name.
+            per_file = [(f, *_read_work(job_id, int(f.get("idx", 0))))
+                        for f in usable]
+            for f, meta, txns in per_file:
                 key = f"{meta.bank}|{meta.account_no}"
                 if key not in groups:
                     groups[key] = {"metas": [], "lists": [], "files": []}
@@ -309,10 +384,28 @@ def lambda_handler(event, _ctx):
                 # statements and report a failure that is not real; the account
                 # inherits the worst individual statement's status instead.
                 per_status, issues_total = [], 0
-                for one in lists:
+                # Keep the issue detail. It used to be dropped here with the
+                # comment "per-statement detail is in the log", which meant the
+                # only record of WHICH rows broke the chain was a CloudWatch
+                # line — unreachable from the report and gone in 30 days. A
+                # human reviewing a failed statement needs the rows.
+                statement_issues = []
+                for one, m in zip(lists, metas):
                     r = validate(one)
                     per_status.append(r.status)
                     issues_total += len(r.issues)
+                    unreadable = list(getattr(m, "unreadable_pages", []) or [])
+                    if r.issues or unreadable:
+                        statement_issues.append({
+                            "source_file": m.source_file,
+                            "status": r.status,
+                            "checked_rows": r.checked_rows,
+                            # Pages with no text layer explain a balance break
+                            # that otherwise has no visible cause: nothing was
+                            # read from them, so their rows are simply absent.
+                            "unreadable_pages": unreadable,
+                            "issues": [asdict(i) for i in r.issues],
+                        })
                 acct_status = ("failed" if "failed" in per_status else
                                "passed_with_warnings"
                                if "passed_with_warnings" in per_status else "passed")
@@ -336,8 +429,7 @@ def lambda_handler(event, _ctx):
                 meta0.source_file = ", ".join(g["files"])
 
                 report = ValidationReport(
-                    status=acct_status, checked_rows=len(txns),
-                    issues=[])                       # per-statement detail is in the log
+                    status=acct_status, checked_rows=len(txns), issues=[])
                 slug = _slug(meta0.bank, masked)
                 outdir = os.path.join(outroot, slug)
                 paths = publish(JobResult(meta=meta0, txns=txns, validation=report),
@@ -350,6 +442,14 @@ def lambda_handler(event, _ctx):
                 with open(os.path.join(outdir, "preview.json"), "w") as fh:
                     json.dump({"rows": preview, "total": len(txns)}, fh)
                 paths["preview"] = os.path.join(outdir, "preview.json")
+                # Full reconciliation detail for the review screen. Written
+                # for every account, empty list included, so the UI can fetch
+                # it unconditionally rather than probing for a 404.
+                with open(os.path.join(outdir, "issues.json"), "w") as fh:
+                    json.dump({"account": meta0.account_no, "bank": meta0.bank,
+                               "status": acct_status, "total": issues_total,
+                               "statements": statement_issues}, fh)
+                paths["issues"] = os.path.join(outdir, "issues.json")
                 for pth in paths.values():
                     s3.upload_file(pth, BUCKET,
                                    f"outputs/{job_id}/{slug}/{os.path.basename(pth)}")
@@ -377,14 +477,24 @@ def lambda_handler(event, _ctx):
                         for one in lists if one]),
                     "validation": acct_status,
                     "issues": issues_total,
+                    # A digest only. The full list lives in issues.json: a job
+                    # of twenty statements with a broken chain each would push
+                    # the DynamoDB item past its 400KB limit and lose the whole
+                    # summary, report included.
+                    "issue_kinds": _issue_kinds(statement_issues),
+                    "issue_sample": _issue_sample(statement_issues),
+                    "unreadable_pages": sum(
+                        len(getattr(m, "unreadable_pages", []) or []) for m in metas),
                     "categories": cats,
                 })
 
-            # AI accounting stays per uploaded file across the whole job.
+            # AI accounting stays per uploaded file across the whole job, and
+            # reads straight off per_file so a filename can never be paired
+            # with a different statement's usage.
             ordered = usable
-            all_metas = [m for key in order for m in groups[key]["metas"]]
+            all_metas = [m for _f, m, _t in per_file]
             parts, tin, tout, calls, cost, cost_known = [], 0, 0, 0, 0.0, True
-            for f, m in zip(ordered, all_metas):
+            for f, m, _txns in per_file:
                 u = getattr(m, "llm_usage", None) or {}
                 parts.append({
                     "filename": f.get("filename", ""),

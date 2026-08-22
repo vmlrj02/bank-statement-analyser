@@ -19,8 +19,11 @@ from aws_cdk import (
     aws_cloudfront as cf,
     aws_cloudfront_origins as origins,
     aws_dynamodb as ddb,
+    aws_events as events,
+    aws_events_targets as targets,
     aws_iam as iam,
     aws_lambda as _lambda,
+    aws_lambda_destinations as destinations,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
     aws_s3_notifications as s3n,
@@ -30,6 +33,10 @@ from aws_cdk import (
 from constructs import Construct
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# Named here so the stack, the API Lambda's env and any test agree on one
+# string; a GSI cannot be renamed without replacing it.
+OWNER_INDEX = "owner-created_at-index"
 
 
 class BsaStack(Stack):
@@ -67,6 +74,16 @@ class BsaStack(Stack):
             encryption=ddb.TableEncryption.AWS_MANAGED,
             removal_policy=RemovalPolicy.RETAIN,
             time_to_live_attribute="ttl",
+        )
+        # Listing a customer's uploads must be a query, not a filtered scan.
+        # A scan returns items in key order, so once the table outgrows the
+        # scanned page a customer's own jobs can fall outside it entirely and
+        # their history appears empty.
+        jobs_table.add_global_secondary_index(
+            index_name=OWNER_INDEX,
+            partition_key=ddb.Attribute(name="owner", type=ddb.AttributeType.STRING),
+            sort_key=ddb.Attribute(name="created_at", type=ddb.AttributeType.NUMBER),
+            projection_type=ddb.ProjectionType.ALL,
         )
 
         # ---------- llm provider credentials ----------
@@ -113,9 +130,22 @@ class BsaStack(Stack):
                 # llm_providers.py resolves both at call time.
                 #   LLM_PROVIDER: gemini | anthropic | openai | bedrock
                 #   LLM_MODEL   : optional; omit to use that provider's default
-                "LLM_PROVIDER": "anthropic",
-                "LLM_MODEL": "claude-sonnet-5",
+                # DATA RESIDENCY, closed by default. LLM_FALLBACK=off means an
+                # unrecognised bank fails with "no layout yet" and no page of
+                # the statement is ever put in a request body.
+                # ALLOW_EXTERNAL_LLM=false means that even with the fallback on,
+                # only an in-account provider may be called. Two switches, both
+                # closed, because one flag is one accident away from sending
+                # customer statements to a third party.
+                "LLM_FALLBACK": "off",
+                "ALLOW_EXTERNAL_LLM": "false",
+                "LLM_PROVIDER": "bedrock",
                 "LLM_API_KEY_SECRET": llm_secret.secret_name,
+                # Layouts are read from S3 as well as the bundle, so a new bank
+                # is a file upload rather than a release. This is how long an
+                # already-warm container may keep serving the old set.
+                "LAYOUTS_PREFIX": "layouts/",
+                "LAYOUT_CACHE_TTL_S": "300",
                 # Bedrock is kept as a selectable provider, but is currently
                 # blocked on this account: every Anthropic model fails its AWS
                 # Marketplace subscription (INVALID_PAYMENT_INSTRUMENT on an
@@ -131,9 +161,6 @@ class BsaStack(Stack):
             actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
             resources=["*"],   # global profile fans out across regions; MVP scope
         ))
-        # S3 delivers this event asynchronously, so a timeout would otherwise be
-        # retried twice — each retry re-running the whole paid LLM extraction.
-        processor.configure_async_invoke(retry_attempts=0)
         llm_secret.grant_read(processor)
         data_bucket.grant_read_write(processor)
         jobs_table.grant_read_write_data(processor)
@@ -141,6 +168,55 @@ class BsaStack(Stack):
             s3.EventType.OBJECT_CREATED,
             s3n.LambdaDestination(processor),
             s3.NotificationKeyFilter(prefix="uploads/", suffix=".pdf"),
+        )
+
+        # ---------- sweeper: no job stays "processing" forever ----------
+        # A hard-killed processor cannot write its own status, so something
+        # outside it has to. This runs on both paths — as the processor's
+        # on-failure destination (fast and exact) and on a schedule (the
+        # backstop for abandoned uploads and undelivered events).
+        sweeper = _lambda.Function(
+            self, "Sweeper",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.ARM_64,
+            handler="handler.lambda_handler",
+            memory_size=256,
+            timeout=Duration.minutes(2),
+            code=_lambda.Code.from_asset(os.path.join(ROOT, "backend", "sweeper")),
+            environment={
+                "DATA_BUCKET": data_bucket.bucket_name,
+                "JOBS_TABLE": jobs_table.table_name,
+                "PROCESSOR_FUNCTION": processor.function_name,
+                "UPLOAD_GRACE_S": "3600",
+                # The processor's own ceiling is 15 minutes; this is measured
+                # from the last progress stamp, so keep it above that.
+                "PROCESS_GRACE_S": "1200",
+            },
+        )
+        jobs_table.grant_read_write_data(sweeper)
+        data_bucket.grant_read(sweeper)
+        # The sweeper re-drives a partly-finished job by re-invoking the
+        # processor, so there is exactly one merge implementation.
+        processor.grant_invoke(sweeper)
+
+        # S3 delivers this event asynchronously, so a timeout would otherwise be
+        # retried twice — each retry re-running the whole paid LLM extraction.
+        processor.configure_async_invoke(
+            retry_attempts=0,
+            on_failure=destinations.LambdaDestination(sweeper),
+        )
+
+        # Every 15 minutes, not every 5. The on-failure destination already
+        # settles a killed invocation within seconds, so this only has to catch
+        # what the destination cannot see — an abandoned upload, an undelivered
+        # event. Each run is a filtered scan of the whole jobs table, and the
+        # table holds 180 days of them, so running it three times less often is
+        # three times less to pay for the same guarantee.
+        events.Rule(
+            self, "SweepSchedule",
+            schedule=events.Schedule.rate(Duration.minutes(15)),
+            targets=[targets.LambdaFunction(sweeper)],
+            description="Fail or re-drive jobs that stopped making progress",
         )
 
         # ---------- auth ----------
@@ -169,6 +245,7 @@ class BsaStack(Stack):
                 "DATA_BUCKET": data_bucket.bucket_name,
                 "JOBS_TABLE": jobs_table.table_name,
                 "AUTH_TABLE": auth_table.table_name,
+                "OWNER_INDEX": OWNER_INDEX,
             },
         )
         data_bucket.grant_read_write(api_fn)
@@ -187,9 +264,12 @@ class BsaStack(Stack):
         for route, methods in [
             ("/auth/login", [apigw.HttpMethod.POST]),   # public by design
             ("/auth/me", [apigw.HttpMethod.GET]),
+            ("/auth/logout", [apigw.HttpMethod.POST]),
+            ("/auth/password", [apigw.HttpMethod.POST]),
             ("/jobs", [apigw.HttpMethod.POST, apigw.HttpMethod.GET]),
             ("/jobs/{id}", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/download", [apigw.HttpMethod.GET]),
+            ("/jobs/{id}/review", [apigw.HttpMethod.POST]),
         ]:
             api.add_routes(path=route, methods=methods, integration=integ)
 
@@ -237,3 +317,4 @@ class BsaStack(Stack):
         CfnOutput(self, "JobsTableName", value=jobs_table.table_name)
         CfnOutput(self, "LlmApiKeySecret", value=llm_secret.secret_name)
         CfnOutput(self, "AuthTableName", value=auth_table.table_name)
+        CfnOutput(self, "SweeperFunctionName", value=sweeper.function_name)

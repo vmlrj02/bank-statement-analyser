@@ -35,6 +35,10 @@ class StatementMeta:
     currency: str = "INR"
     is_digital_text: bool = True
     n_pages: int = 0              # captured at ingest, reported per account
+    # 1-based pages with no text layer. A template reads nothing from these,
+    # so any transactions printed on them are absent from the extract — which
+    # is why a balance chain can break with no other sign of a problem.
+    unreadable_pages: list = field(default_factory=list)
     # Populated only on the LLM path: {provider, model, tokens_in, tokens_out,
     # calls, cost_usd}. None means this statement was parsed by a template and
     # cost nothing, which is the distinction the admin view reports.
