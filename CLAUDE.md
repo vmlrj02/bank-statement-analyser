@@ -12,15 +12,19 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
   normalize → categorize → validate → publish). Layouts live in bsa/layouts/*.yaml
   and are matched by page-1 fingerprints; LLM fallback in extract/llm_fallback.py
   handles anything unrecognised.
-- backend/processor/bsa/extract/ — two kinds of parser:
-  - generic_layout.py — one parser driven entirely by a layout YAML. Prefer this.
-    Used by Axis (`parser: generic` in the descriptor).
-  - icici_optransactionhistory.py — bank-specific module, for layouts YAML cannot
+- backend/processor/bsa/extract/ — four parser modes, chosen by `parser:` in
+  the layout descriptor (see "Working today" for which bank uses which):
+  - generic_layout.py  — one line per row, amounts on the dated anchor line.
+  - columnar_layout.py — cells wrap across lines; a row is a block reassembled
+    by x band.
+  - grouped_layout.py  — the amount line is the row; sparse dates and balances.
+  - icici_optransactionhistory.py — bank-specific module, for what YAML cannot
     express (ICICI marks a row's title line by font face).
 - backend/api/handler.py — jobs API (presigned S3 upload/download, DynamoDB).
-  Every route sits behind a Cognito JWT authorizer. Roles come from the
-  `cognito:groups` claim: `admin` sees all jobs plus AI usage/cost; `customer`
-  sees only their own jobs and never the AI block.
+  There is NO Cognito: every /jobs* route requires a bearer session token that
+  the Lambda itself validates against AuthTable. Roles come from the session
+  record: `admin` sees all jobs plus AI usage/cost; `customer` sees only their
+  own uploads and never the AI block. POST /auth/login is the only public route.
 - frontend/index.html — no-build SPA served via CloudFront.
 - infra/ — CDK (Python). Deploy: `cd infra && source .venv/bin/activate && cdk deploy`.
 
