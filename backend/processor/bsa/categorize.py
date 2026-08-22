@@ -40,10 +40,19 @@ INVESTMENT_HINTS = [
     "MF REDEMPTION", "NSE ", "BSE ", "CDSL", "NSDL", "RD MATURITY", "FD CLOS",
 ]
 SALARY_HINTS = [r"\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL"]
-REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF", r"\bRET\b.*\bCR\b"]
-PENAL_HINTS = [r"\bCHRG\b", r"CHARGES?", r"\bMAB\b", r"PENAL", r"\bFEE\b", r"OVERDUE", r"MIN BAL"]
+REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF", r"\bRET\b.*\bCR\b",
+                # "RVSL IW CTR RTN CHQNO:…" — a returned instrument credited back
+                r"\bRVSL\b"]
+# "Chrgs"/"Chgs" spellings ("SMS Chrgs Incl GST", "Keeping Chgs--") fell
+# through to Regular debit; \bCHRG\b alone stops before the S.
+PENAL_HINTS = [r"\bCHRG\b", r"\bCHR?GS?\b", r"CHARGES?", r"\bMAB\b", r"PENAL", r"\bFEE\b", r"OVERDUE", r"MIN BAL"]
 BOUNCE_INWARD = [r"ECSRTN", r"I/?W.*(RTN|RETURN|BOUNCE)", r"INWARD.*(RTN|RET)", r"CHQ RETURN.*DEP"]
-BOUNCE_OUTWARD = [r"O/?W.*(RTN|RETURN|BOUNCE)", r"OUTWARD.*(RTN|RET)", r"CHQ.*BOUNCE.*ISSUED", r"SI FAIL", r"NACH RTN CHG"]
+# A bank's "inward clearing" is a cheque drawn ON the account — so the charge
+# for its return is the customer's own payment bouncing, an OUTWARD bounce in
+# the taxonomy's terms ("Chq Rtrn Chrgs Incl GST" followed cheque 011541's
+# return in the Axis sample).
+BOUNCE_OUTWARD = [r"O/?W.*(RTN|RETURN|BOUNCE)", r"OUTWARD.*(RTN|RET)", r"CHQ.*BOUNCE.*ISSUED", r"SI FAIL", r"NACH RTN CHG",
+                  r"CHQ\s*RTR?N.*CHR?GS?"]
 
 _DICT_PATH = os.path.join(os.path.dirname(__file__), "data", "merchant_dictionary.json")
 

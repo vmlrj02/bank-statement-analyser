@@ -1,5 +1,7 @@
 """Categorisation against the SME lending taxonomy. These pin the tags the
 review sheet corrected by hand — each case here was once wrong in a report."""
+import pytest
+
 from bsa.categorize import categorize, category_detail
 from bsa.models import Txn
 
@@ -34,3 +36,28 @@ def test_by_cash_credit_is_a_cash_deposit():
 def test_interest_debited_detail_reads_as_itself():
     t = categorize([txn("DEBIT INTEREST- /", -1000.0)])[0]
     assert category_detail(t) == "Interest debited"
+
+
+def test_atm_withdrawal_with_hyphen_form():
+    """Axis prints "ATM-CASH/+<branch>" — seven of these read Regular debit."""
+    t = txn("ATM-CASH/+SARJAPUR ROAD BR/BANGALORE-URB/010226", -10000.0,
+            mode="atm-cash")
+    assert categorize([t])[0].category == "cash withdrawal"
+
+
+def test_cheque_return_charges_are_a_bounce_not_a_transfer():
+    """The bank's inward clearing is a cheque drawn ON the account, so its
+    return charge is the customer's own payment bouncing — outward."""
+    t = categorize([txn("Chq Rtrn Chrgs Incl GST", -590.0)])[0]
+    assert t.category == "Outward Bounced Xns"
+
+
+@pytest.mark.parametrize("desc", ["SMS Chrgs Incl GST", "Keeping Chgs-- / 38976288"])
+def test_chrgs_and_chgs_spellings_are_penal(desc):
+    assert categorize([txn(desc, -649.0)])[0].category == "other penal charges"
+
+
+def test_a_reversed_returned_instrument_credit_is_a_refund():
+    t = categorize([txn("RVSL IW CTR RTN CHQNO:011541_DT:01122025/FEDERAL",
+                        2900000.0)])[0]
+    assert t.category == "return / refund"

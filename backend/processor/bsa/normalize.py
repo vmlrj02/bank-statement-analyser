@@ -29,7 +29,9 @@ MODE_RULES = [
     (r"\bECSRTN|\bRTN CHG|\bRET CHG", "ecs-return"),
     (r"\bACH/|\bNACH\b|\bECS(?!RTN)", "nach"),
     (r"\bBIL/|Bil Payment", "billpay"),
-    (r"NFS/CASH WDL|\bATM[/ ]|ATM trxn", "atm-cash"),
+    # Axis prints "ATM-CASH/+<branch>" and "ATM-CASH- AXIS/…" — the hyphen
+    # form was falling through to Regular debit.
+    (r"NFS/CASH WDL|\bATM[-/ ]|ATM trxn", "atm-cash"),
     (r"\bCLG/", "clearing"),
     (r"BY CASH|CASH DEP|\bCDM\b", "cash-deposit"),
     (r"\bCMS/", "cms"),
@@ -145,6 +147,10 @@ def extract_counterparty(desc: str, mode: str) -> str:
             re.search(r"ACH-(?:CR|DR)-([^-]+)", d, re.I)
         if m and not _REFNUM.match(m.group(1).strip()):
             return _clean_segment(m.group(1))
+        # ECS/<ref>/<NAME>… ("ECS/UTIBDE…/Bajaj Finance Ltd_SMS OT")
+        m = re.search(r"\bECS/(.+)$", d)
+        if m:
+            return _first_name(_name_segments(m.group(1)))
     if mode == "clearing":
         m = re.search(r"CLG/([^/]+)", d)
         if m:

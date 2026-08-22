@@ -55,6 +55,7 @@ def test_balance_only_rows_are_not_transactions():
     ("MMT/IMPS/50912/KRISHNA/HDFC", "imps"),
     ("ACH/INDIstore/12345/", "nach"),
     ("NFS/CASH WDL/1234", "atm-cash"),
+    ("ATM-CASH/+SARJAPUR ROAD BR/BANGALORE-URB/010226", "atm-cash"),
     ("something ordinary", "other"),
 ])
 def test_mode_detection_matches_mid_string(desc, mode):
@@ -89,6 +90,9 @@ def test_counterparty_skips_reference_numbers_and_ifsc():
     # The IMPS remark rides ahead of the name — prefer the digit-free segment.
     ("MMT/IMPS/518614164794/bill 2876/SONI BAKER/HDFC Bank",
      "imps", "SONI BAKER"),
+    # ECS slash form: the mandate reference is a bank prefix glued to digits.
+    ("ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT",
+     "nach", "Bajaj Finance Ltd_SMS OT"),
 ])
 def test_counterparty_from_real_statement_descriptors(desc, mode, party):
     assert detect_mode(desc) == mode
