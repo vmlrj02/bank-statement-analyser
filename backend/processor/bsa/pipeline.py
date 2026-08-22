@@ -21,6 +21,11 @@ def extract_one(path: str, password: str | None = None,
                 time_left_ms=None) -> StatementExtract:
     ing = ingest(path, password=password)
     cls = classify(ing.path)
+
+    def _stamp(extract):
+        extract.meta.n_pages = ing.n_pages      # page count belongs to the file
+        return extract
+
     if cls.layout_id and ing.is_digital_text:
         layout = get_layout(cls.layout_id)
         source_file = path.split("/")[-1]
@@ -28,19 +33,20 @@ def extract_one(path: str, password: str | None = None,
         # backed by a bank-specific module for the cases YAML cannot express.
         if layout.get("parser") == "generic":
             from .extract.generic_layout import extract as generic_extract
-            return generic_extract(ing.path, source_file=source_file,
-                                   layout=layout)
+            return _stamp(generic_extract(ing.path, source_file=source_file,
+                                          layout=layout))
         if layout.get("parser") == "columnar":
             from .extract.columnar_layout import extract as columnar_extract
-            return columnar_extract(ing.path, source_file=source_file,
-                                    layout=layout)
+            return _stamp(columnar_extract(ing.path, source_file=source_file,
+                                           layout=layout))
         if cls.layout_id in TEMPLATE_PARSERS:
             mod = importlib.import_module(TEMPLATE_PARSERS[cls.layout_id])
-            return mod.extract(ing.path, source_file=source_file, layout=layout)
+            return _stamp(mod.extract(ing.path, source_file=source_file,
+                                      layout=layout))
     # unknown layout or scanned -> LLM path
     from .extract.llm_fallback import extract_with_llm
-    return extract_with_llm(ing.path, source_file=path.split("/")[-1],
-                            time_left_ms=time_left_ms)
+    return _stamp(extract_with_llm(ing.path, source_file=path.split("/")[-1],
+                                   time_left_ms=time_left_ms))
 
 
 def run(paths: list[str], out_dir: str, password: str | None = None,

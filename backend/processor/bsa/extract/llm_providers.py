@@ -9,7 +9,7 @@ call_structured() below.
 
 Config is env-driven so switching provider or model needs no code edit:
 
-    LLM_PROVIDER        gemini | anthropic | openai | bedrock   (default gemini)
+    LLM_PROVIDER        anthropic | gemini | bedrock   (default anthropic)
     LLM_MODEL           model id override; else DEFAULT_MODELS
     LLM_API_KEY_SECRET  Secrets Manager id holding the key (Lambda)
     LLM_API_KEY         plain key, for local runs
@@ -31,12 +31,13 @@ from typing import Any
 DEFAULT_MODELS = {
     "gemini": "gemini-3.7-flash",
     "anthropic": "claude-sonnet-5",
-    "openai": "gpt-5.1",
     "bedrock": os.environ.get("BEDROCK_MODEL_ID",
                               "apac.anthropic.claude-3-7-sonnet-20250219-v1:0"),
 }
 
-MAX_OUTPUT_TOKENS = 32000
+# 16384 per chunk: chunks are small, and a lower ceiling keeps each
+# streamed call bounded and cheaper to retry.
+MAX_OUTPUT_TOKENS = 16384
 TOOL_NAME = "record_statement"
 
 # USD per 1M tokens, (input, output). Vendor pricing changes, so a model that
@@ -77,7 +78,7 @@ class LLMError(RuntimeError):
 
 
 def provider() -> str:
-    return os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+    return os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
 
 
 def model_id() -> str:
@@ -206,34 +207,6 @@ def _call_anthropic(system: str, blocks: list[dict], schema: dict, model: str) -
     raise LLMError("anthropic returned no tool_use block")
 
 
-def _call_openai(system: str, blocks: list[dict], schema: dict, model: str) -> dict:
-    from openai import OpenAI
-
-    client = OpenAI(api_key=_api_key())
-    content = []
-    for b in blocks:
-        if "text" in b:
-            content.append({"type": "text", "text": b["text"]})
-        else:
-            b64 = base64.b64encode(b["image_png"]).decode()
-            content.append({"type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{b64}"}})
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": content}],
-        response_format={"type": "json_schema", "json_schema": {
-            "name": TOOL_NAME, "schema": schema}},
-        max_completion_tokens=MAX_OUTPUT_TOKENS,
-    )
-    text = resp.choices[0].message.content
-    if not text:
-        raise LLMError("openai returned no content")
-    u = resp.usage
-    return json.loads(text), {"in": getattr(u, "prompt_tokens", 0) or 0,
-                              "out": getattr(u, "completion_tokens", 0) or 0}
-
-
 def _call_bedrock(system: str, blocks: list[dict], schema: dict, model: str) -> dict:
     import boto3
 
@@ -271,7 +244,6 @@ def _call_bedrock(system: str, blocks: list[dict], schema: dict, model: str) -> 
 _ADAPTERS = {
     "gemini": _call_gemini,
     "anthropic": _call_anthropic,
-    "openai": _call_openai,
     "bedrock": _call_bedrock,
 }
 

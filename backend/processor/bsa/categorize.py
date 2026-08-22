@@ -7,7 +7,7 @@ Category tags:
   cash deposit | cash withdrawal | inward bounce penal charges |
   Outward Bounced Xns | other penal charges | return / refund |
   Related party credit | Related party debit |
-  Regular credit - Transfer from | Regular debit - Transfer to
+  Regular credit | Regular debit
 
 Tiers (cheapest first):
   1. deterministic descriptor rules
@@ -16,7 +16,7 @@ Tiers (cheapest first):
   3. merchant dictionary (persisted; DynamoDB in production, JSON locally)
   4. LLM batch classification for still-unknown merchants (Bedrock; stubbed
      locally) — resolved names are written back to the dictionary
-  Fallback: Regular credit/debit - Transfer from/to <party or unknown party>
+  Fallback: Regular credit/debit (detail keeps "transfer from/to <party>")
 """
 from __future__ import annotations
 
@@ -151,8 +151,7 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
 
         # --- Fallback: regular transfers ---
         if not tag:
-            tag = ("Regular credit - Transfer from" if credit
-                   else "Regular debit - Transfer to")
+            tag = "Regular credit" if credit else "Regular debit"
             src = "fallback"
 
         t.category, t.category_source = tag, src

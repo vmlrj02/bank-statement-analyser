@@ -18,8 +18,10 @@ Writes : work/{job_id}/{i}.json (intermediate, expires after 7 days)
 """
 import json
 import os
+import re
 import shutil
 import traceback
+from datetime import date
 from dataclasses import asdict
 from types import SimpleNamespace
 
@@ -27,7 +29,7 @@ import boto3
 
 from bsa.categorize import categorize, category_detail
 from bsa.ingest import PasswordRequired
-from bsa.models import JobResult, StatementMeta, Txn
+from bsa.models import JobResult, StatementMeta, Txn, ValidationReport
 from bsa.normalize import normalize, dedup_merge
 from bsa.pipeline import extract_one
 from bsa.publish import publish
@@ -47,6 +49,44 @@ def _update(job_id, **attrs):
         ExpressionAttributeNames={f"#k{i}": k for i, k in enumerate(attrs)},
         ExpressionAttributeValues={f":v{i}": v for i, v in enumerate(attrs.values())},
     )
+
+
+def _slug(bank: str, account_no: str) -> str:
+    """Stable, path-safe id for one account's output folder."""
+    return re.sub(r"[^a-z0-9]+", "-", f"{bank}-{account_no}".lower()).strip("-") or "account"
+
+
+_SHORT_BANK = {"icici bank": "ICICI", "axis bank": "AXIS", "hdfc bank": "HDFC",
+               "state bank of india": "SBI", "kotak mahindra bank": "KOTAK"}
+
+
+def _short_bank(bank: str) -> str:
+    return _SHORT_BANK.get((bank or "").strip().lower(), (bank or "").strip())
+
+
+def _collapse_periods(ranges):
+    """Merge contiguous statement periods; keep genuine gaps separate.
+
+    Two statements that abut (or overlap) read as one continuous period. A gap
+    — the next period starting more than a day after the previous ended — stays
+    listed separately, because pretending otherwise would hide a missing month.
+    """
+    clean = sorted((a, b) for a, b in ranges if a and b)
+    if not clean:
+        return []
+    out = [list(clean[0])]
+    for a, b in clean[1:]:
+        try:
+            prev_end = date.fromisoformat(out[-1][1])
+            this_start = date.fromisoformat(a)
+            contiguous = (this_start - prev_end).days <= 1
+        except ValueError:
+            contiguous = False
+        if contiguous:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [[a, b] for a, b in out]
 
 
 def _mask(acct: str) -> str:
@@ -192,55 +232,113 @@ def lambda_handler(event, _ctx):
             continue                      # another invocation got there first
 
         try:
-            extracts, txn_lists = [], []
+            # Group the extracted statements by ACCOUNT. A bulk upload of ten
+            # files across three accounts is three reports, not one: balances
+            # only chain within an account, so merging across them would be
+            # meaningless arithmetic.
+            groups: dict[str, dict] = {}
+            order: list[str] = []
             for f in sorted(files, key=lambda x: int(x.get("idx", 0))):
                 meta, txns = _read_work(job_id, int(f.get("idx", 0)))
-                extracts.append(SimpleNamespace(meta=meta))
-                txn_lists.append(txns)
+                key = f"{meta.bank}|{meta.account_no}"
+                if key not in groups:
+                    groups[key] = {"metas": [], "lists": [], "files": []}
+                    order.append(key)
+                groups[key]["metas"].append(meta)
+                groups[key]["lists"].append(txns)
+                groups[key]["files"].append(f.get("filename", ""))
 
-            extract = extracts[0]
-            txns = dedup_merge(txn_lists) if len(txn_lists) > 1 else txn_lists[0]
-            categorize(txns, related_parties=related)
-            report = validate(txns)
-            # Mask only after uid, dedup and validation have used the real
-            # numbers — published outputs must never carry a full account no.
-            for t in txns:
-                t.account_no = _mask(t.account_no)
-            for e in extracts:
-                e.meta.account_no = _mask(e.meta.account_no)
-            extract.meta.source_file = item.get("filename", "statement.pdf")
-            result = JobResult(meta=extract.meta, txns=txns, validation=report)
+            outroot = f"/tmp/{job_id}_merge"
+            accounts_out, worst = [], "passed"
+            for key in order:
+                g = groups[key]
+                metas, lists = g["metas"], g["lists"]
 
-            # phase 1's workdir is already gone; the merge needs its own
-            outdir = f"/tmp/{job_id}_merge"
-            paths = publish(result, outdir, basename="statement")
+                # Validation runs PER SOURCE STATEMENT. Reconciling across a
+                # merged account would cross the gap between two non-contiguous
+                # statements and report a failure that is not real; the account
+                # inherits the worst individual statement's status instead.
+                per_status, issues_total = [], 0
+                for one in lists:
+                    r = validate(one)
+                    per_status.append(r.status)
+                    issues_total += len(r.issues)
+                acct_status = ("failed" if "failed" in per_status else
+                               "passed_with_warnings"
+                               if "passed_with_warnings" in per_status else "passed")
+                if acct_status != "passed" and worst == "passed":
+                    worst = acct_status
+                if acct_status == "failed":
+                    worst = "failed"
 
-            preview = [{
-                "date": t.date, "description": t.description,
-                "amount": t.amount, "balance": t.balance,
-                "category": t.category, "detail": category_detail(t),
-            } for t in txns[:150]]
-            with open(os.path.join(outdir, "preview.json"), "w") as f:
-                json.dump({"rows": preview, "total": len(txns)}, f)
-            paths["preview"] = os.path.join(outdir, "preview.json")
+                txns = dedup_merge(lists) if len(lists) > 1 else list(lists[0])
+                categorize(txns, related_parties=related)
 
-            for p in paths.values():
-                s3.upload_file(p, BUCKET, f"outputs/{job_id}/{os.path.basename(p)}")
+                # Mask only after uid, dedup and validation have used the real
+                # numbers — published outputs must never carry a full account no.
+                masked = _mask(metas[0].account_no)
+                for t in txns:
+                    t.account_no = masked
+                meta0 = metas[0]
+                meta0.account_no = masked
+                holder = next((m.account_name for m in metas if m.account_name), "")
+                meta0.account_name = holder
+                meta0.source_file = ", ".join(g["files"])
 
-            cats = {}
-            for t in txns:
-                cats[t.category] = cats.get(t.category, 0) + 1
+                report = ValidationReport(
+                    status=acct_status, checked_rows=len(txns),
+                    issues=[])                       # per-statement detail is in the log
+                slug = _slug(meta0.bank, masked)
+                outdir = os.path.join(outroot, slug)
+                paths = publish(JobResult(meta=meta0, txns=txns, validation=report),
+                                outdir, basename="statement")
+                preview = [{
+                    "date": t.date, "description": t.description,
+                    "amount": t.amount, "balance": t.balance,
+                    "category": t.category, "detail": category_detail(t),
+                } for t in txns[:150]]
+                with open(os.path.join(outdir, "preview.json"), "w") as fh:
+                    json.dump({"rows": preview, "total": len(txns)}, fh)
+                paths["preview"] = os.path.join(outdir, "preview.json")
+                for pth in paths.values():
+                    s3.upload_file(pth, BUCKET,
+                                   f"outputs/{job_id}/{slug}/{os.path.basename(pth)}")
 
-            # Per-statement AI accounting. A template-parsed file has no usage
-            # and costs nothing; that contrast is the point of the admin view.
-            # DynamoDB rejects floats, so money is stored as a string.
+                cats: dict[str, int] = {}
+                for t in txns:
+                    cats[t.category] = cats.get(t.category, 0) + 1
+                accounts_out.append({
+                    "slug": slug,
+                    "bank": meta0.bank,
+                    "account_no": masked,
+                    "holder": holder,
+                    "title": " - ".join(x for x in (holder, _short_bank(meta0.bank),
+                                                    masked) if x),
+                    "rows": len(txns),
+                    "pages": sum(int(getattr(m, "n_pages", 0) or 0) for m in metas),
+                    "files": g["files"],
+                    "statements": len(metas),
+                    # Periods come from the transactions actually present, not
+                    # from the header the bank declared: one ICICI export names
+                    # only its first month while carrying a full year, and the
+                    # header would under-report the coverage.
+                    "periods": _collapse_periods([
+                        (min(t.date for t in one), max(t.date for t in one))
+                        for one in lists if one]),
+                    "validation": acct_status,
+                    "issues": issues_total,
+                    "categories": cats,
+                })
+
+            # AI accounting stays per uploaded file across the whole job.
             ordered = sorted(files, key=lambda x: int(x.get("idx", 0)))
+            all_metas = [m for key in order for m in groups[key]["metas"]]
             parts, tin, tout, calls, cost, cost_known = [], 0, 0, 0, 0.0, True
-            for f, e in zip(ordered, extracts):
-                u = getattr(e.meta, "llm_usage", None) or {}
+            for f, m in zip(ordered, all_metas):
+                u = getattr(m, "llm_usage", None) or {}
                 parts.append({
                     "filename": f.get("filename", ""),
-                    "layout": e.meta.layout,
+                    "layout": m.layout,
                     "ai": bool(u),
                     "provider": u.get("provider", ""),
                     "model": u.get("model", ""),
@@ -264,31 +362,19 @@ def lambda_handler(event, _ctx):
                 "cost_usd": (f"{cost:.6f}" if cost_known and calls else ""),
                 "files": parts,
             }
-            # a bulk upload may span several banks/accounts and several years
-            accounts = sorted({t.account_no for t in txns if t.account_no})
-            banks = sorted({t.bank for t in txns if t.bank})
-            status = "done" if report.status == "passed" else "needs_review"
             _update(job_id, **{
-                "status": status,
+                "status": "done" if worst == "passed" else "needs_review",
                 # clear any error left over from a previous failed attempt,
                 # otherwise a job reads "done" while still showing an old error
                 "error": "",
                 "summary": {
-                    "rows": len(txns),
-                    "validation": report.status,
-                    "issues": len(report.issues),
-                    "account_no": (accounts[0] if len(accounts) == 1
-                                   else f"{len(accounts)} accounts"),
-                    "account_name": extract.meta.account_name,
-                    "bank": ", ".join(banks) if banks else extract.meta.bank,
-                    "accounts": accounts,
-                    # merged jobs span every statement's period, not just the first
-                    "period_from": min((e.meta.period_from for e in extracts
-                                        if e.meta.period_from), default=""),
-                    "period_to": max((e.meta.period_to for e in extracts
-                                      if e.meta.period_to), default=""),
-                    "files": len(extracts),
-                    "categories": cats,
+                    "files": len(ordered),
+                    "filenames": [f.get("filename", "") for f in ordered],
+                    "pages": sum(int(getattr(m, "n_pages", 0) or 0) for m in all_metas),
+                    "rows": sum(a["rows"] for a in accounts_out),
+                    "validation": worst,
+                    "issues": sum(a["issues"] for a in accounts_out),
+                    "accounts": accounts_out,
                     "ai": ai_block,
                 },
             })

@@ -2,8 +2,10 @@
 
 SaaS that extracts + categorizes transactions from Indian bank/NBFC statement
 PDFs. Deployed and working: https://dg3uwro4b2d2l.cloudfront.net — sign-in
-required (Cognito; admin and customer roles). Stack `BsaStack` in ap-south-1,
-account 681832767155.
+required. Auth is self-hosted: users and sessions live in DynamoDB (AuthTable),
+passwords are PBKDF2-HMAC-SHA256 with a per-user salt, and the API Lambda checks
+a bearer token on every /jobs* route. No external identity provider.
+Stack `BsaStack` in ap-south-1, account 681832767155.
 
 ## Layout
 - backend/processor/bsa/ — the pipeline package (ingest → classify → extract →
@@ -56,22 +58,31 @@ account 681832767155.
     (this cost 143 of 163 rows on the first Axis run).
 
 ## Accounts
-Self-signup is disabled — create users deliberately and put them in a group:
+There is no signup. Create logins with the helper (it hashes locally and writes
+straight to the auth table):
 
-    POOL=<UserPoolId from stack outputs>
-    aws cognito-idp admin-create-user --user-pool-id $POOL \
-        --username person@company.com \
-        --user-attributes Name=email,Value=person@company.com Name=email_verified,Value=true
-    aws cognito-idp admin-add-user-to-group --user-pool-id $POOL \
-        --username person@company.com --group-name customer   # or admin
+    python scripts/manage_users.py add someone@getitright.co.in --role admin
+    python scripts/manage_users.py add someone@getitright.co.in --role customer
+    python scripts/manage_users.py list
+    python scripts/manage_users.py remove someone@getitright.co.in
 
-The pool uses UsernameAttributes=email, so the username IS the email. Do not
-re-add a username sign-in alias: with both set, Cognito refuses to create any
-email-shaped username, and that property cannot be changed in place afterwards
-(the pool must be replaced).
+Passwords are stored only as a salted PBKDF2 hash and cannot be read back — to
+change one, set a new one. PBKDF2_ROUNDS must stay identical in
+scripts/manage_users.py and backend/api/handler.py or every login fails.
 
-A newly created user gets a temporary password and first sign-in returns a
-NEW_PASSWORD_REQUIRED challenge; the login screen handles it inline.
+Roles: `admin` sees every job plus the AI usage/cost panel; `customer` sees only
+their own uploads and never the AI block.
+
+11. One report per ACCOUNT, not per upload. Files are grouped by
+    (bank, account_no); ten files across three accounts produce three cards and
+    three CSVs under outputs/{job}/{account-slug}/.
+12. Balance validation runs PER SOURCE STATEMENT, never across a merged
+    account. Two statements with a gap between them each reconcile; one chain
+    over both would compare March's opening balance to January's closing and
+    report a failure that is not real. The account shows the worst individual
+    statement's status. Pinned by tests/test_period_gap.py.
+13. The UI is strictly black/white/grey. Status is carried by words plus fill
+    and border weight, never colour; debits use accounting parentheses.
 
 ## Adding a new bank
 Preferred path is a YAML descriptor with no Python:

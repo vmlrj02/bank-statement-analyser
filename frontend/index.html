@@ -5,172 +5,157 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Statement Analyser</title>
 <style>
-/* Monochrome by design: hierarchy comes from weight, fill and spacing rather
-   than hue. Status still has to read at a glance without colour, so each pill
-   carries a glyph (✓ ! ✕) as well as a fill weight. */
+/* Strictly black, white and grey. No hue anywhere. Status must still read at a
+   glance, so it is carried by explicit words plus fill and border weight —
+   never by colour. Debits use accounting parentheses, matching the CSV. */
 :root{
-  --bg:#fff; --sunk:#f5f5f5; --card:#fff; --fg:#111; --mut:#6b6b6b;
-  --line:#e3e3e3; --line2:#c9c9c9; --inv:#111; --inv-fg:#fff;
-  --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.05);
-}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#000; --sunk:#191919; --card:#0e0e0e; --fg:#f2f2f2; --mut:#8e8e8e;
-  --line:#262626; --line2:#3d3d3d; --inv:#f2f2f2; --inv-fg:#000;
-  --shadow:0 1px 2px rgba(0,0,0,.6);
-}}
-:root[data-theme="dark"]{
-  --bg:#000; --sunk:#191919; --card:#0e0e0e; --fg:#f2f2f2; --mut:#8e8e8e;
-  --line:#262626; --line2:#3d3d3d; --inv:#f2f2f2; --inv-fg:#000;
-  --shadow:0 1px 2px rgba(0,0,0,.6);
+  --bg:#ffffff; --fg:#000000; --mut:#5c5c5c; --faint:#8a8a8a;
+  --line:#d6d6d6; --line2:#a8a8a8; --sunk:#f2f2f2;
+  --radius:10px;
 }
 *{box-sizing:border-box}
-/* The [hidden] attribute is only a UA rule (display:none) and loses to any
-   selector of ours that sets display — #gate, .shell and .row all do. Without
-   this, toggling .hidden silently does nothing: a successful sign-in left the
-   fixed, full-screen login overlay sitting on top of the app. */
+/* [hidden] is only a UA rule and loses to any author selector that sets
+   display; several below do. Without this, toggling .hidden does nothing. */
 [hidden]{display:none !important}
-body{margin:0; background:var(--bg); color:var(--fg);
-  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 
-.shell{max-width:1120px; margin:0 auto; padding:0 24px 90px;
-  display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:40px; align-items:start}
-header{grid-column:1/-1; padding:56px 0 32px; border-bottom:1px solid var(--line); margin-bottom:34px}
-h1{font-size:36px; line-height:1.1; letter-spacing:-.022em; font-weight:600; margin:0 0 8px}
-header p{margin:0; color:var(--mut); font-size:17px; letter-spacing:-.01em}
-h2{font-size:13px; text-transform:uppercase; letter-spacing:.07em; font-weight:600;
-  color:var(--mut); margin:0 0 14px}
+.shell{max-width:1140px;margin:0 auto;padding:0 24px 80px;
+  display:grid;grid-template-columns:minmax(0,1fr) 268px;gap:36px;align-items:start}
+header{grid-column:1/-1;padding:34px 0 20px;border-bottom:2px solid var(--fg);margin-bottom:28px;
+  display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+header h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0}
+header .sub{color:var(--mut);font-size:14px;margin:2px 0 0}
+.who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mut)}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;
+  color:var(--mut);margin:0 0 12px}
 
-/* ---------- drop ---------- */
-.drop{background:var(--card); border:1.5px dashed var(--line2); border-radius:var(--radius);
-  padding:46px 26px; text-align:center; cursor:pointer;
-  transition:border-color .18s ease, background .18s ease}
-.drop:hover{border-color:var(--fg); background:var(--sunk)}
-.drop.hover{border-color:var(--fg); border-style:solid; background:var(--sunk)}
-.drop .t{font-size:18px; font-weight:600; letter-spacing:-.012em}
-.drop .s{color:var(--mut); font-size:14px; margin-top:6px}
-
-/* ---------- staged tray ---------- */
-.tray{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-  margin-top:16px; overflow:hidden}
-.trayhead{padding:13px 18px; border-bottom:1px solid var(--line);
-  font-size:13px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:var(--mut)}
-.f{display:flex; align-items:center; gap:12px; padding:13px 18px; border-bottom:1px solid var(--line)}
+/* upload */
+.drop{border:2px dashed var(--line2);border-radius:var(--radius);padding:34px 22px;
+  text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.hover{border-color:var(--fg);background:var(--sunk);border-style:solid}
+.drop .t{font-size:16px;font-weight:700}
+.drop .s{color:var(--mut);font-size:13px;margin-top:5px}
+.tray{border:1px solid var(--line);border-radius:var(--radius);margin-top:14px;overflow:hidden}
+.trayhead{padding:10px 15px;border-bottom:1px solid var(--line);background:var(--sunk);
+  font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;color:var(--mut)}
+.f{display:flex;align-items:center;gap:11px;padding:10px 15px;border-bottom:1px solid var(--line)}
 .f:last-child{border-bottom:0}
-.f .doc{width:28px;height:28px;border-radius:6px;background:var(--sunk);flex:none;
-  display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--mut)}
+.f .doc{width:26px;height:26px;border:1px solid var(--line2);border-radius:5px;flex:none;
+  display:grid;place-items:center;font-size:9px;font-weight:700;color:var(--mut)}
 .f .info{min-width:0;flex:1}
-.f .nm{font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.f .sz{color:var(--mut);font-size:12.5px;margin-top:1px}
-.f input[type=password]{width:160px;flex:none;padding:7px 10px;font-size:13.5px;font-family:inherit;
-  border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--fg)}
-.f input[type=password]:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
-.f input.miss{border-color:var(--fg);border-width:1.5px}
-.lockmsg{font-size:12px;color:var(--fg);margin-top:2px;font-weight:500}
-.x{border:0;background:none;color:var(--mut);font-size:18px;cursor:pointer;
-  padding:2px 5px;border-radius:5px;line-height:1;flex:none}
-.x:hover{background:var(--sunk);color:var(--fg)}
+.f .nm{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f .sz{color:var(--mut);font-size:12px}
+.lockmsg{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+input[type=password],input[type=text],input[type=email]{padding:9px 12px;font-size:14px;
+  font-family:inherit;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--fg)}
+input:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
+.f input[type=password]{width:158px;flex:none}
+.f input.miss{border:2px solid var(--fg)}
+.x{border:0;background:none;color:var(--mut);font-size:17px;cursor:pointer;padding:1px 5px;flex:none}
+.x:hover{color:var(--fg)}
+.row{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.row input[type=text]{flex:1;min-width:210px}
+button{font-family:inherit;font-size:14px;cursor:pointer}
+.go{background:var(--fg);color:var(--bg);border:2px solid var(--fg);border-radius:999px;
+  padding:9px 22px;font-weight:700}
+.go:hover{background:var(--bg);color:var(--fg)}
+.go:disabled{border-color:var(--line2);background:var(--bg);color:var(--faint);cursor:not-allowed}
+.ghost{background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:999px;
+  padding:5px 13px;font-size:13px;font-weight:600}
+.ghost:hover{background:var(--fg);color:var(--bg)}
+.hint{color:var(--mut);font-size:12.5px;width:100%}
 
-/* ---------- controls ---------- */
-.row{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}
-input[type=text]{flex:1;min-width:220px;padding:11px 14px;font-size:14.5px;font-family:inherit;
-  border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--fg)}
-input[type=text]:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
-button{font-family:inherit;font-size:14.5px;cursor:pointer}
-.go{background:var(--inv);color:var(--inv-fg);border:0;border-radius:999px;
-  padding:12px 24px;font-weight:500;transition:opacity .18s ease}
-.go:hover{opacity:.82}
-.go:disabled{opacity:.32;cursor:not-allowed}
-.ghost{background:var(--card);color:var(--fg);border:1px solid var(--line2);
-  border-radius:999px;padding:6px 14px;font-size:13.5px}
-.ghost:hover{background:var(--sunk)}
-.hint{color:var(--mut);font-size:13px;width:100%}
+/* counter with hover list */
+.counter{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line2);
+  border-radius:999px;padding:5px 14px;font-size:13px;font-weight:700;cursor:default;position:relative}
+.counter .pop{display:none;position:absolute;top:calc(100% + 7px);left:0;z-index:20;
+  min-width:250px;max-width:380px;max-height:260px;overflow:auto;background:var(--bg);
+  border:2px solid var(--fg);border-radius:8px;padding:9px 12px;font-weight:400;
+  font-size:12.5px;line-height:1.7;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.counter:hover .pop,.counter:focus .pop{display:block}
+.counter .pop b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--mut);margin-bottom:4px}
+.counter .pop div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* ---------- report ---------- */
-.job{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-  padding:20px 22px;box-shadow:var(--shadow)}
-.job .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.job .nm{font-weight:600;letter-spacing:-.01em;margin-right:auto;font-size:16px}
-.pill{font-size:12px;padding:3px 10px;border-radius:999px;font-weight:600;white-space:nowrap;
-  border:1px solid var(--line2);color:var(--mut)}
-.pill.solid{background:var(--inv);color:var(--inv-fg);border-color:var(--inv)}
-.pill.strong{border-color:var(--fg);border-width:1.5px;color:var(--fg)}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-  gap:1px;background:var(--line);border:1px solid var(--line);border-radius:11px;
-  overflow:hidden;margin-top:16px}
-.stat{background:var(--card);padding:12px 14px}
-.stat b{display:block;font-size:20px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.stat span{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
-.cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
-.cats span{background:var(--sunk);color:var(--mut);font-size:12px;padding:3px 9px;border-radius:999px}
-.err{background:var(--sunk);color:var(--fg);font-size:13px;padding:10px 12px;
-  border-radius:10px;margin-top:12px;border-left:3px solid var(--fg);word-break:break-word}
-.acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
-.empty{color:var(--mut);text-align:center;padding:38px 0;font-size:14.5px;
-  border:1px dashed var(--line);border-radius:var(--radius)}
+/* account card */
+.job{border:1px solid var(--line2);border-radius:var(--radius);padding:17px 19px;margin-bottom:13px}
+.job.sel{border:2px solid var(--fg)}
+.job .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.job .nm{font-weight:700;font-size:15.5px;margin-right:auto;letter-spacing:-.01em}
+.chip{font-size:11px;padding:3px 10px;border-radius:999px;font-weight:700;white-space:nowrap;
+  text-transform:uppercase;letter-spacing:.07em}
+.chip.done{background:var(--fg);color:var(--bg);border:2px solid var(--fg)}
+.chip.warn{background:var(--bg);color:var(--fg);border:2px solid var(--fg)}
+.chip.fail{background:var(--bg);color:var(--fg);border:2px solid var(--fg);
+  text-decoration:underline;text-underline-offset:2px}
+.chip.busy{background:var(--bg);color:var(--mut);border:1px dashed var(--line2);
+  font-style:italic;text-transform:none;letter-spacing:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;
+  overflow:hidden;margin-top:13px}
+.stat{background:var(--bg);padding:9px 12px}
+.stat b{display:block;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
+.meta{color:var(--mut);font-size:12.5px;margin-top:9px}
+.meta b{color:var(--fg)}
+.cats{display:flex;flex-wrap:wrap;gap:5px;margin-top:11px}
+.cats span{border:1px solid var(--line);color:var(--mut);font-size:11.5px;padding:2px 9px;border-radius:999px}
+.err{border:1px solid var(--fg);border-left-width:4px;font-size:12.5px;padding:9px 11px;
+  border-radius:6px;margin-top:11px;word-break:break-word}
+.acts{display:flex;gap:7px;margin-top:13px;flex-wrap:wrap}
+.empty{color:var(--mut);text-align:center;padding:32px 0;font-size:14px;
+  border:1px dashed var(--line2);border-radius:var(--radius)}
 
-/* ---------- sidebar ---------- */
-aside{position:sticky;top:26px}
-.hist{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--card)}
+/* admin AI panel */
+.ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.ai h4{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--sunk);
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut)}
+.ai .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:1px;background:var(--line)}
+.ai .g{background:var(--bg);padding:8px 11px}
+.ai .g b{display:block;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.ai .g span{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.ai table{width:100%;border-collapse:collapse;font-size:12px}
+.ai td,.ai th{padding:6px 12px;border-top:1px solid var(--line);text-align:left}
+
+/* sidebar */
+aside{position:sticky;top:22px}
+.hist{border:1px solid var(--line2);border-radius:var(--radius);overflow:hidden}
 .h-item{display:block;width:100%;text-align:left;background:none;border:0;
-  border-bottom:1px solid var(--line);padding:12px 15px;cursor:pointer;font-family:inherit}
+  border-bottom:1px solid var(--line);padding:10px 13px;cursor:pointer;font-family:inherit}
 .h-item:last-child{border-bottom:0}
 .h-item:hover{background:var(--sunk)}
-.h-item.sel{background:var(--sunk);box-shadow:inset 3px 0 0 var(--fg)}
-.h-nm{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;letter-spacing:-.005em}
-.h-sub{color:var(--mut);font-size:12px;margin-top:2px;display:flex;gap:6px;align-items:center}
-.h-g{font-weight:700}
-.side-empty{color:var(--mut);font-size:13px;padding:20px 15px;text-align:center}
+.h-item.sel{background:var(--sunk);box-shadow:inset 4px 0 0 var(--fg)}
+.h-nm{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-sub{color:var(--mut);font-size:11px;margin-top:2px;display:flex;gap:6px}
+.side-empty{color:var(--mut);font-size:12.5px;padding:18px 13px;text-align:center}
 
-@media(max-width:900px){
-  .shell{grid-template-columns:minmax(0,1fr)}
-  aside{position:static}
-  header{padding:40px 0 26px} h1{font-size:29px}
-}
+/* login */
+#gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:60;padding:22px}
+.card{width:100%;max-width:340px}
+.card h1{font-size:22px;font-weight:700;margin:0 0 4px}
+.card p.sub{color:var(--mut);font-size:13.5px;margin:0 0 22px}
+.card label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.09em;
+  font-weight:700;color:var(--mut);margin:13px 0 5px}
+.card input{width:100%}
+.card .go{width:100%;margin-top:20px}
+.msg{margin-top:12px;font-size:13px;padding:9px 11px;border:1px solid var(--fg);
+  border-left-width:4px;border-radius:6px;font-weight:600}
 
-/* ---------- login ---------- */
-#gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:50;padding:24px}
-.card{width:100%;max-width:360px}
-.card h1{font-size:26px;margin:0 0 6px}
-.card p.sub{color:var(--mut);font-size:14.5px;margin:0 0 26px}
-.card label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
-  font-weight:600;color:var(--mut);margin:14px 0 6px}
-.card input{width:100%;padding:11px 14px;font-size:15px;font-family:inherit;
-  border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--fg)}
-.card input:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
-.card .go{width:100%;margin-top:22px;justify-content:center}
-.msg{margin-top:14px;font-size:13.5px;padding:10px 12px;border-radius:10px;
-  background:var(--sunk);border-left:3px solid var(--fg)}
-.who{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mut)}
-.badge{border:1px solid var(--line2);border-radius:999px;padding:2px 9px;font-size:11px;
-  font-weight:600;text-transform:uppercase;letter-spacing:.06em}
-.badge.adm{background:var(--inv);color:var(--inv-fg);border-color:var(--inv)}
-
-/* ---------- admin AI panel ---------- */
-.ai{margin-top:16px;border:1px solid var(--line);border-radius:11px;overflow:hidden}
-.ai h4{margin:0;padding:10px 14px;background:var(--sunk);font-size:11.5px;
-  text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
-.ai .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:1px;background:var(--line)}
-.ai .g{background:var(--card);padding:10px 13px}
-.ai .g b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
-.ai .g span{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
-.ai table{font-size:12.5px}
-.ai td,.ai th{padding:7px 13px}
-
-/* ---------- dialog ---------- */
-dialog{border:0;border-radius:var(--radius);padding:0;background:var(--card);color:var(--fg);
-  max-width:min(980px,94vw);width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-dialog::backdrop{background:rgba(0,0,0,.5)}
-.dh{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+/* dialog */
+dialog{border:2px solid var(--fg);border-radius:var(--radius);padding:0;background:var(--bg);
+  color:var(--fg);max-width:min(980px,94vw);width:100%}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+.dh{display:flex;align-items:center;gap:12px;padding:13px 17px;border-bottom:1px solid var(--fg)}
 .db{max-height:72vh;overflow:auto}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th{position:sticky;top:0;background:var(--card);text-align:left;font-weight:600;
-  padding:10px 12px;border-bottom:1px solid var(--line2);white-space:nowrap;
-  font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
-td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{position:sticky;top:0;background:var(--bg);text-align:left;font-weight:700;padding:9px 11px;
+  border-bottom:2px solid var(--fg);white-space:nowrap;font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.dr{color:var(--mut)}
+@media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}aside{position:static}}
 </style>
 </head>
 <body>
@@ -182,10 +167,6 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
     <input id="u" type="email" autocomplete="username">
     <label for="pw">Password</label>
     <input id="pw" type="password" autocomplete="current-password">
-    <div id="np" hidden>
-      <label for="pw2">New password</label>
-      <input id="pw2" type="password" autocomplete="new-password">
-    </div>
     <button class="go" id="signin">Sign in</button>
     <div class="msg" id="gmsg" hidden></div>
   </div>
@@ -193,10 +174,12 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 
 <div class="shell" id="app" hidden>
   <header>
-    <h1>Bank Statement Analyser</h1>
-    <p>Drop in a year of statements. Get one categorised, balance-checked report.</p>
-    <div class="who" style="justify-content:center;margin-top:14px">
-      <span id="whoami"></span><span class="badge" id="role" hidden></span>
+    <div>
+      <h1>Bank Statement Analyser</h1>
+      <p class="sub">Statements in, one balance-checked report per account.</p>
+    </div>
+    <div class="who">
+      <span id="whoami"></span><span class="chip done" id="role" hidden></span>
       <button class="ghost" id="out">Sign out</button>
     </div>
   </header>
@@ -204,32 +187,33 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
   <main>
     <div class="drop" id="drop">
       <div class="t">Drop PDFs here, or click to choose</div>
-      <div class="s">Any number of banks, accounts or years — merged into one report</div>
+      <div class="s">Up to 20 at once — grouped by account, one report each</div>
       <input type="file" id="file" accept="application/pdf" multiple hidden>
     </div>
-
     <div id="tray"></div>
-
     <div class="row" id="controls" hidden>
       <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
       <button class="go" id="go">Analyse</button>
       <span class="hint" id="hint"></span>
     </div>
 
-    <h2 style="margin-top:38px">Report</h2>
+    <div style="display:flex;align-items:center;gap:12px;margin:30px 0 12px;flex-wrap:wrap">
+      <h2 style="margin:0">Reports</h2>
+      <span class="counter" id="counter" tabindex="0">Total statements uploaded: 0
+        <span class="pop" id="pop"></span></span>
+    </div>
     <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
   </main>
 
   <aside>
-    <h2>History</h2>
-    <div class="hist" id="hist"><div class="side-empty">No previous reports</div></div>
+    <h2>Accounts</h2>
+    <div class="hist" id="hist"><div class="side-empty">No reports yet</div></div>
   </aside>
 </div>
 
 <dialog id="pv">
   <div class="dh"><b id="pvTitle">Preview</b>
-    <span style="margin-left:auto"><button class="ghost" onclick="pv.close()">Done</button></span>
-  </div>
+    <span style="margin-left:auto"><button class="ghost" onclick="pv.close()">Done</button></span></div>
   <div class="db" id="pvBody"></div>
 </dialog>
 
@@ -237,99 +221,58 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 <script>
 const API = window.BSA_API;
 const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nfmt = n => Number(n||0).toLocaleString('en-IN');
+const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
+const TKEY = 'bsa.token';
+let IS_ADMIN = false, WHO = '', jobs = [], cards = [], activeKey = null;
+let staged = [], seq = 0;
 
-/* ---------- auth ----------
-   Cognito's InitiateAuth is a plain JSON endpoint, so a no-build page can talk
-   to it directly with fetch and keep this login screen instead of the hosted
-   UI. Accounts are admin-created, which means a first sign-in arrives as a
-   NEW_PASSWORD_REQUIRED challenge — handled below, or nobody could ever get in. */
-const IDP = `https://cognito-idp.${window.BSA_REGION}.amazonaws.com/`;
-const TKEY = 'bsa.idToken';
-let IS_ADMIN = false, WHO = '';
-
-const idp = (target, body) => fetch(IDP, {
-  method:'POST',
-  headers:{'content-type':'application/x-amz-json-1.1',
-           'x-amz-target':`AWSCognitoIdentityProviderService.${target}`},
-  body: JSON.stringify(body)
-}).then(async r => { const j = await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(j.message || j.__type || 'Sign-in failed'); return j; });
-
-function claims(tok){
-  try{ return JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
-  catch(e){ return null; }
-}
-function token(){
-  const t = localStorage.getItem(TKEY);
-  if(!t) return null;
-  const c = claims(t);
-  // A stale token just yields 401s and a confusing empty page — drop it here.
-  if(!c || (c.exp||0)*1000 <= Date.now()){ localStorage.removeItem(TKEY); return null; }
-  return t;
-}
-function applyToken(t){
-  localStorage.setItem(TKEY, t);
-  const c = claims(t) || {};
-  const g = c['cognito:groups'] || [];
-  IS_ADMIN = (Array.isArray(g) ? g : String(g).split(/[\s,\[\]]+/)).includes('admin');
-  WHO = c.email || c['cognito:username'] || '';
-}
+/* ---------- auth: session token from our own API, no external service ---------- */
+function token(){ return localStorage.getItem(TKEY) || null; }
 function showGate(msg){
   $('app').hidden = true; $('gate').hidden = false;
-  if(msg){ $('gmsg').hidden = false; $('gmsg').textContent = msg; }
+  $('gmsg').hidden = !msg; if(msg) $('gmsg').textContent = msg;
 }
 function showApp(){
   $('gate').hidden = true; $('app').hidden = false;
   $('whoami').textContent = WHO;
-  $('role').hidden = false;
-  $('role').textContent = IS_ADMIN ? 'admin' : 'customer';
-  $('role').className = 'badge' + (IS_ADMIN ? ' adm' : '');
+  $('role').hidden = false; $('role').textContent = IS_ADMIN ? 'admin' : 'customer';
   refresh();
 }
-
 $('signin').onclick = async () => {
-  const btn=$('signin'); btn.disabled=true; $('gmsg').hidden=true;
-  const U=$('u').value.trim(), P=$('pw').value, NP=$('pw2').value;
+  const b = $('signin'); b.disabled = true; $('gmsg').hidden = true;
   try{
-    let r = await idp('InitiateAuth', {AuthFlow:'USER_PASSWORD_AUTH',
-      ClientId:window.BSA_CLIENT, AuthParameters:{USERNAME:U, PASSWORD:P}});
-    if(r.ChallengeName === 'NEW_PASSWORD_REQUIRED'){
-      if(!NP){
-        $('np').hidden=false; btn.disabled=false;
-        $('gmsg').hidden=false;
-        $('gmsg').textContent='First sign-in: choose a new password (min 10 characters).';
-        return;
-      }
-      r = await idp('RespondToAuthChallenge', {ClientId:window.BSA_CLIENT,
-        ChallengeName:'NEW_PASSWORD_REQUIRED', Session:r.Session,
-        ChallengeResponses:{USERNAME:U, NEW_PASSWORD:NP}});
-    }
-    const tok = r.AuthenticationResult && r.AuthenticationResult.IdToken;
-    if(!tok) throw new Error('No token returned');
-    applyToken(tok); $('pw').value=''; $('pw2').value=''; showApp();
+    const r = await fetch(API+'/auth/login', {method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({email:$('u').value.trim(), password:$('pw').value})});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error || 'Sign-in failed');
+    localStorage.setItem(TKEY, j.token);
+    IS_ADMIN = j.role === 'admin'; WHO = j.email; $('pw').value = '';
+    showApp();
   }catch(e){ showGate(e.message); }
-  finally{ btn.disabled=false; }
+  finally{ b.disabled = false; }
 };
 $('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
-$('pw2').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
+$('u').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
 $('out').onclick = () => { localStorage.removeItem(TKEY); location.reload(); };
-const esc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
-const nfmt = n => Number(n||0).toLocaleString('en-IN');
 
-let staged = [], seq = 0;
-let jobs = [], activeId = null;
+async function api(path, opts){
+  const t = token();
+  if(!t){ showGate('Please sign in.'); throw new Error('signed out'); }
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers, {authorization:'Bearer '+t});
+  const r = await fetch(API+path, opts);
+  if(r.status === 401){
+    localStorage.removeItem(TKEY); showGate('Session expired — please sign in again.');
+    throw new Error('signed out');
+  }
+  if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+  return r.json();
+}
 
-/* Status has to read without colour, so each state gets a glyph as well as a
-   fill weight: solid = finished clean, strong outline = needs attention. */
-const GLYPH = {done:'✓', needs_review:'!', failed:'✕', password_required:'✕',
-               processing:'•', awaiting_upload:'•'};
-const pillClass = s => s==='done' ? 'solid'
-  : (s==='failed'||s==='password_required'||s==='needs_review') ? 'strong' : '';
-
-/* ---------- encryption detection ----------
-   An encrypted PDF carries /Encrypt in its trailer. Detecting it here lets us
-   ask for the password up front rather than after a failed job. */
+/* ---------- staging ---------- */
 async function isEncrypted(file){
   try{
     const buf = new Uint8Array(await file.arrayBuffer());
@@ -341,8 +284,6 @@ async function isEncrypted(file){
   }catch(e){}
   return false;
 }
-
-/* ---------- staging ---------- */
 const drop = $('drop'), fileIn = $('file');
 drop.onclick = () => fileIn.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
@@ -353,162 +294,174 @@ fileIn.onchange = () => { stage([...fileIn.files]); fileIn.value=''; };
 async function stage(files){
   for(const f of files){
     if(!/\.pdf$/i.test(f.name)) continue;
-    if(staged.length >= 20){ alert('Up to 20 statements per report.'); break; }
+    if(staged.length >= 20){ alert('Up to 20 statements per upload.'); break; }
     const it = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
     staged.push(it); renderTray();
     it.locked = await isEncrypted(f); renderTray();
   }
 }
 function removeFile(id){ staged = staged.filter(s=>s.id!==id); renderTray(); }
-function setPw(id,v){ const s=staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
-
+function setPw(id,v){ const s = staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
 function renderTray(){
-  const t=$('tray');
-  if(!staged.length){ t.innerHTML=''; $('controls').hidden=true; return; }
-  $('controls').hidden=false;
+  const t = $('tray');
+  if(!staged.length){ t.innerHTML=''; $('controls').hidden = true; return; }
+  $('controls').hidden = false;
   t.innerHTML = `<div class="tray">
-    <div class="trayhead">${staged.length} file${staged.length>1?'s':''} → 1 report</div>
+    <div class="trayhead">${staged.length} file${staged.length>1?'s':''} selected</div>
     ${staged.map(s=>`<div class="f">
-      <div class="doc">${s.locked?'🔒':'PDF'}</div>
-      <div class="info">
-        <div class="nm">${esc(s.name)}</div>
-        <div class="sz">${kb(s.size)}${s.locked?' · protected':''}</div>
-        ${s.locked&&!s.pw?'<div class="lockmsg">Password required</div>':''}
-      </div>
+      <div class="doc">${s.locked?'LOCK':'PDF'}</div>
+      <div class="info"><div class="nm">${esc(s.name)}</div>
+        <div class="sz">${kb(s.size)}${s.locked?' · password protected':''}</div>
+        ${s.locked&&!s.pw?'<div class="lockmsg">Password required</div>':''}</div>
       ${s.locked?`<input type="password" placeholder="Password" value="${esc(s.pw)}"
          oninput="setPw(${s.id},this.value)" class="${s.pw?'':'miss'}">`:''}
-      <button class="x" title="Remove" onclick="removeFile(${s.id})">×</button>
+      <button class="x" title="Remove" onclick="removeFile(${s.id})">&times;</button>
     </div>`).join('')}</div>`;
   updateGo();
 }
-
 function updateGo(){
   const missing = staged.filter(s=>s.locked && !s.pw).length;
   $('go').disabled = !staged.length || missing>0;
   $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
   $('hint').textContent = missing
     ? `${missing} file${missing>1?'s need':' needs'} a password before you can continue.`
-    : (staged.length>1 ? 'Merged into one report, overlapping rows removed.' : '');
+    : (staged.length>1 ? 'Grouped by account — one report per account.' : '');
 }
-
-/* ---------- upload ---------- */
-async function api(path, opts){
-  const t = token();
-  if(!t){ showGate('Session expired — please sign in again.'); throw new Error('signed out'); }
-  opts = opts || {};
-  opts.headers = Object.assign({}, opts.headers, {authorization:'Bearer '+t});
-  const r = await fetch(API+path, opts);
-  if(r.status === 401 || r.status === 403){
-    localStorage.removeItem(TKEY);
-    showGate('Session expired — please sign in again.');
-    throw new Error('signed out');
-  }
-  if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
-  return r.json();
-}
-
 $('go').onclick = async () => {
-  const go=$('go'); go.disabled=true;
+  const b = $('go'); b.disabled = true;
   const files = staged.slice();
   try{
-    const body = { files: files.map(s=>({filename:s.name, password:s.pw||undefined})) };
+    const body = {files: files.map(s=>({filename:s.name, password:s.pw||undefined}))};
     const parties = $('parties').value.split(',').map(x=>x.trim()).filter(Boolean);
     if(parties.length) body.related_parties = parties;
-    go.textContent='Creating report…';
-    const { job_id, uploads } = await api('/jobs', {method:'POST',
+    b.textContent = 'Creating…';
+    const {uploads} = await api('/jobs', {method:'POST',
       headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
     for(let i=0;i<files.length;i++){
-      go.textContent = `Uploading ${i+1} of ${files.length}…`;
+      b.textContent = `Uploading ${i+1} of ${files.length}…`;
       const res = await fetch(uploads[i].upload_url, {method:'PUT',
         headers:{'content-type':'application/pdf'}, body:files[i].file});
       if(!res.ok) throw new Error(`upload failed for ${files[i].name}`);
     }
-    staged=[]; $('parties').value=''; activeId=job_id; renderTray(); refresh();
+    staged=[]; $('parties').value=''; renderTray(); refresh();
   }catch(e){ alert('Upload failed: '+e.message); }
-  finally{ go.disabled=false; updateGo(); }
+  finally{ b.disabled=false; updateGo(); }
 };
 
 /* ---------- rendering ---------- */
-const fmtAmt = a => {
+const fmtAmt = a => {                       // debits in parentheses, never colour
   const s = Math.abs(a).toLocaleString('en-IN',{minimumFractionDigits:2});
-  return a<0 ? `<span class="dr">(${s})</span>` : s;      // debits in parentheses
+  return a<0 ? `(${s})` : s;
 };
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function shortDate(iso){
+  if(!iso || iso.length<10) return iso||'';
+  const [y,m,d] = iso.split('-');
+  return `${Number(d)}-${MON[Number(m)-1]}-${y.slice(2)}`;
+}
+// Continuous periods are already collapsed server-side; a gap stays its own range.
+const fmtPeriods = ps => (ps||[]).map(p=>`${shortDate(p[0])} to ${shortDate(p[1])}`).join('; ');
 
-function activeCard(j){
-  if(!j) return '<div class="empty">Nothing yet — upload statements to begin.</div>';
-  const s=j.summary||{};
-  const cats=Object.entries(s.categories||{}).sort((a,b)=>b[1]-a[1]).slice(0,8)
-    .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
-  const ready=['done','needs_review'].includes(j.status);
-  const stats = ready ? `<div class="stats">
-      <div class="stat"><b>${nfmt(s.rows)}</b><span>Transactions</span></div>
-      ${s.files>1?`<div class="stat"><b>${esc(String(s.files))}</b><span>Statements</span></div>`:''}
-      ${(s.accounts||[]).length>1?`<div class="stat"><b>${(s.accounts||[]).length}</b><span>Accounts</span></div>`:''}
-      <div class="stat"><b>${esc(s.validation||'—')}</b><span>Balance check</span></div>
-      <div class="stat"><b>${nfmt(s.issues||0)}</b><span>Rows to review</span></div>
-    </div>` : '';
-  const a = s.ai;
-  const money = v => (v===''||v===undefined||v===null) ? '—' : '$'+Number(v).toFixed(4);
-  const aiPanel = (IS_ADMIN && a) ? `<div class="ai">
-      <h4>AI usage · admin only</h4>
+function statusChip(st){
+  if(st==='done')      return '<span class="chip done">Done</span>';
+  if(st==='needs_review') return '<span class="chip warn">Needs review</span>';
+  if(st==='failed' || st==='password_required')
+    return `<span class="chip fail">${st==='failed'?'Failed':'Password required'}</span>`;
+  return `<span class="chip busy">${esc(String(st).replace(/_/g,' '))}…</span>`;
+}
+function validationChip(v){
+  if(!v) return '';
+  if(v==='passed') return '<span class="chip done">Balance passed</span>';
+  if(v==='failed') return '<span class="chip fail">Balance FAILED</span>';
+  return '<span class="chip warn">Balance warnings</span>';
+}
+
+/* One card per ACCOUNT. A job holding ten files across three accounts becomes
+   three cards, each with its own merged CSV. */
+function buildCards(){
+  const out = [];
+  for(const j of jobs){
+    const s = j.summary || {};
+    const accts = s.accounts || [];
+    if(accts.length){
+      for(const a of accts) out.push({key:`${j.job_id}:${a.slug}`, job:j, acct:a});
+    } else {
+      out.push({key:`${j.job_id}:`, job:j, acct:null});   // pending or failed
+    }
+  }
+  return out;
+}
+
+function cardHtml(c){
+  const j = c.job, a = c.acct, s = j.summary || {};
+  const busy = ['processing','awaiting_upload','merging'].includes(j.status);
+  const title = a ? (a.title || `${a.bank} - ${a.account_no}`) : esc(j.filename);
+  const cats = a ? Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,8)
+      .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('') : '';
+  const ai = s.ai;
+  const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
+  const aiPanel = (IS_ADMIN && ai) ? `<div class="ai"><h4>AI usage for this upload · admin only</h4>
       <div class="grid">
-        <div class="g"><b>${a.used ? 'Yes' : 'No'}</b><span>AI used</span></div>
-        <div class="g"><b>${nfmt(a.ai_files||0)}/${nfmt(s.files||0)}</b><span>Files via AI</span></div>
-        <div class="g"><b>${nfmt(a.tokens_in||0)}</b><span>Tokens in</span></div>
-        <div class="g"><b>${nfmt(a.tokens_out||0)}</b><span>Tokens out</span></div>
-        <div class="g"><b>${nfmt(a.calls||0)}</b><span>API calls</span></div>
-        <div class="g"><b>${money(a.cost_usd)}</b><span>Cost</span></div>
-      </div>
-      ${(a.files||[]).length ? `<table><thead><tr><th>File</th><th>Parser</th>
-        <th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead><tbody>` +
-        a.files.map(f=>`<tr><td>${esc(f.filename)}</td>
-          <td>${f.ai ? esc(f.model||f.provider||'AI') : esc(f.layout||'template')}</td>
+        <div class="g"><b>${ai.used?'Yes':'No'}</b><span>AI used</span></div>
+        <div class="g"><b>${nfmt(ai.ai_files||0)}/${nfmt(s.files||0)}</b><span>Files via AI</span></div>
+        <div class="g"><b>${nfmt(ai.tokens_in||0)}</b><span>Tokens in</span></div>
+        <div class="g"><b>${nfmt(ai.tokens_out||0)}</b><span>Tokens out</span></div>
+        <div class="g"><b>${nfmt(ai.calls||0)}</b><span>Calls</span></div>
+        <div class="g"><b>${money(ai.cost_usd)}</b><span>Cost</span></div></div>
+      ${(ai.files||[]).length?`<table><thead><tr><th>File</th><th>Parser</th>
+        <th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead><tbody>`+
+        ai.files.map(f=>`<tr><td>${esc(f.filename)}</td>
+          <td>${f.ai?esc(f.model||f.provider||'AI'):esc(f.layout||'template')}</td>
           <td class="num">${f.ai?nfmt(f.tokens_in):'—'}</td>
           <td class="num">${f.ai?nfmt(f.tokens_out):'—'}</td>
-          <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('') +
-        `</tbody></table>` : ''}
+          <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('')+
+        `</tbody></table>`:''}</div>` : '';
+  const stats = a ? `<div class="stats">
+      <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
+      <div class="stat"><b>${nfmt(a.pages)}</b><span>Total pages</span></div>
+      <div class="stat"><b>${nfmt(a.statements)}</b><span>Statements</span></div>
+      <div class="stat"><b>${nfmt(a.issues||0)}</b><span>Rows to review</span></div>
     </div>` : '';
-  const period = s.period_from ? `${esc(s.period_from)} → ${esc(s.period_to||'')}` : '';
-  const sub=[esc(s.bank||''), esc(s.account_no||''), period].filter(Boolean).join(' · ');
-  return `<div class="job">
-    <div class="top">
-      <span class="nm">${esc(j.filename)}</span>
-      <span class="pill ${pillClass(j.status)}">${GLYPH[j.status]||'•'} ${esc(j.status.replace(/_/g,' '))}</span>
-    </div>
-    ${sub?`<div class="cats" style="margin-top:6px"><span style="background:none;padding:0">${sub}</span></div>`:''}
-    ${stats}
+  const period = a && (a.periods||[]).length
+    ? `<div class="meta">Period: <b>${esc(fmtPeriods(a.periods))}</b></div>` : '';
+  const src = a ? `<div class="meta">From: ${esc((a.files||[]).join(', '))}</div>` : '';
+  return `<div class="job ${c.key===activeKey?'sel':''}">
+    <div class="top"><span class="nm">${esc(title)}</span>
+      ${statusChip(j.status)}${a?validationChip(a.validation):''}</div>
+    ${period}${stats}${src}
     ${cats?`<div class="cats">${cats}</div>`:''}
     ${aiPanel}
     ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
-    ${ready?`<div class="acts">
-      <button class="ghost" onclick="preview('${j.job_id}','${esc(j.filename)}')">Preview</button>
-      <button class="ghost" onclick="dl('${j.job_id}','csv')">CSV</button>
-      <button class="ghost" onclick="dl('${j.job_id}','xlsx')">Excel</button>
-      <button class="ghost" onclick="dl('${j.job_id}','json')">JSON</button></div>`:''}
+    ${(a && !busy)?`<div class="acts">
+      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(title)}')">Preview</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','xlsx')">Excel</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button></div>`:''}
   </div>`;
 }
 
-function histItem(j){
-  const s=j.summary||{};
-  const when=new Date((j.created_at||0)*1000)
-    .toLocaleDateString(undefined,{day:'numeric',month:'short'});
-  const rows = s.rows ? `${nfmt(s.rows)} txns` : esc(j.status.replace(/_/g,' '));
-  return `<button class="h-item ${j.job_id===activeId?'sel':''}" onclick="select('${j.job_id}')">
-    <div class="h-nm">${esc(j.filename)}</div>
-    <div class="h-sub"><span class="h-g">${GLYPH[j.status]||'•'}</span><span>${rows}</span>
-      <span style="margin-left:auto">${when}</span></div>
-  </button>`;
-}
-
-function select(id){ activeId=id; render(); }
+function select(k){ activeKey = k; render(); }
 
 function render(){
-  const j = jobs.find(x=>x.job_id===activeId) || jobs[0];
-  activeId = j ? j.job_id : null;
-  $('active').innerHTML = activeCard(j);
-  $('hist').innerHTML = jobs.length
-    ? jobs.map(histItem).join('')
-    : '<div class="side-empty">No previous reports</div>';
+  cards = buildCards();
+  if(!cards.some(c=>c.key===activeKey)) activeKey = cards.length ? cards[0].key : null;
+  const cur = cards.find(c=>c.key===activeKey);
+  $('active').innerHTML = cur ? cardHtml(cur)
+    : '<div class="empty">Nothing yet — upload statements to begin.</div>';
+  $('hist').innerHTML = cards.length ? cards.map(c=>{
+      const a = c.acct, s = c.job.summary||{};
+      return `<button class="h-item ${c.key===activeKey?'sel':''}" onclick="select('${c.key}')">
+        <div class="h-nm">${esc(a ? (a.title||a.account_no) : c.job.filename)}</div>
+        <div class="h-sub"><span>${a?nfmt(a.rows)+' txns':esc(c.job.status.replace(/_/g,' '))}</span>
+          <span style="margin-left:auto">${a?nfmt(a.pages)+' pp':''}</span></div></button>`;
+    }).join('') : '<div class="side-empty">No reports yet</div>';
+
+  // Total statements uploaded, with the file names on hover.
+  const names = jobs.flatMap(j => (j.summary&&j.summary.filenames) || []);
+  $('counter').childNodes[0].nodeValue = `Total statements uploaded: ${names.length} `;
+  $('pop').innerHTML = names.length
+    ? '<b>Uploaded files</b>' + names.map(n=>`<div>${esc(n)}</div>`).join('')
+    : '<b>Uploaded files</b><div>None yet</div>';
 }
 
 async function refresh(){
@@ -516,19 +469,20 @@ async function refresh(){
     const r = await api('/jobs');
     jobs = r.jobs || [];
     render();
-    if(jobs.some(j=>['processing','awaiting_upload'].includes(j.status))) setTimeout(refresh,3000);
+    if(jobs.some(j=>['processing','awaiting_upload','merging'].includes(j.status)))
+      setTimeout(refresh, 3000);
   }catch(e){ console.error(e); }
 }
-
-async function dl(id,fmt){ const {url}=await api(`/jobs/${id}/download?format=${fmt}`); location.href=url; }
-
-async function preview(id,name){
-  const {url}=await api(`/jobs/${id}/download?format=preview`);
-  const data=await (await fetch(url)).json();
-  $('pvTitle').textContent=`${name} — first ${data.rows.length} of ${data.total} rows`;
-  $('pvBody').innerHTML=`<table><thead><tr>
-      <th>Date</th><th>Description</th><th class="num">Amount</th>
-      <th>Category</th><th class="num">Balance</th></tr></thead><tbody>`+
+async function dl(id, acct, fmt){
+  const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
+  location.href = url;
+}
+async function preview(id, acct, name){
+  const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
+  const data = await (await fetch(url)).json();
+  $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
+  $('pvBody').innerHTML = `<table><thead><tr><th>Date</th><th>Description</th>
+      <th class="num">Amount</th><th>Category</th><th class="num">Balance</th></tr></thead><tbody>`+
     data.rows.map(r=>`<tr><td style="white-space:nowrap">${esc(r.date)}</td>
       <td>${esc(r.description)}</td><td class="num">${fmtAmt(r.amount)}</td>
       <td>${esc(r.category)}</td>
@@ -537,8 +491,13 @@ async function preview(id,name){
   $('pv').showModal();
 }
 
-const boot = token();
-if(boot){ applyToken(boot); showApp(); } else { showGate(); }
+(async () => {
+  if(!token()){ showGate(); return; }
+  try{
+    const me = await api('/auth/me');
+    IS_ADMIN = me.role === 'admin'; WHO = me.email; showApp();
+  }catch(e){ showGate(); }
+})();
 setInterval(() => { if(token() && !$('app').hidden) refresh(); }, 15000);
 </script>
 </body>

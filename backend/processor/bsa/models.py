@@ -34,6 +34,7 @@ class StatementMeta:
     source_file: str
     currency: str = "INR"
     is_digital_text: bool = True
+    n_pages: int = 0              # captured at ingest, reported per account
     # Populated only on the LLM path: {provider, model, tokens_in, tokens_out,
     # calls, cost_usd}. None means this statement was parsed by a template and
     # cost nothing, which is the distinction the admin view reports.

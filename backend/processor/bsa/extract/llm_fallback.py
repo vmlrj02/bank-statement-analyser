@@ -7,7 +7,7 @@ The balance validator downstream is the correctness gate for this path.
 
 This module owns *what* to ask for — chunking, prompt, schema, assembly. It
 does not know which vendor answers: llm_providers.call_structured() picks that
-from LLM_PROVIDER (gemini | anthropic | openai | bedrock) at call time, so
+from LLM_PROVIDER (anthropic | gemini | bedrock) at call time, so
 switching provider or model is an env change, not a code edit.
 """
 from __future__ import annotations
