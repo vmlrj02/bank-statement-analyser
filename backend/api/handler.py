@@ -16,6 +16,7 @@ import os
 import secrets
 import time
 import uuid
+from decimal import Decimal
 
 import boto3
 
@@ -116,11 +117,25 @@ def _scrub(item, is_admin=False):
     return item
 
 
+def _jsonable(v):
+    """DynamoDB hands back Decimal; default=str would emit numbers as strings
+    ("1954"), which any consumer then has to re-parse. Emit real JSON numbers."""
+    if isinstance(v, Decimal):
+        return int(v) if v == v.to_integral_value() else float(v)
+    if isinstance(v, dict):
+        return {k: _jsonable(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    if isinstance(v, set):
+        return sorted(_jsonable(x) for x in v)
+    return v
+
+
 def _resp(code, body):
     return {"statusCode": code,
             "headers": {"content-type": "application/json",
                         "access-control-allow-origin": "*"},
-            "body": json.dumps(body, default=str)}
+            "body": json.dumps(_jsonable(body), default=str)}
 
 
 def lambda_handler(event, _ctx):
