@@ -161,6 +161,52 @@ def _mark_extracted(job_id: str, idx: int) -> int:
     return len(attrs.get("extracted", set()))
 
 
+def _friendly(msg: str) -> str:
+    """Turn a provider error into something a user can act on.
+
+    The raw text is a JSON blob naming a model and a request id; what the
+    person needs to know is that this bank has no template yet and the AI
+    account cannot pay for the fallback.
+    """
+    m = msg.lower()
+    if "credit balance is too low" in m:
+        return ("no template for this bank yet, so it needs AI extraction — "
+                "and the AI account is out of credit")
+    if "invalid_payment_instrument" in m or "marketplace subscription" in m:
+        return ("no template for this bank yet, and Bedrock cannot complete its "
+                "AWS Marketplace subscription on this account")
+    if "rate limit" in m or "429" in m:
+        return "no template for this bank yet, and the AI provider is rate limiting"
+    if "password" in m:
+        return msg
+    return msg[:300]
+
+
+def _mark_failed(job_id: str, idx: int, filename: str, msg: str) -> None:
+    """Record a per-file failure and still count the file as settled.
+
+    One unreadable statement must not discard an upload: the others have
+    already been extracted and paid for. The merge proceeds with what worked
+    and the job reports which files did not.
+    """
+    try:
+        TABLE.update_item(
+            Key={"job_id": job_id},
+            UpdateExpression="SET failed_files.#i = :v",
+            ExpressionAttributeNames={"#i": str(idx)},
+            ExpressionAttributeValues={
+                ":v": {"filename": filename, "error": _friendly(msg)}},
+            ConditionExpression="attribute_exists(failed_files)",
+        )
+    except Exception:
+        TABLE.update_item(
+            Key={"job_id": job_id},
+            UpdateExpression="SET failed_files = :m",
+            ExpressionAttributeValues={
+                ":m": {str(idx): {"filename": filename, "error": _friendly(msg)}}},
+        )
+
+
 def _claim_merge(job_id: str) -> bool:
     """Exactly one invocation performs the merge; the rest bow out.
 
@@ -211,17 +257,11 @@ def lambda_handler(event, _ctx):
                     time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None))
                 _write_work(job_id, idx, ex.meta, normalize(ex))
         except PasswordRequired:
-            _update(job_id, **{"status": "password_required",
-                               "error": f"{entry.get('filename', 'A file')} is "
-                                        "password-protected — recreate the job "
-                                        "with the correct password."})
-            continue
+            _mark_failed(job_id, idx, entry.get("filename", "file"),
+                         "password-protected — re-upload with the correct password")
         except Exception as e:                            # noqa: BLE001
             print(traceback.format_exc())
-            _update(job_id, **{"status": "failed",
-                               "error": f"{entry.get('filename', 'file')}: "
-                                        f"{str(e)[:350]}"})
-            continue
+            _mark_failed(job_id, idx, entry.get("filename", "file"), str(e))
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
@@ -238,7 +278,17 @@ def lambda_handler(event, _ctx):
             # meaningless arithmetic.
             groups: dict[str, dict] = {}
             order: list[str] = []
-            for f in sorted(files, key=lambda x: int(x.get("idx", 0))):
+            fresh = TABLE.get_item(Key={"job_id": job_id}).get("Item") or {}
+            failed = fresh.get("failed_files") or {}
+            usable = [f for f in sorted(files, key=lambda x: int(x.get("idx", 0)))
+                      if str(f.get("idx", 0)) not in failed]
+            if not usable:
+                _update(job_id, **{
+                    "status": "failed",
+                    "error": "; ".join(f"{v.get('filename')}: {v.get('error')}"
+                                       for v in failed.values())[:900]})
+                continue
+            for f in usable:
                 meta, txns = _read_work(job_id, int(f.get("idx", 0)))
                 key = f"{meta.bank}|{meta.account_no}"
                 if key not in groups:
@@ -331,7 +381,7 @@ def lambda_handler(event, _ctx):
                 })
 
             # AI accounting stays per uploaded file across the whole job.
-            ordered = sorted(files, key=lambda x: int(x.get("idx", 0)))
+            ordered = usable
             all_metas = [m for key in order for m in groups[key]["metas"]]
             parts, tin, tout, calls, cost, cost_known = [], 0, 0, 0, 0.0, True
             for f, m in zip(ordered, all_metas):
@@ -362,14 +412,19 @@ def lambda_handler(event, _ctx):
                 "cost_usd": (f"{cost:.6f}" if cost_known and calls else ""),
                 "files": parts,
             }
+            failed_list = [{"filename": v.get("filename", ""),
+                            "error": str(v.get("error", ""))[:300]}
+                           for v in failed.values()]
             _update(job_id, **{
-                "status": "done" if worst == "passed" else "needs_review",
+                "status": ("needs_review" if (failed_list or worst != "passed")
+                           else "done"),
                 # clear any error left over from a previous failed attempt,
                 # otherwise a job reads "done" while still showing an old error
                 "error": "",
                 "summary": {
                     "files": len(ordered),
                     "filenames": [f.get("filename", "") for f in ordered],
+                    "failed_files": failed_list,
                     "pages": sum(int(getattr(m, "n_pages", 0) or 0) for m in all_metas),
                     "rows": sum(a["rows"] for a in accounts_out),
                     "validation": worst,

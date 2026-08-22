@@ -444,12 +444,15 @@ function uploadView(j){
   const head = `<div class="uphead">
       <div class="top"><span class="nm">Upload · ${esc(jobLabel(j))}</span>${statusChip(j.status)}</div>
       <div class="stats">
-        <div class="stat"><b>${nfmt(s.files||names.length||0)}</b><span>Statements</span></div>
+        <div class="stat"><b>${nfmt(s.files||names.length||0)}${(s.failed_files||[]).length?`<span style="font-size:12px;font-weight:400"> +${(s.failed_files||[]).length} failed</span>`:''}</b><span>Statements</span></div>
         <div class="stat"><b>${nfmt(accts.length)}</b><span>Accounts</span></div>
         <div class="stat"><b>${nfmt(s.pages||0)}</b><span>Total pages</span></div>
         <div class="stat"><b>${nfmt(s.rows||0)}</b><span>Transactions</span></div>
       </div>
       ${names.length?`<div class="meta">Files: ${esc(names.join(', '))}</div>`:''}
+      ${(s.failed_files||[]).length?`<div class="err"><b>${(s.failed_files||[]).length} file(s) could not be read</b>`+
+        (s.failed_files||[]).map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}</div>`).join('')+
+        `</div>`:''}
       ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
       ${aiPanel}
     </div>`;

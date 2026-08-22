@@ -149,6 +149,13 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     if len(dates) > 2 and dates == sorted(dates, reverse=True) and dates[0] != dates[-1]:
         txns.reverse()
 
+    # Same-timestamp pairs are sometimes numbered in the wrong order by the
+    # bank itself: ICICI printed a 194,000 credit as Sl 38 and its matching
+    # debit as Sl 39, but the printed balances only chain the other way round.
+    # Swap adjacent same-date rows ONLY when doing so repairs the running
+    # balance — never on a guess, so a genuine extraction error still fails.
+    _repair_swapped_pairs(txns)
+
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
     # across merged files is a duplicate)
@@ -164,6 +171,27 @@ def normalize(extract: StatementExtract) -> list[Txn]:
 def account_key(t: Txn) -> str:
     """Identity of the account a row belongs to."""
     return f"{(t.bank or '').strip()}|{(t.account_no or '').strip()}"
+
+
+def _repair_swapped_pairs(txns: list[Txn]) -> int:
+    """Reorder adjacent same-date rows where the printed balances prove the
+    bank listed them back to front. Returns how many pairs were swapped."""
+    fixed = 0
+    for i in range(1, len(txns) - 1):
+        a, b = txns[i], txns[i + 1]
+        if a.date != b.date:
+            continue
+        prev = txns[i - 1].balance
+        ok_now = (abs(prev + a.amount - a.balance) <= 0.011
+                  and abs(a.balance + b.amount - b.balance) <= 0.011)
+        if ok_now:
+            continue
+        ok_swapped = (abs(prev + b.amount - b.balance) <= 0.011
+                      and abs(b.balance + a.amount - a.balance) <= 0.011)
+        if ok_swapped:
+            txns[i], txns[i + 1] = b, a
+            fixed += 1
+    return fixed
 
 
 def dedup_merge(txn_lists: list[list[Txn]]) -> list[Txn]:
