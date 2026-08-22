@@ -1,0 +1,55 @@
+# Layout descriptor: ICICI Bank — internet-banking "Detailed Statement" export
+# (seen on CCA / cash-credit accounts, where balances run negative).
+#
+# Uses the columnar parser: every cell in this export wraps across physical
+# lines because the columns are narrow — the balance's minus sign is printed
+# alone on the row's first line. Columns are [x_min, x_max) bands in PDF points
+# on a 595x842 page.
+id: icici_detailed_statement
+bank: ICICI Bank
+layout_name: Detailed Statement
+version: 1
+parser: columnar
+fingerprints:
+  all_of:
+    - "Detailed"
+    - "Transaction Period:"
+    - "A/C No:"
+  any_of: []
+header:
+  account_line: 'A/C No:\s*(?P<account_no>\d+)'
+  period_line: 'Transaction Period:\s*From\s*(?P<period_from>[\d/]+)\s*To\s*(?P<period_to>[\d/]+)'
+  period_date_format: "%d/%m/%Y"
+  account_name: '^Name:\s*(.+?)\s+Branch:'
+parse:
+  row_anchor: '^\d{1,5}$'          # Sl No in the left-most column
+  anchor_x_max: 105
+  anchor_requires: [txn_date]   # guards against a wrapped Sl No
+  columns:                          # name: [x_min, x_max)
+    sl_no:      [80,  105]
+    tran_id:    [105, 135]
+    value_date: [135, 172]
+    txn_date:   [172, 220]
+    posted:     [220, 320]
+    remarks:    [320, 395]
+    withdrawal: [395, 432]
+    deposit:    [432, 470]
+    balance:    [470, 512]
+  field_map:
+    sl_no: sl_no
+    date: txn_date
+    cheque_no: tran_id
+    description: remarks
+    withdrawal: withdrawal
+    deposit: deposit
+    balance: balance
+  skip_rows:
+    - "Total No of Records"
+    - "Legends:"
+  footer_markers:
+    - "This is a system generated"
+  end_markers:                       # trailing glossary spans pages — stop here
+    - "Legends Used in Account Statement"
+    - "End Of Statement"
+  footer_patterns:
+    - '^Page\s+\d+\s*of\s*\d+'   # sits in the balance band; see parser notes

@@ -30,6 +30,10 @@ def extract_one(path: str, password: str | None = None,
             from .extract.generic_layout import extract as generic_extract
             return generic_extract(ing.path, source_file=source_file,
                                    layout=layout)
+        if layout.get("parser") == "columnar":
+            from .extract.columnar_layout import extract as columnar_extract
+            return columnar_extract(ing.path, source_file=source_file,
+                                    layout=layout)
         if cls.layout_id in TEMPLATE_PARSERS:
             mod = importlib.import_module(TEMPLATE_PARSERS[cls.layout_id])
             return mod.extract(ing.path, source_file=source_file, layout=layout)
