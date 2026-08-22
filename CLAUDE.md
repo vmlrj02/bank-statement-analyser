@@ -1,8 +1,9 @@
 # Bank Statement Analyser — project context
 
 SaaS that extracts + categorizes transactions from Indian bank/NBFC statement
-PDFs. Deployed and working: https://dg3uwro4b2d2l.cloudfront.net (NO auth yet —
-keep URL private). Stack `BsaStack` in ap-south-1, account 681832767155.
+PDFs. Deployed and working: https://dg3uwro4b2d2l.cloudfront.net — sign-in
+required (Cognito; admin and customer roles). Stack `BsaStack` in ap-south-1,
+account 681832767155.
 
 ## Layout
 - backend/processor/bsa/ — the pipeline package (ingest → classify → extract →
@@ -89,16 +90,20 @@ Write a bank-specific module only when the layout genuinely cannot be described
 in YAML (e.g. font-face-dependent narration, as in ICICI).
 
 ## Working today
-- ICICI OpTransactionHistory — bank-specific module, 225 rows, passed.
-- Axis account statement — generic YAML layout, up to 1782 rows, passed, ~3s.
-- Any other bank — LLM fallback (Anthropic direct, see gotcha 6), ~98% accurate,
+Every bank in the sample corpus parses by template — no AI, no per-statement cost:
+- ICICI OpTransactionHistory — bank-specific module (font-face narration).
+- ICICI Detailed Statement — columnar parser (wrapped cells, CCA negatives).
+- ICICI combined statement — generic parser with section profiles.
+- Axis account statement — generic parser.
+- Anything else — LLM fallback (Anthropic direct, see gotcha 6), ~98% accurate,
   minutes and paid per statement. Treat as a stopgap until a layout exists.
 
 ## Current next steps
-1. Cognito auth (user pool + JWT authorizer + login UI) before sharing the URL,
-   together with the gotcha-6 data-residency fix. Both gate real customers.
+1. The gotcha-6 data-residency fix — statement data still leaves AWS whenever a
+   bank has no layout. This is the last item gating real customers now that
+   auth is in place.
 2. More bank layouts (HDFC, SBI, Kotak) as YAML descriptors — needs one sample
-   statement per bank.
+   statement per bank. Each one also shrinks the residency exposure in (1).
 3. S3-backed layout registry so a bank can be added without a redeploy
    (registry.py currently globs a read-only directory inside the bundle).
 4. Human-review screen for needs_review jobs.
