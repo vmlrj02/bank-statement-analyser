@@ -240,6 +240,15 @@ class BsaStack(Stack):
             self, "SiteDeploy",
             destination_bucket=site_bucket,
             distribution=dist,                       # invalidate on deploy
+            distribution_paths=["/*"],
+            # index.html and config.js are the whole app, and both change every
+            # deploy. Without this they inherit CloudFront's 24h default TTL and
+            # browsers keep serving a stale build long after a fix ships — which
+            # is exactly how a fixed login screen kept looking broken.
+            cache_control=[
+                s3deploy.CacheControl.no_cache(),
+                s3deploy.CacheControl.must_revalidate(),
+            ],
             sources=[
                 s3deploy.Source.asset(os.path.join(ROOT, "frontend")),
                 s3deploy.Source.data(
