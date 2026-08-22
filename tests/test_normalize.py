@@ -68,6 +68,33 @@ def test_counterparty_skips_reference_numbers_and_ifsc():
     assert extract_counterparty(d, "imps") == "KRISHNA TRADERS"
 
 
+@pytest.mark.parametrize("desc,mode,party", [
+    # Axis UPI prints the transfer TYPE first — "P2A" is a channel marker,
+    # and it reached a customer-facing report as the party name.
+    ("UPI/P2A/557305326847/K S SHALI/YES BANK /UPI/", "upi", "K S SHALI"),
+    # Slash-form NEFT: the reference is bank-prefix + digits, name follows,
+    # then the counterparty's BANK (which is not the party).
+    ("NEFT/HDFCH00395013738/RHEA HEALTHCARE PVT LTD/HDFC BANK/0001",
+     "neft", "RHEA HEALTHCARE PVT LTD"),
+    # RTGS segment order differs by bank: Axis puts the name before the bank,
+    # ICICI puts the IFSC before the name. Both must yield the name, and
+    # taking the LAST segment reported "HDFC BANK" as a customer's party.
+    ("RTGS/HDFCR52025081199521039/RHEAHEALTHCAREPVTLTD/HDFC BANK/",
+     "rtgs", "RHEAHEALTHCAREPVTLTD"),
+    ("RTGS/ICICR42025070700523916/KVBL0004109/B L ENTERPRISES",
+     "rtgs", "B L ENTERPRISES"),
+    # SBI/Axis dash-form NACH credit.
+    ("ACH-CR-JSW STEEL LIMITED-NACH-22932110-22932110",
+     "nach", "JSW STEEL LIMITED"),
+    # The IMPS remark rides ahead of the name — prefer the digit-free segment.
+    ("MMT/IMPS/518614164794/bill 2876/SONI BAKER/HDFC Bank",
+     "imps", "SONI BAKER"),
+])
+def test_counterparty_from_real_statement_descriptors(desc, mode, party):
+    assert detect_mode(desc) == mode
+    assert extract_counterparty(desc, mode) == party
+
+
 def test_latest_first_statements_are_flipped():
     ex = StatementExtract(meta=meta(), rows=[
         raw("03-01-2026", 10.0, None, 80.0), raw("02-01-2026", 10.0, None, 90.0),

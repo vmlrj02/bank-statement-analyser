@@ -74,6 +74,12 @@ def _why_unreadable(cls, ing) -> str:
     if cls.layout_id and not ing.is_digital_text:
         return (f"this file has no text layer (it is a scan), so the "
                 f"{cls.layout_id} template cannot read it")
+    if not cls.layout_id and not ing.is_digital_text:
+        # No readable text AND no fingerprint match: the file, not the
+        # registry, is the problem. Saying "add a layout descriptor" here sent
+        # an operator off to write a layout for a PDF no layout could read.
+        return ("no readable text in this PDF (a scan, an image-only export, "
+                "or a protected file), so it cannot be matched to any bank")
     if cls.layout_id:
         # A descriptor matched but nothing claimed it: `parser: module` with no
         # module registered in TEMPLATE_PARSERS. Only reachable via an S3

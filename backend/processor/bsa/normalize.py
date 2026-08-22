@@ -40,6 +40,39 @@ MODE_RULES = [
 
 _IFSC = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
 _REFNUM = re.compile(r"^\d{6,}$")
+# Channel markers that appear where a name would: UPI prints the transfer TYPE
+# (P2A person-to-account, P2M person-to-merchant) as its first segment on some
+# banks, and the boss-facing report once showed "P2A" as a customer's party.
+_CHANNEL_TOKENS = {"P2A", "P2M", "UPI", "IMPS", "NEFT", "RTGS", "MMT", "DR", "CR"}
+_BANKISH = re.compile(r"\bBANKS?\b\s*$|\bBANK LTD\.?$", re.I)
+# NEFT/RTGS references: a short bank prefix glued to a long number
+# ("HDFCH00395013738") — never a party, however name-like the letters look.
+_ALNUM_REF = re.compile(r"^[A-Z]{2,6}\d{6,}$")
+
+
+def _name_segments(raw: str) -> list[str]:
+    """Split a slash-delimited descriptor tail into candidate name segments,
+    dropping the things that are never a party: reference numbers, IFSC codes,
+    channel markers, and empty pieces."""
+    out = []
+    for s in raw.split("/"):
+        s = _clean_segment(s)
+        su = s.upper().replace(" ", "")
+        if (not s or su in _CHANNEL_TOKENS or _IFSC.match(su)
+                or _REFNUM.match(su) or su.isdigit() or _ALNUM_REF.match(su)):
+            continue
+        out.append(s)
+    return out
+
+
+def _first_name(segs: list[str]) -> str:
+    """First segment that is a plausible party. A counterparty's BANK also
+    rides in these descriptors ("…/RHEA HEALTHCARE PVT LTD/HDFC BANK/…"), so a
+    bank-looking segment is only accepted when nothing better exists."""
+    for s in segs:
+        if not _BANKISH.search(s):
+            return s
+    return segs[0] if segs else ""
 
 
 def parse_date(s: str) -> str:
@@ -67,38 +100,50 @@ def extract_counterparty(desc: str, mode: str) -> str:
     """Best-effort counterparty display name from Indian payment descriptors."""
     d = re.sub(r"\s+", " ", desc)
     if mode == "upi":
-        m = re.search(r"UPI/([^/]+)/", d)
+        # UPI/<NAME>/… on some banks; Axis prints UPI/P2A/<ref>/<NAME>/<bank>/…
+        # so the first PLAUSIBLE segment is the party, never blindly the first.
+        m = re.search(r"UPI/(.+)$", d)
         if m:
-            return _clean_segment(m.group(1))
+            return _first_name(_name_segments(m.group(1)))
     if mode == "imps":
         m = re.search(r"MMT/IMPS/\d+/(.+)$", d)
         if m:
-            segs = [_clean_segment(s) for s in m.group(1).split("/") if s.strip()]
-            # prefer a name segment: not 'IMPS', not IFSC, not a number, not a bank suffix
+            segs = _name_segments(m.group(1))
+            # The remark rides ahead of the name ("…/bill 2876/SONI BAKER/…"),
+            # so prefer the first digit-free segment; fall back to the first.
             for s in segs:
-                su = s.upper().replace(" ", "")
-                if su == "IMPS" or _IFSC.match(su) or _REFNUM.match(su):
-                    continue
-                return s
+                if not re.search(r"\d", s) and not _BANKISH.search(s):
+                    return s
+            if segs:
+                return segs[0]
     if mode == "neft":
         # NEFT-<ref>-<NAME>-… (name may be followed by empty segment: "--")
         m = re.search(r"NEFT-[A-Z0-9]+-([^-]+)", d)
         if m and not _REFNUM.match(m.group(1).strip()):
             return _clean_segment(m.group(1))
+        # NEFT/<ref>/<NAME>/<bank>/… (Axis slash form)
+        m = re.search(r"NEFT[/:](.+)$", d)
+        if m:
+            return _first_name(_name_segments(m.group(1)))
     if mode == "rtgs":
         m = re.search(r"RTGS-[A-Z0-9]+-([^-]+)", d)      # RTGS-<ref>-<NAME>-…
         if m and not _REFNUM.match(m.group(1).strip()):
             return _clean_segment(m.group(1))
-        m = re.search(r"RTGS[/:][A-Z0-9]+[/:](.+)$", d)  # RTGS/<ref>/<bank>/<NAME>
+        # RTGS/<ref>/<NAME>/<bank> (Axis) and RTGS/<ref>/<IFSC>/<NAME> (ICICI):
+        # segment ORDER differs between banks, so the party is the first
+        # segment that is not a reference, an IFSC, or a bank name — taking
+        # the last one reported "HDFC BANK" as a customer's counterparty.
+        m = re.search(r"RTGS[/:][A-Z0-9]+[/:](.+)$", d)
         if m:
-            segs = [_clean_segment(s) for s in re.split(r"[/:]", m.group(1)) if s.strip()]
-            # last non-IFSC, non-numeric segment is the name
-            for s in reversed(segs):
-                if not _IFSC.match(s.upper().replace(" ", "")) and not _REFNUM.match(s):
-                    return s
+            return _first_name(_name_segments(re.sub(r":", "/", m.group(1))))
     if mode == "nach":
         m = re.search(r"ACH/([^/]+)/", d)
         if m and not _REFNUM.match(m.group(1).split("-")[0]):
+            return _clean_segment(m.group(1))
+        # SBI/Axis dash form: ACH-CR-<NAME>-NACH-<mandate>… / ACH-DR-<NAME>-…
+        m = re.search(r"ACH-(?:CR|DR)-(.+?)-NACH\b", d, re.I) or \
+            re.search(r"ACH-(?:CR|DR)-([^-]+)", d, re.I)
+        if m and not _REFNUM.match(m.group(1).strip()):
             return _clean_segment(m.group(1))
     if mode == "clearing":
         m = re.search(r"CLG/([^/]+)", d)

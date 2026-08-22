@@ -32,6 +32,23 @@ def test_unknown_bank_fails_fast_with_something_actionable(unknown_bank):
     assert "no layout" in msg and "add a layout descriptor" in msg
 
 
+def test_an_unreadable_pdf_is_not_blamed_on_a_missing_layout(monkeypatch, tmp_path):
+    """A protected or image-only PDF yields no text, so no fingerprint can
+    match — but "add a layout descriptor" sends an operator to write a layout
+    no parser could ever use. The file, not the registry, must be named."""
+    pdf = tmp_path / "locked.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None: IngestResult(
+        path=str(pdf), n_pages=10, is_digital_text=False, text_density=0.0))
+    monkeypatch.setattr(pipeline, "classify", lambda p: Classification(
+        layout_id=None, bank=None, page1_text=""))
+    with pytest.raises(NoLayoutError) as e:
+        pipeline.extract_one(str(pdf))
+    msg = str(e.value)
+    assert "no readable text" in msg
+    assert "add a layout descriptor" not in msg
+
+
 def test_the_llm_module_is_never_even_imported(unknown_bank, monkeypatch):
     import bsa.extract.llm_fallback as fb
     monkeypatch.setattr(fb, "extract_with_llm", lambda *a, **k:

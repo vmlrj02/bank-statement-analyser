@@ -2,7 +2,8 @@
 (from Banking_pdf_extraction.xlsx "Category list").
 
 Category tags:
-  EMI transaction | Interest received | Investment return credited |
+  EMI transaction | Interest received | Interest debited |
+  Investment return credited |
   Loan amount disbursal | Salary paid | Salary credited | ECS transaction |
   cash deposit | cash withdrawal | inward bounce penal charges |
   Outward Bounced Xns | other penal charges | return / refund |
@@ -107,6 +108,12 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             tag = "Outward Bounced Xns"
         elif t.mode == "interest" or (credit and re.search(r"Int\.Pd|INTEREST (PAID|CREDIT)", d, re.I)):
             tag = "Interest received"
+        elif not credit and re.search(
+                r"DEBIT INTEREST|INTEREST (DEBIT|DEBITED|CHARGED|COLLECTED)"
+                r"|\bINT\.?\s*(DR|DEBIT|COLL)", d, re.I):
+            # OD/CC accounts are charged interest ("DEBIT INTEREST- /" on SBI);
+            # a lender reads these as cost of borrowing, not a regular transfer.
+            tag = "Interest debited"
         elif t.mode == "atm-cash" and not credit:
             tag = "cash withdrawal"
         elif t.mode == "cash-deposit" and credit:

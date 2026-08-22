@@ -73,3 +73,20 @@ def test_multi_account_issues_name_the_account():
 def test_empty_input_is_a_pass_over_nothing():
     r = validate([])
     assert r.status == "passed" and r.checked_rows == 0
+
+
+def test_a_break_across_a_long_date_gap_names_the_likely_cause():
+    """Seen for real: a hand-assembled 58-page statement where November was a
+    printed Gmail preview, so a whole month had no transaction pages. The
+    mismatch is genuine, but "balance_mismatch" alone sends someone hunting a
+    parser bug; the date gap is the tell that pages are missing."""
+    r = validate([txn("2025-10-31", -100, 900),
+                  txn("2025-12-01", -50, 5000)])
+    assert r.status == "failed"
+    assert "missing from the document" in r.issues[0].detail
+
+
+def test_a_same_week_break_is_not_blamed_on_missing_pages():
+    r = validate([txn("2026-01-01", -100, 900), txn("2026-01-03", 50, 5000)])
+    assert r.status == "failed"
+    assert "missing from the document" not in r.issues[0].detail

@@ -24,17 +24,23 @@ parse:
   header_offset: 12
   row_anchor: '^\d{2}-\d{2}-\d{4}$'
   date_format: "%d-%m-%Y"
-  continuation: below
+  # A row's block is CENTRED on the amount line: a two-line narration prints
+  # as narration / dated-amount-line / narration. 'below' glued each block's
+  # first line onto the previous row, shifting every description one row off.
+  continuation: nearest
   strip_leading_date: '^\d{2}[-/]\d{2}[-/]\d{4}'   # value date glued to narration
   skip_rows:
     - "B/F"
     - "Total of Transactions"
+    - "Total :"                  # section totals row ("Total : <wd> <dep> <bal>")
+    - "Total:"                   # the December-onward section drops the space
+    - "MODE PARTICULARS"         # that section's table header, printed per page
   columns:
     date_x_max: 70
     cheque_x_min: 375
     cheque_x_max: 405
     remarks_x_min: 66
-    remarks_x_max: 420
+    remarks_x_max: 285          # Location column starts at x0 288 — keep it out
     withdrawal_x1_max: 460      # observed 453 / 456 across shifted pages
     deposit_x1_max: 510         # observed 503
     balance_x1_max: 570         # observed 554 / 559
@@ -60,3 +66,5 @@ parse:
       columns: {}                    # empty -> revert to the default profile
   footer_markers:
     - "This is a system generated"
+    - "Legends for transactions"    # the abbreviation legend box after the last row
+    - "Other Information"           # "Account Related Other Information" summary block

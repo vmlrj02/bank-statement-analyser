@@ -5,9 +5,23 @@ statement: running-balance reconciliation row by row, and date monotonicity.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from .models import Txn, ValidationIssue, ValidationReport
 
 TOL = 0.011
+# A balance break where the dates also jump this far is almost never a parser
+# error — it is a hole in the document itself (seen for real: a 58-page ICICI
+# statement assembled by hand, with November present only as a printed Gmail
+# preview of the summary e-mail, so a whole month had no transaction pages).
+GAP_DAYS = 20
+
+
+def _days_between(a: str, b: str) -> int:
+    try:
+        return abs((date.fromisoformat(b) - date.fromisoformat(a)).days)
+    except ValueError:
+        return 0
 
 
 def validate(txns: list[Txn]) -> ValidationReport:
@@ -33,12 +47,16 @@ def validate(txns: list[Txn]) -> ValidationReport:
             if prev_balance is not None:
                 expected = round(prev_balance + t.amount, 2)
                 if abs(expected - t.balance) > TOL:
+                    detail = (f"row {i}{where}: prev {prev_balance:.2f} + amount "
+                              f"{t.amount:+.2f} = {expected:.2f}, statement says "
+                              f"{t.balance:.2f} ({t.date} {t.description[:60]})")
+                    gap = _days_between(prev_date, t.date) if prev_date else 0
+                    if gap > GAP_DAYS:
+                        detail += (f" — {gap} days pass between this row and the "
+                                   f"previous one, so the pages for that period "
+                                   f"are most likely missing from the document")
                     issues.append(ValidationIssue(
-                        row_index=i, kind="balance_mismatch",
-                        detail=(f"row {i}{where}: prev {prev_balance:.2f} + amount "
-                                f"{t.amount:+.2f} = {expected:.2f}, statement says "
-                                f"{t.balance:.2f} ({t.date} {t.description[:60]})"),
-                    ))
+                        row_index=i, kind="balance_mismatch", detail=detail))
             prev_balance = t.balance
             if prev_date is not None and t.date < prev_date:
                 issues.append(ValidationIssue(

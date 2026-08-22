@@ -8,7 +8,7 @@ data, not code. So a layout YAML supplies them and this module does the rest:
 
     parse:
       row_anchor:        regex the first token of an anchor line must match
-      continuation:      above | below   (where wrapped narration lives)
+      continuation:      above | below | nearest  (where wrapped narration lives)
       columns:           x cutoffs; numeric columns keyed by right edge (x1)
       skip_rows:         substrings marking non-transaction rows
       footer_markers:    substrings after which the page is footer
@@ -73,6 +73,36 @@ def _amount_role(x1: float, cols: dict) -> str | None:
     return None
 
 
+def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list) -> None:
+    """Assign buffered narration lines to the vertically NEAREST anchor, then
+    emit the anchors in reading order.
+
+    Some exports centre a row's block on the amount line: a two-line narration
+    prints as narration / dated-amount-line / narration, with ~3.5pt inside a
+    block and ~13pt between blocks. Neither 'above' nor 'below' can place both
+    halves — 'below' glued every block's first line onto the PREVIOUS row,
+    which shifted every description one row off (seen on ICICI's combined
+    statement, 995 rows all mislabelled). Distance to the anchor line is the
+    only signal that is right for both halves.
+    """
+    for ntop, zone in narrs:
+        if not anchors:
+            continue
+        a = min(anchors, key=lambda a: abs(a["top"] - ntop))
+        a["parts"].append((ntop, zone))
+    for a in sorted(anchors, key=lambda a: a["top"]):
+        desc = [w for _, zone in sorted(a["parts"], key=lambda x: x[0])
+                for w in zone]
+        rows.append(RawRow(
+            sl_no=None, date=a["date"], cheque_no=a["cheque"].strip(),
+            description=" ".join(desc).strip(),
+            withdrawal=a["wd"], deposit=a["dep"],
+            balance=a["bal"], page=a["page"],
+        ))
+    anchors.clear()
+    narrs.clear()
+
+
 def _meta(page1_text: str, source_file: str, layout: dict) -> StatementMeta:
     h = layout.get("header", {})
     account_no = p_from = p_to = ""
@@ -119,7 +149,9 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     footers = tuple(p.get("footer_markers", []))
     header_words = set(p.get("table_header_words", []))
     header_offset = float(p.get("header_offset", 14))
-    above = p.get("continuation", "below") == "above"
+    continuation = p.get("continuation", "below")
+    above = continuation == "above"
+    nearest = continuation == "nearest"
     # Some exports run the value date straight into the narration with no
     # separator ("01-07-2025BIL/Auto"), so it arrives as one token.
     strip_date = re.compile(p["strip_leading_date"]) if p.get("strip_leading_date") else None
@@ -134,6 +166,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     pending: list[str] = []          # narration seen before its anchor
     current: dict | None = None
     active = cols                    # column profile currently in force
+    seg_anchors: list[dict] = []     # nearest mode: anchors of this segment
+    seg_narrs: list[tuple] = []      # nearest mode: (top, words) narration
 
     def finalize() -> None:
         nonlocal current
@@ -175,6 +209,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     if rx.search(text):
                         finalize()
                         pending.clear()
+                        _flush_nearest(seg_anchors, seg_narrs, rows)
                         active = scols or cols
                         switched = True
                         break
@@ -222,6 +257,13 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     if bal is None:
                         current = None       # not a transaction row
                         continue
+                    if nearest:
+                        seg_anchors.append({
+                            "top": ln["top"], "date": first["text"],
+                            "cheque": cheque, "wd": wd, "dep": dep, "bal": bal,
+                            "page": pageno,
+                            "parts": [(ln["top"], desc)] if desc else []})
+                        continue
                     current = {"date": first["text"], "cheque": cheque,
                                "wd": wd, "dep": dep, "bal": bal,
                                "desc": desc, "page": pageno}
@@ -233,10 +275,16 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                             "remarks_x_max", 1e9)]
                 if not zone:
                     continue
-                if above:
+                if nearest:
+                    seg_narrs.append((ln["top"], zone))
+                elif above:
                     pending.extend(zone)
                 elif current is not None:
                     current["desc"].extend(zone)
+
+            # Blocks do not span pages in a centred layout, so a page is a
+            # complete segment: assign its narration lines and emit its rows.
+            _flush_nearest(seg_anchors, seg_narrs, rows)
 
         finalize()
 
