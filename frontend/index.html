@@ -465,6 +465,9 @@ function accountCard(j, a){
     ${a.unreadable_pages ? `<div class="err"><b>${nfmt(a.unreadable_pages)} page(s) had no readable text</b>
       — scanned or image-only pages. Any transactions printed on them are missing from
       this report, which is the usual cause of a balance break.</div>` : ''}
+    ${a.validation==='failed' && (a.issue_sample||[]).length
+      ? `<div class="err"><b>Where the balance chain breaks:</b>
+        ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
     ${cats?`<div class="cats">${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
