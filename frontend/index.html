@@ -24,6 +24,11 @@
   --shadow:0 1px 2px rgba(0,0,0,.6);
 }
 *{box-sizing:border-box}
+/* The [hidden] attribute is only a UA rule (display:none) and loses to any
+   selector of ours that sets display — #gate, .shell and .row all do. Without
+   this, toggling .hidden silently does nothing: a successful sign-in left the
+   fixed, full-screen login overlay sitting on top of the app. */
+[hidden]{display:none !important}
 body{margin:0; background:var(--bg); color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased}
