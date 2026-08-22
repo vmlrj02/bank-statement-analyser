@@ -1,0 +1,40 @@
+# Layout descriptor: Vasavi MSCM Co-operative Bank — account statement.
+#
+# Uses the GROUPED parser. This export prints the date only when it changes and
+# the balance only at the end of a group of same-day transactions, with the
+# narration on the lines below the amounts — so a transaction is anchored by the
+# presence of an amount, not by a date.
+id: vasavi_mscm_savings
+bank: Vasavi MSCM Co-operative Bank
+layout_name: Account Statement
+version: 1
+parser: grouped
+fingerprints:
+  all_of:
+    - "Vasavi MSCM Co-operative Bank"
+  any_of: []
+header:
+  account_line: 'Account No\s*:\s*(?P<account_no>\d+)'
+  period_line: 'Period of\s*:\s*(?P<period_from>[\d/A-Za-z]+)\s*To\s*:\s*(?P<period_to>[\d/A-Za-z]+)'
+  period_date_format: "%d/%b/%Y"
+  account_name: '^([A-Z][A-Z ]+[A-Z])\s*$'
+parse:
+  date_pattern: '^\d{2}/\d{2}/\d{4}$'
+  opening_balance: 'Opening Balance\s+([\d,]+\.\d{2})'
+  columns:                       # [x_min, x_max)
+    date:        [30,  82]
+    particulars: [82,  240]
+    chq:         [240, 280]
+    value_date:  [280, 350]
+    debit:       [350, 430]
+    credit:      [430, 500]
+    balance:     [500, 556]      # the trailing "Cr" marker sits beyond 556
+  start_after: "Date Particulars"   # skip the address/summary block above it
+  ignore_lines:
+    - "Vasavi MSCM Co-operative Bank"
+    - "Date Particulars"
+    - "Opening Balance"
+    - "Balance B/F"
+    - "Current Balance"
+  end_markers:
+    - "Closing Balance"

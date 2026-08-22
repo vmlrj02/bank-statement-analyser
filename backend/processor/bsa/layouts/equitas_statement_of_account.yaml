@@ -1,0 +1,52 @@
+# Layout descriptor: Equitas Small Finance Bank — Statement of Account
+# (Overdraft/Cash Credit account, so balances are negative).
+#
+# Uses the COLUMNAR parser: the amount columns are too narrow for seven-figure
+# values, so "1,049,823.00" is printed as "1,049,823.0" with the final "0"
+# wrapped onto the next line. Reading line-by-line silently drops those rows'
+# amounts; the columnar parser rejoins each cell across the lines of a row.
+#
+# Debits and Credits are both always printed, the unused one as 0.00, which
+# normalize() resolves as credit-minus-debit.
+id: equitas_statement_of_account
+bank: Equitas Small Finance Bank
+layout_name: Statement of Account
+version: 1
+parser: columnar
+fingerprints:
+  all_of:
+    - "Equitas Small Finance Bank"
+    - "Tran Date"
+  any_of: []
+header:
+  account_line: 'Account No\s*:\s*(?P<account_no>\d+)'
+  period_line: 'Period:\s*(?P<period_from>[\dA-Za-z-]+)\s+to\s+(?P<period_to>[\dA-Za-z-]+)'
+  period_date_format: "%d-%b-%y"
+  account_name: '^(.+?)\s+Account No\s*:'
+parse:
+  row_anchor: '^\d{2}-[A-Za-z]{3}-\d{2}$'
+  anchor_x_max: 70
+  anchor_requires: [value_date]      # a wrapped fragment never carries one
+  columns:                            # [x_min, x_max)
+    tran_date:  [15,  90]
+    value_date: [90,  155]
+    ref:        [155, 245]
+    remarks:    [245, 380]
+    debit:      [380, 445]
+    credit:     [445, 515]
+    balance:    [515, 600]
+  field_map:
+    date: tran_date
+    cheque_no: ref
+    description: remarks
+    withdrawal: debit
+    deposit: credit
+    balance: balance
+  skip_rows:
+    - "B/F"
+  ignore_lines:                      # the column header repeats on every page
+    - "Tran Date"
+  footer_patterns:
+    - '^Page\s+\d+'
+  end_markers:
+    - "End of Statement"

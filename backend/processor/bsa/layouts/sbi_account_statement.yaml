@@ -1,0 +1,40 @@
+# Layout descriptor: State Bank of India — account statement export
+# (seen on a dropline OD / MSME account, so balances are negative).
+#
+# The bank's name never appears on page 1 — only the IFS code — so the
+# fingerprint keys off the SBIN IFSC prefix together with the statement line.
+# Text extraction leaves "(cid:9)" where the export used a tab, hence the
+# optional (cid:N) in the header patterns.
+id: sbi_account_statement
+bank: State Bank of India
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "Account Statement from"
+    - "SBIN0"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:\s*(?:\(cid:\d+\))?\s*(?P<account_no>\d+)[\s\S]*?Account Statement from\s+(?P<period_from>\d{1,2}\s+\w{3}\s+\d{4})\s+to\s+(?P<period_to>\d{1,2}\s+\w{3}\s+\d{4})'
+  period_date_format: "%d %b %Y"
+  account_name: 'Account Name\s*:\s*(?:\(cid:\d+\))?\s*([^,\n]+)'
+parse:
+  table_header_words: ["Description", "Debit", "Credit", "Balance"]
+  header_offset: 20            # the header wraps onto a second line (No./Code)
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  skip_rows:
+    - "Balance as on"
+  columns:
+    date_x_max: 95             # Txn Date x0 47; Value Date starts at 100
+    cheque_x_min: 99999        # Branch Code is not a cheque number — excluded
+    cheque_x_max: 99999
+    remarks_x_min: 145
+    remarks_x_max: 320         # stops before the Branch Code column at x0 329
+    withdrawal_x1_max: 425     # Debit   — right edge 414
+    deposit_x1_max: 490        # Credit  — right edge 478
+    balance_x1_max: 575        # Balance — right edge 557, negative on an OD
+  footer_markers:
+    - "This is a computer generated statement"

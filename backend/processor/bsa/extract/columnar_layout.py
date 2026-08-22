@@ -132,6 +132,11 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     # spans several pages, so breaking out of one page only lets the next page
     # reopen it and append to the final row.
     end_markers = tuple(p.get("end_markers", []))
+    # A repeated page header must be INVISIBLE, not row-terminating: blocks are
+    # carried across page breaks, so without this the last row of every page
+    # swallows the next page's header and its balance becomes unparseable
+    # ("-14,807,971.91Balance"), silently dropping one row per page.
+    ignore_lines = tuple(p.get("ignore_lines", []))
 
     rows: list[RawRow] = []
     meta: StatementMeta | None = None
@@ -174,6 +179,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 if any(m in text for m in end_markers):
                     stop = True
                     break
+                if any(x in text for x in ignore_lines):
+                    continue                  # skip the line, keep the block
                 if any(f in text for f in footers) or \
                         any(r.search(text) for r in footer_res):
                     break

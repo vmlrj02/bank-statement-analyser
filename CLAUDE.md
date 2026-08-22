@@ -101,11 +101,20 @@ Write a bank-specific module only when the layout genuinely cannot be described
 in YAML (e.g. font-face-dependent narration, as in ICICI).
 
 ## Working today
-Every bank in the sample corpus parses by template — no AI, no per-statement cost:
-- ICICI OpTransactionHistory — bank-specific module (font-face narration).
-- ICICI Detailed Statement — columnar parser (wrapped cells, CCA negatives).
-- ICICI combined statement — generic parser with section profiles.
-- Axis account statement — generic parser.
+Every bank seen so far parses by template — no AI, no per-statement cost.
+There are now three parser modes, chosen by `parser:` in the descriptor:
+- `generic`  — one line per row, amounts on the dated anchor line.
+              Used by Axis, ICICI combined (with section profiles), SBI.
+- `columnar` — cells wrap across lines, so a row is a block reassembled by
+              x band. Used by ICICI Detailed and Equitas (whose amount column
+              is too narrow for 7-figure values, splitting "1,049,823.00").
+- `grouped`  — the amount line is the row: the date is printed only when it
+              changes and the balance only at the end of a same-day group, with
+              narration on the lines below. Used by Vasavi MSCM co-operative.
+              Missing balances are DERIVED, so they reconcile by construction —
+              what still validates is the group, since the next printed balance
+              must match the running total.
+Plus the bank-specific ICICI OpTransactionHistory module (font-face narration).
 - Anything else — LLM fallback (Anthropic direct, see gotcha 6), ~98% accurate,
   minutes and paid per statement. Treat as a stopgap until a layout exists.
 

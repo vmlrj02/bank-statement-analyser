@@ -39,6 +39,10 @@ def extract_one(path: str, password: str | None = None,
             from .extract.columnar_layout import extract as columnar_extract
             return _stamp(columnar_extract(ing.path, source_file=source_file,
                                            layout=layout))
+        if layout.get("parser") == "grouped":
+            from .extract.grouped_layout import extract as grouped_extract
+            return _stamp(grouped_extract(ing.path, source_file=source_file,
+                                          layout=layout))
         if cls.layout_id in TEMPLATE_PARSERS:
             mod = importlib.import_module(TEMPLATE_PARSERS[cls.layout_id])
             return _stamp(mod.extract(ing.path, source_file=source_file,

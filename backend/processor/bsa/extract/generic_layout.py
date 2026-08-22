@@ -98,6 +98,11 @@ def _meta(page1_text: str, source_file: str, layout: dict) -> StatementMeta:
     idx = h.get("account_name_line")
     if isinstance(idx, int) and 0 <= idx < len(lines):
         name = lines[idx]
+    # Some statements print the holder inline with the account number rather
+    # than on a predictable line, so allow a regex as well.
+    if pat := h.get("account_name"):
+        if m := re.search(pat, page1_text, re.M):
+            name = (m.group(1) or "").strip()
 
     return StatementMeta(
         bank=layout["bank"], layout=layout["id"], account_no=account_no,
@@ -204,7 +209,11 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                                 bal = _parse_amount(w["text"])
                         elif active["cheque_x_min"] <= w["x0"] < active["cheque_x_max"]:
                             cheque += w["text"]
-                        elif w["x0"] >= active["remarks_x_min"]:
+                        elif (active["remarks_x_min"] <= w["x0"]
+                              < active.get("remarks_x_max", 1e9)):
+                            # honour the right edge on the anchor line too, so a
+                            # trailing column (SBI prints a Branch Code between
+                            # narration and amounts) stays out of the narration
                             desc.append(w["text"])
                     if strip_date and desc:
                         desc[0] = strip_date.sub("", desc[0], count=1)
