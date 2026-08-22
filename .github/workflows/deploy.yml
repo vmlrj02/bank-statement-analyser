@@ -40,6 +40,22 @@ jobs:
             python scripts/manage_layouts.py validate "$f"
           done
 
+      # cdk synth accepts a template CloudFormation will refuse: a dependency
+      # cycle is only rejected when the changeset is created, minutes into a
+      # deploy. This synths without Docker (CDK_SKIP_BUNDLING) and walks the
+      # Ref/GetAtt/DependsOn graph itself. It caught a real one: the sweeper
+      # as the processor's on-failure destination.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check the template for dependency cycles
+        working-directory: infra
+        run: |
+          npm install -g aws-cdk
+          pip install --retries 10 --timeout 60 -r requirements.txt
+          CDK_SKIP_BUNDLING=1 cdk synth --quiet
+          python ../scripts/check_template_cycles.py cdk.out/BsaStack.template.json
+
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

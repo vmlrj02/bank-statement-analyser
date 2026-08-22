@@ -111,11 +111,22 @@ def test_a_stale_merge_claim_is_cleared_before_re_driving(sweeper, jobs_table, s
 
 # ------------------------------------------------- on-failure destination --
 
-def _failure_event(key, message="2026-08-22T00:00:00Z Task timed out after 900.00 seconds"):
+def _payload(key, message="2026-08-22T00:00:00Z Task timed out after 900.00 seconds"):
     return {"version": "1.0", "requestPayload": {"Records": [
                 {"s3": {"object": {"key": key}}}]},
             "responsePayload": {"errorType": "Sandbox.Timedout",
                                 "errorMessage": message}}
+
+
+def _failure_event(key, message="2026-08-22T00:00:00Z Task timed out after 900.00 seconds"):
+    """As it actually arrives: an SQS record whose body is the payload.
+
+    The queue sits between the processor and this function because naming the
+    function as the destination directly is a dependency cycle CloudFormation
+    refuses to deploy.
+    """
+    return {"Records": [{"messageId": "m1",
+                         "body": json.dumps(_payload(key, message))}]}
 
 
 def test_a_killed_invocation_settles_its_own_file_at_once(sweeper, jobs_table, s3):
@@ -182,3 +193,34 @@ def test_the_scan_projects_every_attribute_the_sweep_reads(sweeper, jobs_table, 
     out = sweeper.lambda_handler({"source": "aws.events"}, None)
     assert out["redriven"] == 1
     assert sweeper._fake_lambda.invocations
+
+
+def test_a_bare_payload_is_still_accepted(sweeper, jobs_table):
+    """So one failure can be replayed by invoking the function with it."""
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "processing", "expected": 1,
+        "files": [{"idx": 0, "key": "uploads/j/0.pdf", "filename": "a.pdf"}]})
+    out = sweeper.lambda_handler(_payload("uploads/j/0.pdf", "boom"), None)
+    assert out["mode"] == "on_failure"
+    assert jobs_table.items["j"]["status"] == "failed"
+
+
+def test_several_failures_in_one_batch_are_all_settled(sweeper, jobs_table, s3):
+    jobs_table.put_item(Item={
+        "job_id": "j", "status": "processing", "expected": 3, "extracted": {"0"},
+        "files": [{"idx": i, "key": f"uploads/j/{i}.pdf", "filename": f"f{i}.pdf"}
+                  for i in range(3)]})
+    s3.objects[("bucket", "work/j/0.json")] = b"{}"
+    out = sweeper.lambda_handler({"Records": [
+        {"messageId": "m1", "body": json.dumps(_payload("uploads/j/1.pdf"))},
+        {"messageId": "m2", "body": json.dumps(_payload("uploads/j/2.pdf"))},
+    ]}, None)
+    assert out["handled"] == 2
+    assert set(jobs_table.items["j"]["failed_files"]) == {"1", "2"}
+
+
+def test_an_unparseable_queue_message_falls_through_to_a_sweep(sweeper, jobs_table):
+    """It must not crash the invocation — SQS would redeliver it forever."""
+    out = sweeper.lambda_handler(
+        {"Records": [{"messageId": "m1", "body": "not json at all"}]}, None)
+    assert out["mode"] == "scheduled"

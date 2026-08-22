@@ -24,6 +24,8 @@ from aws_cdk import (
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_lambda_destinations as destinations,
+    aws_lambda_event_sources as lambda_events,
+    aws_sqs as sqs,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
     aws_s3_notifications as s3n,
@@ -172,9 +174,26 @@ class BsaStack(Stack):
 
         # ---------- sweeper: no job stays "processing" forever ----------
         # A hard-killed processor cannot write its own status, so something
-        # outside it has to. This runs on both paths — as the processor's
-        # on-failure destination (fast and exact) and on a schedule (the
+        # outside it has to. This runs on both paths — driven by the
+        # processor's failure queue (fast and exact) and on a schedule (the
         # backstop for abandoned uploads and undelivered events).
+        #
+        # The failure path goes through a QUEUE rather than naming the sweeper
+        # as the processor's destination directly. Pointing the destination at
+        # the function creates a dependency cycle CloudFormation refuses to
+        # deploy: a destination grants the PROCESSOR permission to invoke the
+        # sweeper, while the sweeper needs the processor's name to re-drive a
+        # merge and permission to invoke it. A queue depends on neither, so it
+        # breaks the cycle — and it is the better design anyway, because a
+        # failure notification now survives the sweeper itself failing instead
+        # of being dropped.
+        failures = sqs.Queue(
+            self, "ProcessorFailures",
+            retention_period=Duration.days(4),
+            # Comfortably longer than the sweeper's own 2-minute timeout.
+            visibility_timeout=Duration.minutes(6),
+        )
+
         sweeper = _lambda.Function(
             self, "Sweeper",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -203,8 +222,10 @@ class BsaStack(Stack):
         # retried twice — each retry re-running the whole paid LLM extraction.
         processor.configure_async_invoke(
             retry_attempts=0,
-            on_failure=destinations.LambdaDestination(sweeper),
+            on_failure=destinations.SqsDestination(failures),
         )
+        sweeper.add_event_source(lambda_events.SqsEventSource(failures,
+                                                              batch_size=1))
 
         # Every 15 minutes, not every 5. The on-failure destination already
         # settles a killed invocation within seconds, so this only has to catch
@@ -318,3 +339,4 @@ class BsaStack(Stack):
         CfnOutput(self, "LlmApiKeySecret", value=llm_secret.secret_name)
         CfnOutput(self, "AuthTableName", value=auth_table.table_name)
         CfnOutput(self, "SweeperFunctionName", value=sweeper.function_name)
+        CfnOutput(self, "ProcessorFailureQueue", value=failures.queue_url)

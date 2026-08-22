@@ -6,10 +6,17 @@ spinner in the UI indefinitely, and the only way to find out was to ask.
 
 This closes that two ways, because they fail differently:
 
-  * ON FAILURE (fast, precise). The processor's async invocation is configured
-    with this function as its on-failure destination, so a timeout or an
-    unhandled crash arrives here with the original S3 event attached. We know
-    exactly which file died and can settle it in seconds.
+  * ON FAILURE (fast, precise). The processor's async invocation sends a
+    failure notification to an SQS queue that this function consumes, so a
+    timeout or an unhandled crash arrives here with the original S3 event
+    attached. We know exactly which file died and can settle it in seconds.
+
+    The queue is not incidental. Naming this function as the processor's
+    destination directly is a dependency cycle CloudFormation refuses to
+    deploy — a destination grants the PROCESSOR permission to invoke the
+    sweeper, while the sweeper needs the processor's name to re-drive a merge
+    and permission to invoke it. A queue depends on neither. It also means a
+    failure notification outlives a sweeper invocation that itself fails.
 
   * ON A SCHEDULE (slow, total). Every few minutes, any job that has not
     progressed within its grace period is failed with a plain reason. This is
@@ -25,7 +32,7 @@ skips extraction, and merges — publishing the accounts that worked, with the
 dead file listed as failed. Re-driving through the real path rather than
 duplicating the merge here means there is only ever one merge implementation.
 
-Triggers : EventBridge schedule; Lambda async on-failure destination
+Triggers : EventBridge schedule; SQS queue of processor failure notifications
 Writes   : job status/error in DynamoDB; invokes the processor to re-drive
 """
 import json
@@ -249,10 +256,37 @@ def _sweep() -> dict:
     return {"scanned": scanned, "failed": swept, "redriven": redriven}
 
 
+def _failure_notifications(event):
+    """Yield each async-failure payload carried by this event.
+
+    Arrives as SQS records whose body is the destination payload. The bare
+    payload shape is still accepted so the function can be invoked by hand
+    with one, which is how you replay a specific failure.
+    """
+    if not isinstance(event, dict):
+        return
+    if "responsePayload" in event:
+        yield event
+        return
+    for rec in event.get("Records", []):
+        body = rec.get("body")
+        if body is None:
+            continue
+        try:
+            payload = json.loads(body)
+        except (TypeError, ValueError):
+            print(f"sweeper: ignoring unparseable queue message: {body!r:.200}")
+            continue
+        if isinstance(payload, dict) and "responsePayload" in payload:
+            yield payload
+
+
 def lambda_handler(event, _ctx):
-    if isinstance(event, dict) and "responsePayload" in event:
-        _handle_invocation_failure(event)
-        return {"ok": True, "mode": "on_failure"}
+    notifications = list(_failure_notifications(event))
+    if notifications:
+        for payload in notifications:
+            _handle_invocation_failure(payload)
+        return {"ok": True, "mode": "on_failure", "handled": len(notifications)}
     out = _sweep()
     print(f"sweeper: {out}")
     return {"ok": True, "mode": "scheduled", **out}

@@ -5,7 +5,16 @@ import aws_cdk as cdk
 
 from stacks.bsa_stack import BsaStack
 
-app = cdk.App()
+# Asset bundling runs Docker and takes minutes, which is far too slow for a
+# check that only needs the template — such as the dependency-cycle check in
+# CI (scripts/check_template_cycles.py). CloudFormation rejects a cyclic
+# template only when the changeset is created, so catching it needs a synth,
+# and a synth should not need Docker to produce a graph.
+_context = {}
+if os.environ.get("CDK_SKIP_BUNDLING"):
+    _context["aws:cdk:bundling-stacks"] = []
+
+app = cdk.App(context=_context)
 BsaStack(
     app, "BsaStack",
     env=cdk.Environment(
