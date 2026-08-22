@@ -61,3 +61,9 @@ def test_a_reversed_returned_instrument_credit_is_a_refund():
     t = categorize([txn("RVSL IW CTR RTN CHQNO:011541_DT:01122025/FEDERAL",
                         2900000.0)])[0]
     assert t.category == "return / refund"
+
+
+def test_a_returned_outgoing_rtgs_credit_is_a_refund():
+    t = categorize([txn("RTGS RETURN-ICICR42026011900518516-S N S PRODUCTSPVT "
+                        "LTD-OPERATIONS SUSPENDED/R09", 772905.0)])[0]
+    assert t.category == "return / refund"

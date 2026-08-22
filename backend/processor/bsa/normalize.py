@@ -37,7 +37,12 @@ MODE_RULES = [
     (r"\bCMS/", "cms"),
     (r"\bSMP/", "standing-instruction"),
     (r"Int\.Pd", "interest"),
-    (r"\bTRFR\b", "transfer"),
+    # ICICI cheque/branch transfers print "TRF/<NAME>/ICI" (often prefixed
+    # "CHEQUE 3451"), and its internet banking prints "INF/INFT/<ref>/…".
+    # Every company and individual paid by cheque was an unknown party until
+    # these two forms were read.
+    (r"\bINF/INFT/", "netbanking"),
+    (r"\bTRFR\b|\bTRF/", "transfer"),
 ]
 
 _IFSC = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
@@ -163,6 +168,36 @@ def extract_counterparty(desc: str, mode: str) -> str:
         m = re.search(r"TRFR (?:TO|FROM):?\s*(.+)$", d, re.I)
         if m:
             return _clean_segment(m.group(1))
+        m = re.search(r"\bTRF/([^/]+)", d)               # TRF/<NAME>/ICI
+        if m and not _REFNUM.match(m.group(1).strip()):
+            return _clean_segment(m.group(1))
+    if mode == "netbanking":
+        # INF/INFT/<ref>/<remark>/<NAME> — the NAME is the LAST segment
+        # ("…/Amit payment /AMIT"); the remark rides ahead of it.
+        m = re.search(r"INF/INFT/\d+/(.+)$", d)
+        if m:
+            segs = _name_segments(m.group(1))
+            if segs:
+                return segs[-1]
+    if mode == "other":
+        # GIB/<ref>/GST /<ref> — government internet banking; the tax head
+        # is the only party there is.
+        m = re.search(r"\bGIB/\d+/([A-Z]+)\b", d)
+        if m:
+            return _clean_segment(m.group(1))
+        # RTGS RETURN-<ref>-<NAME>-<reason> — a returned RTGS names its party.
+        m = re.search(r"(?:RTGS|NEFT) RETURN-[A-Z0-9]+-([^-]+)", d, re.I)
+        if m and not _REFNUM.match(m.group(1).strip()):
+            return _clean_segment(m.group(1))
+        # SBI's prose form: "… TRANSFER TO 43465553898 TREE OF LIFE DWELLINGS /"
+        # or "TRANSFER FROM 10448586579 Mr. CHANDRASHEKAR AN O /". The account
+        # number and stray FRM/PENAL markers ride along with the name.
+        m = re.search(r"TRANSFER[- ]+(?:FROM|TO)[- ]+(.+?)\s*/*\s*$", d, re.I)
+        if m:
+            name = re.sub(r"\b(?:FRM|PENAL)\b|\b\d{5,}\b", " ", m.group(1))
+            name = _clean_segment(name)
+            if name and not _REFNUM.match(name):
+                return name
     if mode == "standing-instruction":
         m = re.search(r"SMP/\w+_(.+)$", d)               # SMP/<ref>_<NAME>
         if m:

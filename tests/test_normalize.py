@@ -93,6 +93,22 @@ def test_counterparty_skips_reference_numbers_and_ifsc():
     # ECS slash form: the mandate reference is a bank prefix glued to digits.
     ("ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT",
      "nach", "Bajaj Finance Ltd_SMS OT"),
+    # ICICI cheque payments: every company paid by cheque was unknown before
+    # the TRF/ form was read — the review called out exactly this.
+    ("CHEQUE 3463 TRF/GO DIGIT GENERAL INSURANCE LTD/ICI",
+     "transfer", "GO DIGIT GENERAL INSURANCE LTD"),
+    # ICICI internet banking: the NAME is the LAST segment, after the remark.
+    ("NET BANKING INF/INFT/044420726211/Amit payment /AMIT",
+     "netbanking", "AMIT"),
+    # Government internet banking: the tax head is the only party there is.
+    ("GIB/002046036625/GST /25070700147871", "other", "GST"),
+    ("RTGS RETURN-ICICR42026011900518516-S N S PRODUCTSPVT LTD-OPERATIONS SUSPENDED/R09",
+     "other", "S N S PRODUCTSPVT LTD"),
+    # SBI's prose narration — the account number rides along with the name.
+    ("TO TRANSFER- CIAAKPTHB4 trf- TRANSFER TO 43465553898 TREE OF LIFE DWELLINGS /",
+     "other", "TREE OF LIFE DWELLINGS"),
+    ("BY TRANSFER- IID8620002 trf-TRANSFER FROM 10448586579 Mr. CHANDRASHEKAR AN O /",
+     "other", "Mr. CHANDRASHEKAR AN O"),
 ])
 def test_counterparty_from_real_statement_descriptors(desc, mode, party):
     assert detect_mode(desc) == mode

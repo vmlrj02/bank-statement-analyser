@@ -42,7 +42,10 @@ INVESTMENT_HINTS = [
 SALARY_HINTS = [r"\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL"]
 REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF", r"\bRET\b.*\bCR\b",
                 # "RVSL IW CTR RTN CHQNO:…" — a returned instrument credited back
-                r"\bRVSL\b"]
+                r"\bRVSL\b",
+                # "RTGS RETURN-<ref>-<name>-OPERATIONS SUSPENDED" — an outgoing
+                # payment bounced back by the beneficiary's bank
+                r"(RTGS|NEFT|IMPS) RETURN"]
 # "Chrgs"/"Chgs" spellings ("SMS Chrgs Incl GST", "Keeping Chgs--") fell
 # through to Regular debit; \bCHRG\b alone stops before the S.
 PENAL_HINTS = [r"\bCHRG\b", r"\bCHR?GS?\b", r"CHARGES?", r"\bMAB\b", r"PENAL", r"\bFEE\b", r"OVERDUE", r"MIN BAL"]
@@ -127,7 +130,7 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             tag = "cash withdrawal"
         elif t.mode == "cash-deposit" and credit:
             tag = "cash deposit"
-        elif credit and _any(d, [re.escape(x) for x in LENDERS]) and t.mode in ("neft", "imps", "nach", "other"):
+        elif credit and _any(d, [re.escape(x) for x in LENDERS]) and t.mode in ("neft", "imps", "nach", "netbanking", "other"):
             tag = "Loan amount disbursal"
         elif credit and _any(d, [re.escape(x) for x in INVESTMENT_HINTS]):
             tag = "Investment return credited"
