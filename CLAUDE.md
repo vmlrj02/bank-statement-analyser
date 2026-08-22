@@ -119,15 +119,36 @@ There are now three parser modes, chosen by `parser:` in the descriptor:
               what still validates is the group, since the next printed balance
               must match the running total.
 Plus the bank-specific ICICI OpTransactionHistory module (font-face narration).
-- Anything else — LLM fallback (Anthropic direct, see gotcha 6), ~98% accurate,
-  minutes and paid per statement. Treat as a stopgap until a layout exists.
+
+Registry as it stands — 7 layouts across 5 banks (bank != layout; ICICI alone
+exports three different shapes, so "we support ICICI" is not a meaningful claim):
+
+    Axis Bank                      Account Statement           generic
+    Equitas Small Finance Bank     Statement of Account        columnar
+    ICICI Bank                     Combined Account Statement  generic
+    ICICI Bank                     Detailed Statement          columnar
+    ICICI Bank                     OpTransactionHistory        module
+    State Bank of India            Account Statement           generic
+    Vasavi MSCM Co-operative Bank  Account Statement           grouped
+
+A bank with NO layout falls to the LLM — but every LLM key on this project is
+currently out of credit (Anthropic, OpenAI and Gemini alike), so in practice an
+unknown bank cannot be extracted at all right now. The answer is to write a
+layout, not to top up: a descriptor against an existing parser mode is roughly
+an hour with one sample PDF, and it is free, deterministic and balance-verified
+forever after. A genuinely new SHAPE costs more, because it needs a new mode
+first (that is what `grouped` was).
+
+An upload where some files fail still publishes the accounts that worked; the
+failed files are listed on the upload with a plain reason.
 
 ## Current next steps
 1. The gotcha-6 data-residency fix — statement data still leaves AWS whenever a
    bank has no layout. This is the last item gating real customers now that
    auth is in place.
-2. More bank layouts (HDFC, SBI, Kotak) as YAML descriptors — needs one sample
-   statement per bank. Each one also shrinks the residency exposure in (1).
+2. More bank layouts (HDFC, Kotak, and whatever else customers send) as YAML
+   descriptors — needs one sample statement per bank. Each one also shrinks the
+   residency exposure in (1) and removes a per-statement cost.
 3. S3-backed layout registry so a bank can be added without a redeploy
    (registry.py currently globs a read-only directory inside the bundle).
 4. Human-review screen for needs_review jobs.
