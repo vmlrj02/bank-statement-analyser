@@ -1,0 +1,62 @@
+# Layout descriptor: ICICI Bank — combined "Summary of Accounts" statement,
+# a different export from OpTransactionHistory (note the lower-case
+# "transactions" and the absence of "no." in its heading, which is what keeps
+# the two fingerprints from colliding).
+#
+# Column x positions shift by ~6pt between alternating pages, so the bands are
+# deliberately wider than the observed values rather than tight to them.
+id: icici_combined_statement
+bank: ICICI Bank
+layout_name: Combined Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "Statement of transactions in"
+    - "in Currency"
+  any_of: []
+header:
+  account_line: 'Statement of transactions in .*?Account\s+(?P<account_no>[X\d]+)\s+in Currency\s+\w+\s+for the period\s+(?P<period_from>[\d-]+)\s+to\s+(?P<period_to>[\d-]+)'
+  period_date_format: "%d-%m-%Y"
+  account_name_line: 2
+parse:
+  table_header_words: ["Particulars", "Location", "Withdrawals", "Deposits"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  strip_leading_date: '^\d{2}[-/]\d{2}[-/]\d{4}'   # value date glued to narration
+  skip_rows:
+    - "B/F"
+    - "Total of Transactions"
+  columns:
+    date_x_max: 70
+    cheque_x_min: 375
+    cheque_x_max: 405
+    remarks_x_min: 66
+    remarks_x_max: 420
+    withdrawal_x1_max: 460      # observed 453 / 456 across shifted pages
+    deposit_x1_max: 510         # observed 503
+    balance_x1_max: 570         # observed 554 / 559
+    tail_x_min: 545             # the trailing "Cr"/"Dr" marker
+  # This export can switch format mid-document: a later section prints
+  # DEPOSITS before WITHDRAWALS, the reverse of the first. Each section
+  # declares its own geometry and the parser swaps profiles when it sees the
+  # matching header.
+  sections:
+    - match: 'Statement of Transactions in .*? in INR for the period'
+      columns:
+        date_x_max: 80
+        cheque_x_min: 99999          # MODE/CHEQUE folded into the narration
+        cheque_x_max: 99999
+        remarks_x_min: 70
+        remarks_x_max: 360
+        tail_x_min: 600
+        amount_bands:                # right edges; DEPOSITS is leftmost here
+          deposit:    [340, 415]
+          withdrawal: [415, 500]
+          balance:    [500, 575]
+    - match: 'Statement of transactions in .*? in Currency'
+      columns: {}                    # empty -> revert to the default profile
+  footer_markers:
+    - "This is a system generated"

@@ -50,6 +50,29 @@ def _lines(words: list[dict], tol: float = 3.0) -> list[dict]:
     return out
 
 
+def _amount_role(x1: float, cols: dict) -> str | None:
+    """Which money column a right edge belongs to.
+
+    `amount_bands` names each role explicitly because column ORDER is not
+    universal — one ICICI export prints Withdrawals then Deposits, another
+    prints Deposits then Withdrawals. The older ordered *_x1_max form is kept
+    for layouts that were written against it.
+    """
+    if bands := cols.get("amount_bands"):
+        for role in ("withdrawal", "deposit", "balance"):
+            b = bands.get(role)
+            if b and b[0] <= x1 <= b[1]:
+                return role
+        return None
+    if x1 <= cols["withdrawal_x1_max"]:
+        return "withdrawal"
+    if x1 <= cols["deposit_x1_max"]:
+        return "deposit"
+    if x1 <= cols["balance_x1_max"]:
+        return "balance"
+    return None
+
+
 def _meta(page1_text: str, source_file: str, layout: dict) -> StatementMeta:
     h = layout.get("header", {})
     account_no = p_from = p_to = ""
@@ -92,11 +115,20 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     header_words = set(p.get("table_header_words", []))
     header_offset = float(p.get("header_offset", 14))
     above = p.get("continuation", "below") == "above"
+    # Some exports run the value date straight into the narration with no
+    # separator ("01-07-2025BIL/Auto"), so it arrives as one token.
+    strip_date = re.compile(p["strip_leading_date"]) if p.get("strip_leading_date") else None
+    # A single PDF can concatenate two different exports of the same account —
+    # customers download a range, the bank changes its format, and the parts are
+    # merged. Each section declares a header regex and its own column geometry.
+    sections = [(re.compile(sec["match"]), sec.get("columns") or {})
+                for sec in p.get("sections", [])]
 
     rows: list[RawRow] = []
     meta: StatementMeta | None = None
     pending: list[str] = []          # narration seen before its anchor
     current: dict | None = None
+    active = cols                    # column profile currently in force
 
     def finalize() -> None:
         nonlocal current
@@ -133,12 +165,22 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 text = " ".join(w["text"] for w in ws)
                 if any(m in text for m in footers):
                     break
+                switched = False
+                for rx, scols in sections:
+                    if rx.search(text):
+                        finalize()
+                        pending.clear()
+                        active = scols or cols
+                        switched = True
+                        break
+                if switched:
+                    continue
                 if any(m in text for m in skip_rows):
                     pending.clear()
                     continue
 
                 first = ws[0]
-                is_anchor = (first["x0"] < cols["date_x_max"]
+                is_anchor = (first["x0"] < active["date_x_max"]
                              and anchor_re.match(first["text"]))
 
                 if is_anchor:
@@ -150,20 +192,24 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     desc = list(pending) if above else []
                     pending.clear()
                     for w in ws[1:]:
-                        if w["x0"] >= cols.get("tail_x_min", 1e9):
+                        if w["x0"] >= active.get("tail_x_min", 1e9):
                             continue                  # trailing branch/init code
-                        if NUM_RE.match(w["text"]) and w["x0"] > cols["remarks_x_min"]:
-                            amt = _parse_amount(w["text"])
-                            if w["x1"] <= cols["withdrawal_x1_max"]:
-                                wd = amt
-                            elif w["x1"] <= cols["deposit_x1_max"]:
-                                dep = amt
-                            elif w["x1"] <= cols["balance_x1_max"]:
-                                bal = amt
-                        elif cols["cheque_x_min"] <= w["x0"] < cols["cheque_x_max"]:
+                        if NUM_RE.match(w["text"]) and w["x0"] > active["remarks_x_min"]:
+                            role = _amount_role(w["x1"], active)
+                            if role == "withdrawal":
+                                wd = _parse_amount(w["text"])
+                            elif role == "deposit":
+                                dep = _parse_amount(w["text"])
+                            elif role == "balance":
+                                bal = _parse_amount(w["text"])
+                        elif active["cheque_x_min"] <= w["x0"] < active["cheque_x_max"]:
                             cheque += w["text"]
-                        elif w["x0"] >= cols["remarks_x_min"]:
+                        elif w["x0"] >= active["remarks_x_min"]:
                             desc.append(w["text"])
+                    if strip_date and desc:
+                        desc[0] = strip_date.sub("", desc[0], count=1)
+                        if not desc[0]:
+                            desc.pop(0)
                     if bal is None:
                         current = None       # not a transaction row
                         continue
@@ -174,8 +220,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
 
                 # narration-only line
                 zone = [w["text"] for w in ws
-                        if cols["remarks_x_min"] <= w["x0"] < cols.get(
-                            "remarks_x_max", cols["withdrawal_x1_max"])]
+                        if active["remarks_x_min"] <= w["x0"] < active.get(
+                            "remarks_x_max", 1e9)]
                 if not zone:
                     continue
                 if above:
