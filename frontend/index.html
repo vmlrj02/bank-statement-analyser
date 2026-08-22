@@ -124,6 +124,35 @@ aside{position:sticky;top:26px}
   header{padding:40px 0 26px} h1{font-size:29px}
 }
 
+/* ---------- login ---------- */
+#gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:50;padding:24px}
+.card{width:100%;max-width:360px}
+.card h1{font-size:26px;margin:0 0 6px}
+.card p.sub{color:var(--mut);font-size:14.5px;margin:0 0 26px}
+.card label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
+  font-weight:600;color:var(--mut);margin:14px 0 6px}
+.card input{width:100%;padding:11px 14px;font-size:15px;font-family:inherit;
+  border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--fg)}
+.card input:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
+.card .go{width:100%;margin-top:22px;justify-content:center}
+.msg{margin-top:14px;font-size:13.5px;padding:10px 12px;border-radius:10px;
+  background:var(--sunk);border-left:3px solid var(--fg)}
+.who{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mut)}
+.badge{border:1px solid var(--line2);border-radius:999px;padding:2px 9px;font-size:11px;
+  font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.badge.adm{background:var(--inv);color:var(--inv-fg);border-color:var(--inv)}
+
+/* ---------- admin AI panel ---------- */
+.ai{margin-top:16px;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.ai h4{margin:0;padding:10px 14px;background:var(--sunk);font-size:11.5px;
+  text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
+.ai .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:1px;background:var(--line)}
+.ai .g{background:var(--card);padding:10px 13px}
+.ai .g b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.ai .g span{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.ai table{font-size:12.5px}
+.ai td,.ai th{padding:7px 13px}
+
 /* ---------- dialog ---------- */
 dialog{border:0;border-radius:var(--radius);padding:0;background:var(--card);color:var(--fg);
   max-width:min(980px,94vw);width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
@@ -140,10 +169,31 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 </style>
 </head>
 <body>
-<div class="shell">
+<div id="gate" hidden>
+  <div class="card">
+    <h1>Bank Statement Analyser</h1>
+    <p class="sub">Sign in to continue</p>
+    <label for="u">Email</label>
+    <input id="u" type="email" autocomplete="username">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <div id="np" hidden>
+      <label for="pw2">New password</label>
+      <input id="pw2" type="password" autocomplete="new-password">
+    </div>
+    <button class="go" id="signin">Sign in</button>
+    <div class="msg" id="gmsg" hidden></div>
+  </div>
+</div>
+
+<div class="shell" id="app" hidden>
   <header>
     <h1>Bank Statement Analyser</h1>
     <p>Drop in a year of statements. Get one categorised, balance-checked report.</p>
+    <div class="who" style="justify-content:center;margin-top:14px">
+      <span id="whoami"></span><span class="badge" id="role" hidden></span>
+      <button class="ghost" id="out">Sign out</button>
+    </div>
   </header>
 
   <main>
@@ -182,6 +232,82 @@ td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 <script>
 const API = window.BSA_API;
 const $ = id => document.getElementById(id);
+
+/* ---------- auth ----------
+   Cognito's InitiateAuth is a plain JSON endpoint, so a no-build page can talk
+   to it directly with fetch and keep this login screen instead of the hosted
+   UI. Accounts are admin-created, which means a first sign-in arrives as a
+   NEW_PASSWORD_REQUIRED challenge — handled below, or nobody could ever get in. */
+const IDP = `https://cognito-idp.${window.BSA_REGION}.amazonaws.com/`;
+const TKEY = 'bsa.idToken';
+let IS_ADMIN = false, WHO = '';
+
+const idp = (target, body) => fetch(IDP, {
+  method:'POST',
+  headers:{'content-type':'application/x-amz-json-1.1',
+           'x-amz-target':`AWSCognitoIdentityProviderService.${target}`},
+  body: JSON.stringify(body)
+}).then(async r => { const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.message || j.__type || 'Sign-in failed'); return j; });
+
+function claims(tok){
+  try{ return JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+  catch(e){ return null; }
+}
+function token(){
+  const t = localStorage.getItem(TKEY);
+  if(!t) return null;
+  const c = claims(t);
+  // A stale token just yields 401s and a confusing empty page — drop it here.
+  if(!c || (c.exp||0)*1000 <= Date.now()){ localStorage.removeItem(TKEY); return null; }
+  return t;
+}
+function applyToken(t){
+  localStorage.setItem(TKEY, t);
+  const c = claims(t) || {};
+  const g = c['cognito:groups'] || [];
+  IS_ADMIN = (Array.isArray(g) ? g : String(g).split(/[\s,\[\]]+/)).includes('admin');
+  WHO = c.email || c['cognito:username'] || '';
+}
+function showGate(msg){
+  $('app').hidden = true; $('gate').hidden = false;
+  if(msg){ $('gmsg').hidden = false; $('gmsg').textContent = msg; }
+}
+function showApp(){
+  $('gate').hidden = true; $('app').hidden = false;
+  $('whoami').textContent = WHO;
+  $('role').hidden = false;
+  $('role').textContent = IS_ADMIN ? 'admin' : 'customer';
+  $('role').className = 'badge' + (IS_ADMIN ? ' adm' : '');
+  refresh();
+}
+
+$('signin').onclick = async () => {
+  const btn=$('signin'); btn.disabled=true; $('gmsg').hidden=true;
+  const U=$('u').value.trim(), P=$('pw').value, NP=$('pw2').value;
+  try{
+    let r = await idp('InitiateAuth', {AuthFlow:'USER_PASSWORD_AUTH',
+      ClientId:window.BSA_CLIENT, AuthParameters:{USERNAME:U, PASSWORD:P}});
+    if(r.ChallengeName === 'NEW_PASSWORD_REQUIRED'){
+      if(!NP){
+        $('np').hidden=false; btn.disabled=false;
+        $('gmsg').hidden=false;
+        $('gmsg').textContent='First sign-in: choose a new password (min 10 characters).';
+        return;
+      }
+      r = await idp('RespondToAuthChallenge', {ClientId:window.BSA_CLIENT,
+        ChallengeName:'NEW_PASSWORD_REQUIRED', Session:r.Session,
+        ChallengeResponses:{USERNAME:U, NEW_PASSWORD:NP}});
+    }
+    const tok = r.AuthenticationResult && r.AuthenticationResult.IdToken;
+    if(!tok) throw new Error('No token returned');
+    applyToken(tok); $('pw').value=''; $('pw2').value=''; showApp();
+  }catch(e){ showGate(e.message); }
+  finally{ btn.disabled=false; }
+};
+$('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
+$('pw2').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
+$('out').onclick = () => { localStorage.removeItem(TKEY); location.reload(); };
 const esc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
 const nfmt = n => Number(n||0).toLocaleString('en-IN');
@@ -262,7 +388,16 @@ function updateGo(){
 
 /* ---------- upload ---------- */
 async function api(path, opts){
+  const t = token();
+  if(!t){ showGate('Session expired — please sign in again.'); throw new Error('signed out'); }
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers, {authorization:'Bearer '+t});
   const r = await fetch(API+path, opts);
+  if(r.status === 401 || r.status === 403){
+    localStorage.removeItem(TKEY);
+    showGate('Session expired — please sign in again.');
+    throw new Error('signed out');
+  }
   if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
   return r.json();
 }
@@ -307,6 +442,27 @@ function activeCard(j){
       <div class="stat"><b>${esc(s.validation||'—')}</b><span>Balance check</span></div>
       <div class="stat"><b>${nfmt(s.issues||0)}</b><span>Rows to review</span></div>
     </div>` : '';
+  const a = s.ai;
+  const money = v => (v===''||v===undefined||v===null) ? '—' : '$'+Number(v).toFixed(4);
+  const aiPanel = (IS_ADMIN && a) ? `<div class="ai">
+      <h4>AI usage · admin only</h4>
+      <div class="grid">
+        <div class="g"><b>${a.used ? 'Yes' : 'No'}</b><span>AI used</span></div>
+        <div class="g"><b>${nfmt(a.ai_files||0)}/${nfmt(s.files||0)}</b><span>Files via AI</span></div>
+        <div class="g"><b>${nfmt(a.tokens_in||0)}</b><span>Tokens in</span></div>
+        <div class="g"><b>${nfmt(a.tokens_out||0)}</b><span>Tokens out</span></div>
+        <div class="g"><b>${nfmt(a.calls||0)}</b><span>API calls</span></div>
+        <div class="g"><b>${money(a.cost_usd)}</b><span>Cost</span></div>
+      </div>
+      ${(a.files||[]).length ? `<table><thead><tr><th>File</th><th>Parser</th>
+        <th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead><tbody>` +
+        a.files.map(f=>`<tr><td>${esc(f.filename)}</td>
+          <td>${f.ai ? esc(f.model||f.provider||'AI') : esc(f.layout||'template')}</td>
+          <td class="num">${f.ai?nfmt(f.tokens_in):'—'}</td>
+          <td class="num">${f.ai?nfmt(f.tokens_out):'—'}</td>
+          <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('') +
+        `</tbody></table>` : ''}
+    </div>` : '';
   const period = s.period_from ? `${esc(s.period_from)} → ${esc(s.period_to||'')}` : '';
   const sub=[esc(s.bank||''), esc(s.account_no||''), period].filter(Boolean).join(' · ');
   return `<div class="job">
@@ -317,6 +473,7 @@ function activeCard(j){
     ${sub?`<div class="cats" style="margin-top:6px"><span style="background:none;padding:0">${sub}</span></div>`:''}
     ${stats}
     ${cats?`<div class="cats">${cats}</div>`:''}
+    ${aiPanel}
     ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
     ${ready?`<div class="acts">
       <button class="ghost" onclick="preview('${j.job_id}','${esc(j.filename)}')">Preview</button>
@@ -375,8 +532,9 @@ async function preview(id,name){
   $('pv').showModal();
 }
 
-refresh();
-setInterval(refresh,15000);
+const boot = token();
+if(boot){ applyToken(boot); showApp(); } else { showGate(); }
+setInterval(() => { if(token() && !$('app').hidden) refresh(); }, 15000);
 </script>
 </body>
 </html>

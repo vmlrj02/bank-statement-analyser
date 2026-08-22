@@ -3,7 +3,7 @@
 Routes (HTTP API v2 routeKey):
   POST /jobs                : {filename, password?, related_parties?[]}
                               -> {job_id, upload_url}
-  GET  /jobs                : recent jobs (newest first)
+  GET  /jobs                : recent jobs (newest first; own only unless admin)
   GET  /jobs/{id}           : job record incl. summary
   GET  /jobs/{id}/download  : ?format=csv|xlsx|json|preview -> {url}
 """
@@ -39,12 +39,37 @@ FORMAT_KEYS = {
 }
 
 
-def _scrub(item):
-    """Never return PDF passwords — they now live per file inside `files`."""
+def _identity(event):
+    """(user_sub, is_admin) from the JWT the authorizer already validated.
+
+    HTTP API v2 flattens claims to strings, so cognito:groups can arrive as
+    "[admin customer]" rather than a list — parse both shapes.
+    """
+    claims = ((event.get("requestContext") or {}).get("authorizer") or {}) \
+        .get("jwt", {}).get("claims", {}) or {}
+    raw = claims.get("cognito:groups") or ""
+    if isinstance(raw, str):
+        groups = [g for g in raw.strip("[]").replace(",", " ").split() if g]
+    else:
+        groups = list(raw)
+    return claims.get("sub", ""), ("admin" in groups)
+
+
+def _scrub(item, is_admin=False):
+    """Strip anything the caller must not see.
+
+    Passwords always go. AI usage and cost are admin-only: a customer sees the
+    report, not what it cost us to produce.
+    """
     item.pop("password", None)
     for f in item.get("files") or []:
         if isinstance(f, dict):
             f.pop("password", None)
+    if not is_admin:
+        item.pop("owner", None)
+        summary = item.get("summary")
+        if isinstance(summary, dict):
+            summary.pop("ai", None)
     return item
 
 
@@ -59,6 +84,13 @@ def lambda_handler(event, _ctx):
     route = event.get("routeKey", "")
     path_id = (event.get("pathParameters") or {}).get("id")
     qs = event.get("queryStringParameters") or {}
+    user_sub, is_admin = _identity(event)
+    if not user_sub:
+        return _resp(401, {"error": "not authenticated"})
+
+    def _owned(it):
+        """Admins see everything; everyone else only their own uploads."""
+        return is_admin or it.get("owner") == user_sub
 
     if route == "POST /jobs":
         body = json.loads(event.get("body") or "{}")
@@ -101,6 +133,7 @@ def lambda_handler(event, _ctx):
             "uploaded": 0,
             "created_at": now,
             "ttl": now + 180 * 24 * 3600,
+            "owner": user_sub,
         }
         if body.get("related_parties"):
             item["related_parties"] = [str(p)[:80] for p in body["related_parties"]][:20]
@@ -112,18 +145,22 @@ def lambda_handler(event, _ctx):
     if route == "GET /jobs":
         # MVP single-tenant: scan and sort client-side (bounded)
         items = TABLE.scan(Limit=200).get("Items", [])
+        items = [it for it in items if _owned(it)]
         for it in items:
-            _scrub(it)
+            _scrub(it, is_admin)
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return _resp(200, {"jobs": items[:60]})
 
     if route == "GET /jobs/{id}" and path_id:
         it = TABLE.get_item(Key={"job_id": path_id}).get("Item")
-        if not it:
+        if not it or not _owned(it):
             return _resp(404, {"error": "not found"})
-        return _resp(200, _scrub(it))
+        return _resp(200, _scrub(it, is_admin))
 
     if route == "GET /jobs/{id}/download" and path_id:
+        owner_item = TABLE.get_item(Key={"job_id": path_id}).get("Item")
+        if not owner_item or not _owned(owner_item):
+            return _resp(404, {"error": "not found"})
         fmt = qs.get("format", "csv")
         if fmt not in FORMAT_KEYS:
             return _resp(400, {"error": f"format must be one of {list(FORMAT_KEYS)}"})

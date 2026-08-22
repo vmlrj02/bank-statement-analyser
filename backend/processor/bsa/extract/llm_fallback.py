@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 import pdfplumber
 
 from ..models import RawRow, StatementMeta, StatementExtract
-from .llm_providers import call_structured
+from .llm_providers import call_structured, cost_usd, model_id, provider
 
 # Chunks are independent API calls, so run several at once — a 15-minute
 # sequential run is what pushed one real statement past Lambda's hard ceiling.
@@ -189,6 +189,16 @@ def extract_with_llm(pdf_path: str, source_file: str,
         for fut in done:
             results[futures[fut]] = fut.result()
 
+    # call_structured returns (payload, usage); split them and total the spend
+    usage_total = {"in": 0, "out": 0, "calls": 0}
+    for i, r in enumerate(results):
+        if isinstance(r, tuple) and len(r) == 2:
+            payload, usage = r
+            results[i] = payload
+            usage_total["in"] += int(usage.get("in", 0) or 0)
+            usage_total["out"] += int(usage.get("out", 0) or 0)
+            usage_total["calls"] += 1
+
     merged_meta, all_rows, malformed = None, [], 0
     for (idx, _blocks), result in zip(chunks, results):
         if not isinstance(result, dict):
@@ -255,5 +265,13 @@ def extract_with_llm(pdf_path: str, source_file: str,
         period_to=_s("period_to"),
         source_file=source_file,
         is_digital_text=digital,
+        llm_usage={
+            "provider": provider(),
+            "model": model_id(),
+            "tokens_in": usage_total["in"],
+            "tokens_out": usage_total["out"],
+            "calls": usage_total["calls"],
+            "cost_usd": cost_usd(model_id(), usage_total["in"], usage_total["out"]),
+        },
     )
     return StatementExtract(meta=meta, rows=rows)

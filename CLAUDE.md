@@ -15,6 +15,9 @@ keep URL private). Stack `BsaStack` in ap-south-1, account 681832767155.
   - icici_optransactionhistory.py — bank-specific module, for layouts YAML cannot
     express (ICICI marks a row's title line by font face).
 - backend/api/handler.py — jobs API (presigned S3 upload/download, DynamoDB).
+  Every route sits behind a Cognito JWT authorizer. Roles come from the
+  `cognito:groups` claim: `admin` sees all jobs plus AI usage/cost; `customer`
+  sees only their own jobs and never the AI block.
 - frontend/index.html — no-build SPA served via CloudFront.
 - infra/ — CDK (Python). Deploy: `cd infra && source .venv/bin/activate && cdk deploy`.
 
@@ -50,6 +53,24 @@ keep URL private). Stack `BsaStack` in ap-south-1, account 681832767155.
 10. A statement's table header is often printed on page 1 only. Parsing pages
     that lack a header is required, or continuation pages are silently dropped
     (this cost 143 of 163 rows on the first Axis run).
+
+## Accounts
+Self-signup is disabled — create users deliberately and put them in a group:
+
+    POOL=<UserPoolId from stack outputs>
+    aws cognito-idp admin-create-user --user-pool-id $POOL \
+        --username person@company.com \
+        --user-attributes Name=email,Value=person@company.com Name=email_verified,Value=true
+    aws cognito-idp admin-add-user-to-group --user-pool-id $POOL \
+        --username person@company.com --group-name customer   # or admin
+
+The pool uses UsernameAttributes=email, so the username IS the email. Do not
+re-add a username sign-in alias: with both set, Cognito refuses to create any
+email-shaped username, and that property cannot be changed in place afterwards
+(the pool must be replaced).
+
+A newly created user gets a temporary password and first sign-in returns a
+NEW_PASSWORD_REQUIRED challenge; the login screen handles it inline.
 
 ## Adding a new bank
 Preferred path is a YAML descriptor with no Python:

@@ -39,6 +39,38 @@ DEFAULT_MODELS = {
 MAX_OUTPUT_TOKENS = 32000
 TOOL_NAME = "record_statement"
 
+# USD per 1M tokens, (input, output). Vendor pricing changes, so a model that
+# is not listed reports tokens with cost None rather than a made-up number —
+# a wrong cost figure is worse than an absent one on an admin billing screen.
+# Override without a deploy via LLM_PRICE_IN / LLM_PRICE_OUT.
+PRICES = {
+    "claude-opus-5":    (5.00, 25.00),
+    "claude-sonnet-5":  (3.00, 15.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5": (1.00, 5.00),
+}
+
+
+def price_for(model: str):
+    """(input, output) USD per 1M tokens, or None if unknown."""
+    if (env_in := os.environ.get("LLM_PRICE_IN")) and \
+            (env_out := os.environ.get("LLM_PRICE_OUT")):
+        try:
+            return float(env_in), float(env_out)
+        except ValueError:
+            pass
+    for key, pair in PRICES.items():
+        if key in model:
+            return pair
+    return None
+
+
+def cost_usd(model: str, tokens_in: int, tokens_out: int):
+    p = price_for(model)
+    if not p:
+        return None
+    return round(tokens_in / 1e6 * p[0] + tokens_out / 1e6 * p[1], 6)
+
 
 class LLMError(RuntimeError):
     """Raised when a provider call fails in a way the pipeline should report."""
@@ -131,7 +163,10 @@ def _call_gemini(system: str, blocks: list[dict], schema: dict, model: str) -> d
     )
     if not resp.text:
         raise LLMError("gemini returned no text")
-    return json.loads(resp.text)
+    u = getattr(resp, "usage_metadata", None)
+    return json.loads(resp.text), {
+        "in": getattr(u, "prompt_token_count", 0) or 0,
+        "out": getattr(u, "candidates_token_count", 0) or 0}
 
 
 def _call_anthropic(system: str, blocks: list[dict], schema: dict, model: str) -> dict:
@@ -163,9 +198,11 @@ def _call_anthropic(system: str, blocks: list[dict], schema: dict, model: str) -
         tool_choice={"type": "tool", "name": TOOL_NAME},
     ) as stream:
         msg = stream.get_final_message()
+    usage = {"in": getattr(msg.usage, "input_tokens", 0) or 0,
+             "out": getattr(msg.usage, "output_tokens", 0) or 0}
     for block in msg.content:
         if block.type == "tool_use":
-            return block.input
+            return block.input, usage
     raise LLMError("anthropic returned no tool_use block")
 
 
@@ -192,7 +229,9 @@ def _call_openai(system: str, blocks: list[dict], schema: dict, model: str) -> d
     text = resp.choices[0].message.content
     if not text:
         raise LLMError("openai returned no content")
-    return json.loads(text)
+    u = resp.usage
+    return json.loads(text), {"in": getattr(u, "prompt_tokens", 0) or 0,
+                              "out": getattr(u, "completion_tokens", 0) or 0}
 
 
 def _call_bedrock(system: str, blocks: list[dict], schema: dict, model: str) -> dict:
@@ -221,9 +260,11 @@ def _call_bedrock(system: str, blocks: list[dict], schema: dict, model: str) -> 
         },
         inferenceConfig={"maxTokens": MAX_OUTPUT_TOKENS, "temperature": 0},
     )
+    u = resp.get("usage", {})
+    usage = {"in": u.get("inputTokens", 0), "out": u.get("outputTokens", 0)}
     for block in resp["output"]["message"]["content"]:
         if "toolUse" in block:
-            return block["toolUse"]["input"]
+            return block["toolUse"]["input"], usage
     raise LLMError("bedrock returned no toolUse block")
 
 
@@ -235,11 +276,12 @@ _ADAPTERS = {
 }
 
 
-def call_structured(system: str, blocks: list[dict], schema: dict) -> dict:
-    """Return an object matching `schema`.
+def call_structured(system: str, blocks: list[dict], schema: dict):
+    """Return (object matching `schema`, usage dict).
 
     `blocks` is a list of {"text": str} and/or {"image_png": bytes} in the
-    order the model should read them.
+    order the model should read them. Usage is {"in": int, "out": int} so the
+    caller can report what an extraction actually cost.
     """
     name = provider()
     if name not in _ADAPTERS:

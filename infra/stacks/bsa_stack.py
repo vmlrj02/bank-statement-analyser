@@ -15,7 +15,9 @@ import os
 from aws_cdk import (
     CfnOutput, Duration, RemovalPolicy, Stack,
     aws_apigatewayv2 as apigw,
+    aws_apigatewayv2_authorizers as apigw_auth,
     aws_apigatewayv2_integrations as apigw_int,
+    aws_cognito as cognito,
     aws_cloudfront as cf,
     aws_cloudfront_origins as origins,
     aws_dynamodb as ddb,
@@ -143,6 +145,44 @@ class BsaStack(Stack):
             s3.NotificationKeyFilter(prefix="uploads/", suffix=".pdf"),
         )
 
+        # ---------- auth ----------
+        # Self-signup is off: this holds customer bank statements, so accounts
+        # are created deliberately with admin-create-user and placed in a group.
+        # NOTE: this construct id was changed from "Users" to force a new pool.
+        # Cognito rejects an in-place change between AliasAttributes and
+        # UsernameAttributes ("Updates are not allowed for property -
+        # AliasAttributes"), so the original empty pool is retained and orphaned;
+        # delete it by hand once this is settled.
+        user_pool = cognito.UserPool(
+            self, "AuthUsers",
+            self_sign_up_enabled=False,
+            # email only (no username alias): CDK then sets UsernameAttributes
+            # rather than AliasAttributes, which is what allows an email to BE
+            # the username. With a username alias as well, Cognito rejects
+            # admin-create-user for anything email-shaped — the exact command
+            # you would reach for when onboarding a client.
+            sign_in_aliases=cognito.SignInAliases(email=True),
+            standard_attributes=cognito.StandardAttributes(
+                email=cognito.StandardAttribute(required=True, mutable=False)),
+            password_policy=cognito.PasswordPolicy(min_length=10),
+            account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+        for group in ("admin", "customer"):
+            cognito.CfnUserPoolGroup(self, f"Group{group.title()}",
+                                     user_pool_id=user_pool.user_pool_id,
+                                     group_name=group)
+        # USER_PASSWORD_AUTH lets the no-build SPA call InitiateAuth directly,
+        # so the login screen matches the app instead of Cognito's hosted UI.
+        user_client = user_pool.add_client(
+            "WebClient",
+            auth_flows=cognito.AuthFlow(user_password=True, user_srp=True),
+            generate_secret=False,
+            access_token_validity=Duration.hours(8),
+            id_token_validity=Duration.hours(8),
+            refresh_token_validity=Duration.days(30),
+        )
+
         # ---------- api lambda ----------
         api_fn = _lambda.Function(
             self, "ApiFn",
@@ -165,16 +205,19 @@ class BsaStack(Stack):
             cors_preflight=apigw.CorsPreflightOptions(
                 allow_origins=["*"],
                 allow_methods=[apigw.CorsHttpMethod.GET, apigw.CorsHttpMethod.POST],
-                allow_headers=["content-type"],
+                allow_headers=["content-type", "authorization"],
             ),
         )
         integ = apigw_int.HttpLambdaIntegration("ApiInteg", api_fn)
+        authorizer = apigw_auth.HttpUserPoolAuthorizer(
+            "JobsAuthorizer", user_pool, user_pool_clients=[user_client])
         for route, methods in [
             ("/jobs", [apigw.HttpMethod.POST, apigw.HttpMethod.GET]),
             ("/jobs/{id}", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/download", [apigw.HttpMethod.GET]),
         ]:
-            api.add_routes(path=route, methods=methods, integration=integ)
+            api.add_routes(path=route, methods=methods, integration=integ,
+                           authorizer=authorizer)
 
         # ---------- frontend ----------
         site_bucket = s3.Bucket(
@@ -199,8 +242,12 @@ class BsaStack(Stack):
             distribution=dist,                       # invalidate on deploy
             sources=[
                 s3deploy.Source.asset(os.path.join(ROOT, "frontend")),
-                s3deploy.Source.data("config.js",
-                                     f"window.BSA_API = '{api.api_endpoint}';"),
+                s3deploy.Source.data(
+                    "config.js",
+                    f"window.BSA_API = '{api.api_endpoint}';\n"
+                    f"window.BSA_POOL = '{user_pool.user_pool_id}';\n"
+                    f"window.BSA_CLIENT = '{user_client.user_pool_client_id}';\n"
+                    f"window.BSA_REGION = '{self.region}';"),
             ],
         )
 
@@ -209,3 +256,5 @@ class BsaStack(Stack):
         CfnOutput(self, "DataBucketName", value=data_bucket.bucket_name)
         CfnOutput(self, "JobsTableName", value=jobs_table.table_name)
         CfnOutput(self, "LlmApiKeySecret", value=llm_secret.secret_name)
+        CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=user_client.user_pool_client_id)

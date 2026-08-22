@@ -230,6 +230,40 @@ def lambda_handler(event, _ctx):
             cats = {}
             for t in txns:
                 cats[t.category] = cats.get(t.category, 0) + 1
+
+            # Per-statement AI accounting. A template-parsed file has no usage
+            # and costs nothing; that contrast is the point of the admin view.
+            # DynamoDB rejects floats, so money is stored as a string.
+            ordered = sorted(files, key=lambda x: int(x.get("idx", 0)))
+            parts, tin, tout, calls, cost, cost_known = [], 0, 0, 0, 0.0, True
+            for f, e in zip(ordered, extracts):
+                u = getattr(e.meta, "llm_usage", None) or {}
+                parts.append({
+                    "filename": f.get("filename", ""),
+                    "layout": e.meta.layout,
+                    "ai": bool(u),
+                    "provider": u.get("provider", ""),
+                    "model": u.get("model", ""),
+                    "tokens_in": int(u.get("tokens_in", 0) or 0),
+                    "tokens_out": int(u.get("tokens_out", 0) or 0),
+                    "cost_usd": ("" if u.get("cost_usd") is None
+                                 else f"{u['cost_usd']:.6f}"),
+                })
+                if u:
+                    tin += int(u.get("tokens_in", 0) or 0)
+                    tout += int(u.get("tokens_out", 0) or 0)
+                    calls += int(u.get("calls", 0) or 0)
+                    if u.get("cost_usd") is None:
+                        cost_known = False
+                    else:
+                        cost += float(u["cost_usd"])
+            ai_block = {
+                "used": any(p["ai"] for p in parts),
+                "ai_files": sum(1 for p in parts if p["ai"]),
+                "tokens_in": tin, "tokens_out": tout, "calls": calls,
+                "cost_usd": (f"{cost:.6f}" if cost_known and calls else ""),
+                "files": parts,
+            }
             # a bulk upload may span several banks/accounts and several years
             accounts = sorted({t.account_no for t in txns if t.account_no})
             banks = sorted({t.bank for t in txns if t.bank})
@@ -255,6 +289,7 @@ def lambda_handler(event, _ctx):
                                       if e.meta.period_to), default=""),
                     "files": len(extracts),
                     "categories": cats,
+                    "ai": ai_block,
                 },
             })
         except Exception as e:                            # noqa: BLE001
