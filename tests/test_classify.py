@@ -47,3 +47,22 @@ def test_a_genuinely_unknown_bank_is_still_unknown(monkeypatch):
                         _fake_open(["", "Some Bank We Have Never Seen, statement of things " * 4]))
     c = classify("x.pdf")
     assert c.layout_id is None
+
+
+def test_the_three_sbi_exports_do_not_collide(monkeypatch):
+    """SBI has three distinct exports; each must resolve to its own layout and
+    not to one of the others."""
+    cases = {
+        "sbi_internet_statement":
+            "STATEMENT OF ACCOUNT Account Summary Date of Statement : 22-07-2026 "
+            "IFSC Code : SBIN0015035 Account Number : 34528846598",
+        "sbi_savings_statement":
+            "Account Name : Mrs X Account Description : REGULAR SB CHQ-INDIVIDUALS "
+            "IFS Code : SBIN0015035 Account Number : 00000034528846598",
+        "sbi_account_statement":
+            "Account Number : 43475634459 Account Statement from 1 Jan 2025 to 2 "
+            "Feb 2025 IFSC SBIN0009678 Debit Credit Balance",
+    }
+    for expected, text in cases.items():
+        monkeypatch.setattr(classify_mod.pdfplumber, "open", _fake_open([text]))
+        assert classify("x.pdf").layout_id == expected

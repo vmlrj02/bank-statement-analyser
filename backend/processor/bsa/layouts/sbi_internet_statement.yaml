@@ -1,0 +1,43 @@
+# Layout descriptor: State Bank of India — internet-banking "STATEMENT OF
+# ACCOUNT" export (the "Welcome / Account Summary" statement), distinct from
+# the passbook-style sbi_account_statement. Single-token dd/mm/yyyy dates, a
+# Txn/Value date pair, and Debit / Credit / Balance columns; empty money cells
+# print a lone "-". These files are password-protected (the account number is
+# the password) but that is handled at ingest, not here.
+id: sbi_internet_statement
+bank: State Bank of India
+layout_name: Statement of Account
+version: 1
+parser: generic
+priority: 10                       # more specific than sbi_account_statement
+fingerprints:
+  all_of:
+    - "Account Summary"
+    - "Date of Statement"
+    - "SBIN0"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:\s*(?P<account_no>\d+)'
+  account_name_line: 2
+parse:
+  table_header_words: ["Description", "Debit", "Credit", "Balance"]
+  header_offset: 14
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  skip_rows:
+    - "Balance as on"
+    - "Opening Balance"
+  columns:
+    date_x_max: 75                 # Txn date 27-68; Value date starts at 82
+    cheque_x_min: 300              # Ref No./Cheque column
+    cheque_x_max: 350
+    remarks_x_min: 135
+    remarks_x_max: 300             # Description stops before the Ref column
+    withdrawal_x1_max: 400         # Debit, right edge 383
+    deposit_x1_max: 480            # Credit, right edge 465
+    balance_x1_max: 560            # Balance, right edge 548
+    tail_x_min: 99999
+  footer_markers:
+    - "computer generated statement"
+    - "Please do not share"

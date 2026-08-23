@@ -152,6 +152,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     continuation = p.get("continuation", "below")
     above = continuation == "above"
     nearest = continuation == "nearest"
+    date_parts = int(p.get("date_parts", 1))   # tokens forming a multi-word date
     # Some exports run the value date straight into the narration with no
     # separator ("01-07-2025BIL/Auto"), so it arrives as one token.
     strip_date = re.compile(p["strip_leading_date"]) if p.get("strip_leading_date") else None
@@ -220,8 +221,18 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     continue
 
                 first = ws[0]
+                # Most banks print the date as one token ("01/07/2025"); a few
+                # print it as several ("1 Jul 2025"), so date_parts joins the
+                # leading N tokens into the date and excludes them from the
+                # column scan. Default 1 keeps every existing layout unchanged.
+                if date_parts > 1:
+                    date_str = " ".join(w["text"] for w in ws[:date_parts])
+                    rest = ws[date_parts:]
+                else:
+                    date_str = first["text"]
+                    rest = ws[1:]
                 is_anchor = (first["x0"] < active["date_x_max"]
-                             and anchor_re.match(first["text"]))
+                             and anchor_re.match(date_str))
 
                 if is_anchor:
                     # 'above' banks wrap narration before the dated line, so the
@@ -231,7 +242,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     cheque, wd, dep, bal = "", None, None, None
                     desc = list(pending) if above else []
                     pending.clear()
-                    for w in ws[1:]:
+                    for w in rest:
                         if w["x0"] >= active.get("tail_x_min", 1e9):
                             continue                  # trailing branch/init code
                         if NUM_RE.match(w["text"]) and w["x0"] > active["remarks_x_min"]:
@@ -259,12 +270,12 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                         continue
                     if nearest:
                         seg_anchors.append({
-                            "top": ln["top"], "date": first["text"],
+                            "top": ln["top"], "date": date_str,
                             "cheque": cheque, "wd": wd, "dep": dep, "bal": bal,
                             "page": pageno,
                             "parts": [(ln["top"], desc)] if desc else []})
                         continue
-                    current = {"date": first["text"], "cheque": cheque,
+                    current = {"date": date_str, "cheque": cheque,
                                "wd": wd, "dep": dep, "bal": bal,
                                "desc": desc, "page": pageno}
                     continue

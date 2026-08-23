@@ -48,7 +48,9 @@ REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF",
                 r"(RTGS|NEFT|IMPS) RETURN"]
 # "Chrgs"/"Chgs" spellings ("SMS Chrgs Incl GST", "Keeping Chgs--") fell
 # through to Regular debit; \bCHRG\b alone stops before the S.
-PENAL_HINTS = [r"\bCHRG\b", r"\bCHR?GS?\b", r"CHARGES?", r"\bMAB\b", r"PENAL", r"\bFEE\b", r"OVERDUE", r"MIN BAL"]
+# CHARGES? must be word-bounded: unbounded it matched "reCHARGE" inside a
+# "gpayrecharge@" UPI VPA, tagging every mobile/DTH recharge as a penal charge.
+PENAL_HINTS = [r"\bCHRG\b", r"\bCHR?GS?\b", r"\bCHARGES?\b", r"\bMAB\b", r"PENAL", r"\bFEE\b", r"OVERDUE", r"MIN BAL"]
 BOUNCE_INWARD = [r"ECSRTN", r"I/?W.*(RTN|RETURN|BOUNCE)", r"INWARD.*(RTN|RET)", r"CHQ RETURN.*DEP"]
 # A bank's "inward clearing" is a cheque drawn ON the account — so the charge
 # for its return is the customer's own payment bouncing, an OUTWARD bounce in

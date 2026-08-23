@@ -1,0 +1,42 @@
+# Layout descriptor: State Bank of India — passbook-style savings export with
+# a "Txn Date / Value Date" pair printed as multi-token dates ("1 Jul 2025"),
+# distinct from both the OD sbi_account_statement and the internet-banking
+# sbi_internet_statement. The multi-token date is what defeated the generic
+# parser before (date_parts joins the three leading tokens).
+id: sbi_savings_statement
+bank: State Bank of India
+layout_name: Account Statement
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "Account Description"
+    - "REGULAR SB"
+    - "SBIN0"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:(?:\(cid:\d+\))?\s*(?P<account_no>\d+)'
+  account_name: 'Account Name\s*:\s*([^,\n]+)'
+parse:
+  table_header_words: ["Description", "Debit", "Credit", "Balance"]
+  header_offset: 16
+  date_parts: 3                    # "1 Jul 2025" prints as three tokens
+  row_anchor: '^\d{1,2} [A-Za-z]{3} \d{4}$'
+  date_format: "%d %b %Y"
+  continuation: below
+  skip_rows:
+    - "Balance as on"
+  columns:
+    date_x_max: 90                 # Txn date 38-87; Value date starts at 91
+    cheque_x_min: 276              # Ref No./Cheque column
+    cheque_x_max: 388
+    remarks_x_min: 144
+    remarks_x_max: 276             # Description stops before the Ref column
+    withdrawal_x1_max: 430         # Debit, right edge ~414
+    deposit_x1_max: 490            # Credit, right edge ~478
+    balance_x1_max: 570            # Balance, right edge ~557
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Please do not share"

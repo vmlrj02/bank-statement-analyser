@@ -57,6 +57,23 @@ def test_chrgs_and_chgs_spellings_are_penal(desc):
     assert categorize([txn(desc, -649.0)])[0].category == "other penal charges"
 
 
+@pytest.mark.parametrize("desc", [
+    "BAN/528212361969/ICI8e968/ UPI/Google Ind/gpayrecharge@i/UPI/ICICI",
+    "M/603142889032/ICIf7fbe/ UPI/Google Ind/gpayrecharge@i/UPI/AXIS",
+])
+def test_a_gpay_recharge_is_not_a_penal_charge(desc):
+    """"reCHARGE" inside a gpayrecharge VPA was matching the penal CHARGES
+    rule, tagging every recharge as a penal charge."""
+    t = categorize([txn(desc, -100.0, mode="upi")])[0]
+    assert t.category != "other penal charges"
+
+
+def test_a_real_cash_deposit_charge_stays_penal():
+    """The fix must not stop matching a genuine "Chgs" charge."""
+    t = categorize([txn("CashDep Chgs 01-30NOV25+GST UPI/p venkatesan81", -118.0)])[0]
+    assert t.category == "other penal charges"
+
+
 def test_a_reversed_returned_instrument_credit_is_a_refund():
     t = categorize([txn("RVSL IW CTR RTN CHQNO:011541_DT:01122025/FEDERAL",
                         2900000.0)])[0]
