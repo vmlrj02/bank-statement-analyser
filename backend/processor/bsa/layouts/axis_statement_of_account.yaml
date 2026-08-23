@@ -1,0 +1,41 @@
+# Layout descriptor: Axis Bank — "Statement of Account" export (the LIBERTY
+# savings statement), a different shape from axis_account_statement: a single
+# line per row with Debit / Credit / Balance columns and a trailing Init.Br
+# code. Its header says "Statement of Account No" (no "Axis"), which is what
+# keeps it from colliding with the other Axis fingerprint.
+id: axis_statement_of_account
+bank: Axis Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "Statement of Account No"
+    - "UTIB0"
+  any_of: []
+header:
+  account_line: 'Statement of Account No\s*:\s*(?P<account_no>\d+)\s*for the period\s*\(From\s*:\s*(?P<period_from>[\d-]+)\s*To\s*:\s*(?P<period_to>[\d-]+)\)'
+  period_date_format: "%d-%m-%Y"
+  account_name_line: 0
+parse:
+  table_header_words: ["Particulars", "Debit", "Credit", "Balance"]
+  header_offset: 16
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  skip_rows:
+    - "OPENING BALANCE"
+    - "CLOSING BALANCE"
+    - "TRANSACTION TOTAL"
+  columns:
+    date_x_max: 90
+    cheque_x_min: 91           # Chq No column
+    cheque_x_max: 130
+    remarks_x_min: 131
+    remarks_x_max: 335         # before the Debit column
+    withdrawal_x1_max: 385     # Debit, right edge 379
+    deposit_x1_max: 460        # Credit, right edge 442
+    balance_x1_max: 535        # Balance, right edge 531
+    tail_x_min: 536            # Init.Br branch code column
+  footer_markers:
+    - "End of Statement"

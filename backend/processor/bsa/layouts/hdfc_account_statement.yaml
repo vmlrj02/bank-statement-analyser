@@ -1,0 +1,42 @@
+# Layout descriptor: HDFC Bank — "Statement of account" export.
+#
+# HDFC's PDF glues adjacent words in the text layer ("AccountNo", "Statementof
+# account", "WithdrawalAmt."), so fingerprints and header patterns key on the
+# glued forms. Each row carries a second (value) date between the cheque column
+# and the amounts; it is neither numeric nor in the narration band, so it is
+# dropped. Withdrawals are occasionally negative (a reversal), which normalize
+# turns back into a positive deposit-effect amount.
+id: hdfc_account_statement
+bank: HDFC Bank
+layout_name: Statement of account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "Statementof account"
+    - "HDFC0"
+  any_of: []
+header:
+  account_line: 'AccountNo\s*:\s*(?P<account_no>\d+)[\s\S]*?From\s*:\s*(?P<period_from>[\d/]+)\s*To\s*:\s*(?P<period_to>[\d/]+)'
+  period_date_format: "%d/%m/%Y"
+  account_name: '\n((?:MR|MRS|MS|M/S)\.?\s*[A-Z][A-Z0-9 ./&-]+)'
+parse:
+  table_header_words: ["Narration", "WithdrawalAmt.", "DepositAmt.", "ClosingBalance"]
+  header_offset: 14
+  row_anchor: '^\d{2}/\d{2}/\d{2}$'
+  date_format: "%d/%m/%y"
+  continuation: below
+  skip_rows: []
+  columns:
+    date_x_max: 66             # Txn date x1 62; narration starts at 68
+    cheque_x_min: 286          # Chq./Ref.No. column
+    cheque_x_max: 358
+    remarks_x_min: 66
+    remarks_x_max: 285         # stops before the Chq./Ref.No. column
+    withdrawal_x1_max: 480     # right edge 470
+    deposit_x1_max: 560        # right edge 548
+    balance_x1_max: 640        # right edge 626 (ClosingBalance)
+    tail_x_min: 99999
+  footer_markers:
+    - "DrCount"                # "OpeningBalance DrCount CrCount …" summary row
+    - "Thisisacomputer"
