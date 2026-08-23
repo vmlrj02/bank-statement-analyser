@@ -219,15 +219,20 @@ There are now three parser modes, chosen by `parser:` in the descriptor:
               must match the running total.
 Plus the bank-specific ICICI OpTransactionHistory module (font-face narration).
 
-Registry as it stands — 7 layouts across 5 banks (bank != layout; ICICI alone
-exports three different shapes, so "we support ICICI" is not a meaningful claim):
+Registry as it stands — 12 layouts across 6 banks (bank != layout; ICICI alone
+exports five different shapes, so "we support ICICI" is not a meaningful claim):
 
     Axis Bank                      Account Statement           generic
+    Axis Bank                      Statement of Account        generic
     Equitas Small Finance Bank     Statement of Account        columnar
+    HDFC Bank                      Statement of account        generic
+    ICICI Bank                     Account statement           columnar
     ICICI Bank                     Combined Account Statement  generic
     ICICI Bank                     Detailed Statement          columnar
     ICICI Bank                     OpTransactionHistory        module
-    State Bank of India            Account Statement           generic
+    State Bank of India            Account Statement (OD)      generic
+    State Bank of India            Internet banking            generic
+    State Bank of India            Passbook savings (multi-token date) generic
     Vasavi MSCM Co-operative Bank  Account Statement           grouped
 
 A bank with NO layout is refused: the LLM fallback is off by default, and even
