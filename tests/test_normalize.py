@@ -90,9 +90,10 @@ def test_counterparty_skips_reference_numbers_and_ifsc():
     # The IMPS remark rides ahead of the name — prefer the digit-free segment.
     ("MMT/IMPS/518614164794/bill 2876/SONI BAKER/HDFC Bank",
      "imps", "SONI BAKER"),
-    # ECS slash form: the mandate reference is a bank prefix glued to digits.
+    # ECS slash form: mandate reference is a bank prefix glued to digits, and
+    # the "_SMS OT" channel suffix is stripped from the name.
     ("ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT",
-     "nach", "Bajaj Finance Ltd_SMS OT"),
+     "nach", "Bajaj Finance Ltd"),
     # ICICI cheque payments: every company paid by cheque was unknown before
     # the TRF/ form was read — the review called out exactly this.
     ("CHEQUE 3463 TRF/GO DIGIT GENERAL INSURANCE LTD/ICI",

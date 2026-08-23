@@ -152,10 +152,12 @@ def extract_counterparty(desc: str, mode: str) -> str:
             re.search(r"ACH-(?:CR|DR)-([^-]+)", d, re.I)
         if m and not _REFNUM.match(m.group(1).strip()):
             return _clean_segment(m.group(1))
-        # ECS/<ref>/<NAME>… ("ECS/UTIBDE…/Bajaj Finance Ltd_SMS OT")
+        # ECS/<ref>/<NAME>… ("ECS/UTIBDE…/Bajaj Finance Ltd_SMS OT"); the
+        # "_SMS OT" tail is a channel suffix, not part of the name.
         m = re.search(r"\bECS/(.+)$", d)
         if m:
-            return _first_name(_name_segments(m.group(1)))
+            name = _first_name(_name_segments(m.group(1)))
+            return name.split("_")[0].strip() if "_" in name else name
     if mode == "clearing":
         m = re.search(r"CLG/([^/]+)", d)
         if m:

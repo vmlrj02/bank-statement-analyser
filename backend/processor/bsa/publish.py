@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 from collections import defaultdict
 from dataclasses import asdict
 from datetime import date, timedelta
@@ -20,6 +21,14 @@ from openpyxl.styles import Font
 
 from .categorize import category_detail
 from .models import JobResult, Txn
+
+
+def party_key(name: str) -> str:
+    """A fuzzy key that groups truncated variants of one party — the bank
+    prints "MARSCONSTRUCTI" on one row and "MARSCONSTRUCTION" on another, and
+    both must land in the same group. The first 12 alphanumerics collapse both
+    to "MARSCONSTRUC"."""
+    return re.sub(r"[^A-Za-z0-9]", "", name or "").upper()[:12]
 
 # taxonomy tag -> destination sheet (from Banking_pdf_extraction.xlsx)
 DESTINATION_SHEETS = {
@@ -33,18 +42,21 @@ DESTINATION_SHEETS = {
     "inward bounce penal charges": "Bounced-Penal Xns",
     "Outward Bounced Xns": "Outward Bounced Xns",
     "other penal charges": "Bounced-Penal Xns",
-    "Regular credit": "Regular credits",
-    "Regular debit": "Regular debits",
-    "Related party credit": "Regular credits",
-    "Related party debit": "Regular debits",
+    "Regular credit": "Regular Credits",
+    "Regular debit": "Regular Debits",
+    "Related party credit": "Regular Credits",
+    "Related party debit": "Regular Debits",
     "Interest received": "Other Xns",
+    "Interest debited": "Other Xns",
     "Investment return credited": "Other Xns",
     "return / refund": "Other Xns",
 }
-SHEET_ORDER = ["Summary", "EOD Balances", "EMI Xns", "ECS Xns",
+# The "Group" sheets carry a leading party-group column; the others do not.
+GROUPED_SHEETS = {"Regular Credits", "Regular Debits"}
+SHEET_ORDER = ["EMI Xns", "ECS Xns",
                "Cash Deposit Xns", "Cash Withdrawal Xns", "Salary Paid Xns",
                "Loan Disbursed Xns", "Bounced-Penal Xns", "Outward Bounced Xns",
-               "Regular credits", "Regular debits", "Other Xns"]
+               "Regular Credits", "Regular Debits", "Other Xns"]
 
 # Account is a column because one report may merge several banks/accounts;
 # without it the Balance column is unreadable across a multi-account job.
@@ -58,10 +70,9 @@ def _fmt_amount(a: float) -> str:
 
 
 def _fmt_date(iso: str) -> str:
+    # dd-mm-yyyy throughout, per the review spec (ID3).
     y, m, d = iso.split("-")
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    return f"{d}-{months[int(m)-1]}-{y[2:]}"
+    return f"{d}-{m}-{y}"
 
 
 def _row(i: int, t: Txn) -> list:
@@ -172,15 +183,86 @@ def write_workbook(result: JobResult, path: str) -> None:
     for acct, d, b in _eod_balances(txns):
         ws.append([acct, d, b])
 
-    # --- category sheets ---
-    sheets = {name: wb.create_sheet(name) for name in SHEET_ORDER[2:]}
+    # --- category sheets (some carry a leading party Group column) ---
+    sheets = {name: wb.create_sheet(name) for name in SHEET_ORDER}
     for name, ws2 in sheets.items():
-        ws2.append(HEADERS)
+        ws2.append((["Group"] if name in GROUPED_SHEETS else []) + HEADERS)
         for c in ws2[1]:
             c.font = bold
+    # Group rows in the grouped sheets by fuzzy party, keeping the fullest
+    # party name seen as the group's label, so truncated variants collapse.
+    group_label: dict[str, str] = {}
+    for t in txns:
+        k = party_key(t.counterparty)
+        if k and len(t.counterparty or "") > len(group_label.get(k, "")):
+            group_label[k] = t.counterparty
     for i, t in enumerate(txns, start=1):
         dest = DESTINATION_SHEETS.get(t.category, "Other Xns")
-        sheets[dest].append(_row(i, t))
+        row = _row(i, t)
+        if dest in GROUPED_SHEETS:
+            row = [group_label.get(party_key(t.counterparty), t.counterparty
+                                   or "unknown party")] + row
+        sheets[dest].append(row)
+
+    # --- all transactions, and the Sunday subset ---
+    for name, keep in (("Xns", lambda t: True),
+                       ("SundayXns", lambda t: date.fromisoformat(t.date).weekday() == 6)):
+        ws = wb.create_sheet(name)
+        ws.append(HEADERS)
+        for c in ws[1]:
+            c.font = bold
+        for i, t in enumerate(txns, start=1):
+            if keep(t):
+                ws.append(_row(i, t))
+
+    # --- Top 10 parties, by direction, aggregated with the fuzzy key ---
+    for name, want_credit in (("Top 10 Party Credits", True),
+                              ("Top 10 Party Debits", False)):
+        by_party: dict[str, float] = defaultdict(float)
+        for t in txns:
+            if (t.amount > 0) == want_credit and t.counterparty:
+                by_party[group_label.get(party_key(t.counterparty),
+                                         t.counterparty)] += abs(t.amount)
+        ws = wb.create_sheet(name)
+        ws.append(["Party", "Total Amount", "Count"])
+        for c in ws[1]:
+            c.font = bold
+        counts: dict[str, int] = defaultdict(int)
+        for t in txns:
+            if (t.amount > 0) == want_credit and t.counterparty:
+                counts[group_label.get(party_key(t.counterparty),
+                                       t.counterparty)] += 1
+        for party in sorted(by_party, key=lambda p: -by_party[p])[:10]:
+            ws.append([party, round(by_party[party], 2), counts[party]])
+
+    # --- Top 10 single transactions, by direction ---
+    for name, want_credit in (("Top 10 Credits(Consolidated)", True),
+                              ("Top 10 Debits(Consolidated)", False)):
+        ws = wb.create_sheet(name)
+        ws.append(["Date", "Description", "Party", "Amount"])
+        for c in ws[1]:
+            c.font = bold
+        ranked = sorted((t for t in txns if (t.amount > 0) == want_credit),
+                        key=lambda t: -abs(t.amount))[:10]
+        for t in ranked:
+            ws.append([_fmt_date(t.date), t.description,
+                       t.counterparty or "unknown party", _fmt_amount(t.amount)])
+
+    # --- Average balances + monthly flow ---
+    ws = wb.create_sheet("Avg Balances")
+    ws.append(["Month", "Average Balance", "Inflow", "Outflow", "Net Flow"])
+    for c in ws[1]:
+        c.font = bold
+    eod = _eod_balances(txns)
+    bal_by_month: dict[str, list[float]] = defaultdict(list)
+    for _acct, d, b in eod:
+        if b is not None:
+            bal_by_month[d[:7]].append(b)
+    for mk in sorted(monthly):
+        bals = bal_by_month.get(mk, [])
+        avg = round(sum(bals) / len(bals), 2) if bals else ""
+        cr, dr = monthly[mk]
+        ws.append([mk, avg, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
 
     wb.save(path)
 

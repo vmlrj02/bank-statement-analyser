@@ -435,7 +435,9 @@ def lambda_handler(event, _ctx):
                 paths = publish(JobResult(meta=meta0, txns=txns, validation=report),
                                 outdir, basename="statement")
                 preview = [{
-                    "date": t.date, "description": t.description,
+                    # dd-mm-yyyy in the UI too, per the review spec (ID3).
+                    "date": "-".join(reversed(t.date.split("-"))),
+                    "description": t.description,
                     "amount": t.amount, "balance": t.balance,
                     "category": t.category, "detail": category_detail(t),
                 } for t in txns[:150]]

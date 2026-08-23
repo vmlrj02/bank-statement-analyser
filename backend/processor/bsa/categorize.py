@@ -148,6 +148,12 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             # --- Tier 2: recurrence — monthly fixed-amount NACH = EMI ---
             if t.uid in recurring_nach:
                 tag, src = "EMI transaction", "recurrence"
+            elif _any(t.counterparty, [re.escape(x) for x in LENDERS]) or \
+                    _any(d, [re.escape(x) for x in LENDERS]):
+                # A NACH/ECS debit to a known lender is a loan EMI even when a
+                # single statement can't see it recur (ID5: the Bajaj Finance
+                # debit must read as EMI, not a generic ECS transfer).
+                tag = "EMI transaction"
             else:
                 tag = "ECS transaction"
         elif not credit and _any(d, PENAL_HINTS) and abs(t.amount) < 5000:

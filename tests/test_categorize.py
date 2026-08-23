@@ -84,3 +84,15 @@ def test_a_returned_outgoing_rtgs_credit_is_a_refund():
     t = categorize([txn("RTGS RETURN-ICICR42026011900518516-S N S PRODUCTSPVT "
                         "LTD-OPERATIONS SUSPENDED/R09", 772905.0)])[0]
     assert t.category == "return / refund"
+
+
+def test_an_ecs_debit_to_a_known_lender_is_an_emi():
+    """ID5: the Bajaj Finance ECS debit must read as EMI, not generic ECS,
+    even when a single statement cannot see it recur."""
+    from bsa.normalize import extract_counterparty
+    d = "ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT"
+    t = txn(d, -128182.0, mode="nach")
+    t.counterparty = extract_counterparty(d, "nach")
+    out = categorize([t])[0]
+    assert out.category == "EMI transaction"
+    assert out.counterparty == "Bajaj Finance Ltd"   # _SMS OT suffix stripped
