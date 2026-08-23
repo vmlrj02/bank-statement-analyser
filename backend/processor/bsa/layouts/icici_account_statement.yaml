@@ -1,0 +1,58 @@
+# Layout descriptor: ICICI Bank — "Account statement" export with an
+# "Account details" header block (distinct from the Combined and Detailed
+# exports). Cells wrap across physical lines — the transaction date prints as
+# "01-Sep-" / "2025", the narration over several lines, and on an OD account
+# the balance's minus sign sits alone on the row's first line — so it uses the
+# columnar parser, which reassembles each cell by x band.
+id: icici_account_statement
+bank: ICICI Bank
+layout_name: Account Statement
+version: 1
+parser: columnar
+fingerprints:
+  all_of:
+    - "Account details"
+    - "Account number:"
+    - "ICIC0"
+  any_of: []
+header:
+  account_line: 'Account number:\s*(?P<account_no>\d+)'
+  account_name: 'Account name:\s*(.+?)\s+Account type:'
+parse:
+  row_anchor: '^\d{1,6}$'          # S.no in the left-most column
+  anchor_x_max: 90
+  anchor_requires: [txn_date]
+  columns:                          # name: [x_min, x_max)
+    sl_no:      [45,  90]
+    tran_id:    [90,  158]
+    txn_date:   [158, 226]
+    cheque:     [226, 292]
+    remarks:    [292, 360]
+    withdrawal: [356, 420]
+    deposit:    [420, 484]
+    balance:    [484, 552]
+  field_map:
+    sl_no: sl_no
+    date: txn_date
+    cheque_no: cheque
+    description: remarks
+    withdrawal: withdrawal
+    deposit: deposit
+    balance: balance
+  date_format: "%d-%b-%Y"
+  skip_rows:
+    - "Opening Balance"
+    - "Closing Balance"
+    - "Total"
+  footer_markers:
+    - "This is a system generated"
+    - "computer generated"
+  footer_patterns:
+    # "Generated on : 07 Jun'26 (01:37 PM) Page 4 of 56" sits at the page foot
+    # with "Page N of M" in the balance band — without stopping the line here it
+    # is appended to the last row's balance cell, dropping one txn per page.
+    - 'Generated\s*on'
+    - 'Page\s+\d+\s+of\s+\d+'
+  end_markers:
+    - "Legends"
+    - "End of Statement"
