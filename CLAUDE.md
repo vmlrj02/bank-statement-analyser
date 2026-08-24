@@ -217,7 +217,33 @@ There are now three parser modes, chosen by `parser:` in the descriptor:
               Missing balances are DERIVED, so they reconcile by construction —
               what still validates is the group, since the next printed balance
               must match the running total.
+- `generic` also supports multi-token dates via `date_parts`, and a wrapped
+              year via `infer_year_from_period`: SBI's savings export prints a
+              two-digit-day date's YEAR on the next physical line ("17 Aug" on
+              the anchor, "2025" below), which was breaking anchor detection and
+              merging hundreds of rows into one until the year was completed
+              from the statement period.
 Plus the bank-specific ICICI OpTransactionHistory module (font-face narration).
+That module falls back to NEAREST-anchor assignment when a re-exported PDF has
+had its fonts flattened (no Black face), since the title-above/descriptor-below
+split can no longer be told apart by font — without it the narration shifts by
+one row on hand-reassembled files.
+
+## Statement integrity — fraud/tamper signals (integrity.py)
+For lending, whether a statement was doctored matters. The strongest signal was
+already there for free: a doctored amount breaks the running-balance chain, so
+validate.py is itself a tamper check. Two more come from data we already hold:
+- PDF metadata (ingest captures /Producer, /Creator, dates): a genuine bank
+  export is made by a server library (iText, OpenPDF); a hand-assembled one
+  shows an editing tool (pdf-lib, Photoshop, Quartz) — the ICICI "manual" file
+  flags on this.
+- A scanned page spliced into a digital export (unreadable_pages).
+account_integrity() aggregates these per account into `verified | review` with
+plain reasons, surfaced on the account card, the workbook Summary, and the API
+summary. Deliberately conservative and false-positive-tolerant — it is a prompt
+to a human underwriter, not an accusation. A ModDate after CreationDate is
+carried as information only (genuine statements are routinely re-saved), NEVER a
+review trigger. Pinned by tests/test_integrity.py.
 
 Registry as it stands — 12 layouts across 6 banks (bank != layout; ICICI alone
 exports five different shapes, so "we support ICICI" is not a meaningful claim):
