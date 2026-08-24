@@ -53,8 +53,24 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
 4. The release gate is validate.py: running-balance reconciliation on every row.
    Any parser/LLM change must keep sample statements at "passed".
 5. Categorization = SME lending taxonomy (EMI/ECS/cash/bounce/disbursal/
-   related-party/regular transfers), tiers: rules → NACH recurrence → merchant
-   dictionary → LLM. Don't replace with consumer spend categories.
+   Interest received/Interest payments/related-party/regular transfers), tiers:
+   rules → NACH recurrence → merchant dictionary → LLM. Don't replace with
+   consumer spend categories. The fuzzy vocabulary — NBFC/lender names, penal
+   vs non-penal charge phrases, cash-deposit spellings — lives in DATA
+   (bsa/data/category_rules.yaml), editable by the domain owner without a code
+   change, the same reasoning as the layout registry. tests/
+   test_categorization_accuracy.py is the ground-truth harness: every reviewer
+   rule is a labelled case with a per-category scoreboard, so a categorisation
+   change moves a measured number and a regression fails the build — this is
+   how we stopped guessing. Point BSA_CATEGORY_TRUTH at a labelled CSV to fold
+   real statements in. Precedence subtleties that matter: penal charges resolve
+   BEFORE interest (a MAB charge whose ref contains "Int.Pd" is penal, not
+   interest); interest is split by SIGN (credit=received, debit=Interest
+   payments); penal is a threshold/violation charge only (MAB/POS-threshold),
+   NOT an ordinary service fee (card/txn/SMS/folio → Regular debit); a known
+   lender name makes a debit an EMI/Interest-payments and a credit a disbursal,
+   and names the party. Penal keywords are word-bounded phrases, or bare tokens
+   like "AMB"/"POS" match inside names and POS purchases.
 6. Statement data must not leave the AWS account. This was violated by design
    for a while — the fallback called the Anthropic API directly — and is now
    CLOSED IN CODE by two default-off switches, LLM_FALLBACK and
