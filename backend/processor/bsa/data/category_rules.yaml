@@ -1,0 +1,94 @@
+# Categorisation knowledge — the fuzzy, evolving part of the taxonomy, kept as
+# DATA so the domain owner can edit it without a code change (the same reasoning
+# that made bank layouts a registry). categorize.py loads this; the deterministic
+# tier order lives in code, the vocabulary lives here.
+#
+# Sources: the "Banking extraction data labeling" master (Category list) and the
+# review docs ID1–ID8. When the master changes, change this file.
+
+# NBFC / lending-company name fragments. A DEBIT that names one of these is a
+# loan servicing payment — an EMI if it recurs, otherwise an "Interest payments"
+# (the master: "non-emi payments to NBFCs"). A CREDIT that names one is a loan
+# disbursal. Matched case-insensitively, spaces ignored, anywhere in narration.
+lenders:
+  - Kinara Capital
+  - Clix Capital
+  - Bajaj Fin
+  - Bajaj Finance
+  - HDB Financ
+  - Tata Capital
+  - Aditya Birla Fin
+  - Fullerton
+  - Cholamandalam
+  - Shriram Fin
+  - Muthoot
+  - Manappuram
+  - L&T Finance
+  - Piramal
+  - Poonawalla
+  - Indiabulls
+  - LIC Housing
+  - PNB Housing
+  - Canfin
+  - SMFG India Credit
+  - SMFGINDIACREDIT
+  - Royal Capital
+  - Northern Arc
+  - Vivriti
+  - UGRO
+  - Lendingkart
+  - Flexiloans
+  - Ambit Fin
+  - IIFL
+
+# Penal charges — a charge levied for a violation or threshold breach. The master
+# names "pos threshold, MAB, etc." MAB / minimum-balance / average-balance charges
+# belong here.
+# Matched as whole words/phrases (word-bounded), so a name like "jambAMBaga"
+# or a POS *purchase* ("POS/MD ENTERPRISES") is never mistaken for a penal
+# charge. Keep these to actual charge phrases, not bare tokens.
+penal_keywords:
+  - MAB
+  - MIN BAL
+  - MIN BALANCE
+  - MINIMUM BAL
+  - MINIMUM BALANCE
+  - AVG BAL
+  - AVG BALANCE
+  - AVERAGE BAL
+  - AMB CHG
+  - AMB CHRG
+  - NON MAINTENANCE
+  - NONMAINTENANCE
+  - POS THRESHOLD
+  - PENAL
+  - OVERDUE
+  - LATE FEE
+  - LATE PAYMENT
+
+# Service / usage charges that are NOT penal (ID: "card charges and transaction
+# charges are not penal charges"). These fall through to Regular debit — the
+# master has no dedicated bank-charges category, so they are ordinary debits, not
+# penal. Checked BEFORE the penal keywords so a "Dr Card Charges" never counts as
+# penal even though it contains "Charges".
+non_penal_charge_keywords:
+  - CARD CHARGE
+  - DR CARD
+  - DEBIT CARD
+  - TXN CHRG
+  - TXN CHARGE
+  - TRANSACTION CHARGE
+  - BNA
+  - ATM CHARGE
+  - SMS CHARGE
+  - SMS CHRG
+
+# Cash-deposit narration fragments beyond the mode detector's "BY CASH". ICICI
+# prints "CASHDEP" glued, which the space-separated "CASH DEP" rule missed, so a
+# large cash deposit was read as a regular credit.
+cash_deposit_keywords:
+  - CASHDEP
+  - CASH DEP
+  - CDM
+  - BY CASH
+  - CASH DEPOSIT

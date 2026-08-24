@@ -2,7 +2,7 @@
 (from Banking_pdf_extraction.xlsx "Category list").
 
 Category tags:
-  EMI transaction | Interest received | Interest debited |
+  EMI transaction | Interest received | Interest payments |
   Investment return credited |
   Loan amount disbursal | Salary paid | Salary credited | ECS transaction |
   cash deposit | cash withdrawal | inward bounce penal charges |
@@ -26,15 +26,54 @@ import os
 import re
 from collections import defaultdict
 
+import yaml
+
 from .models import Txn
 
-# Known lender/NBFC name fragments (seed list; grows via dictionary)
-LENDERS = [
-    "SMFGINDIACREDIT", "SMFG INDIA CREDIT", "BAJAJ FIN", "HDB FINANC",
-    "TATA CAPITAL", "ADITYA BIRLA FIN", "FULLERTON", "CHOLAMANDALAM",
-    "SHRIRAM FIN", "MUTHOOT", "MANAPPURAM", "L&T FINANCE", "PIRAMAL",
-    "POONAWALLA", "INDIABULLS", "LIC HOUSING", "PNB HOUSING", "CANFIN",
-]
+_RULES_PATH = os.path.join(os.path.dirname(__file__), "data", "category_rules.yaml")
+
+
+def _load_rules() -> dict:
+    """Load the domain-owner-editable categorisation vocabulary. Never fatal —
+    a missing or broken file degrades to a small built-in lender seed, so the
+    pipeline still runs."""
+    try:
+        with open(_RULES_PATH) as f:
+            d = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        d = {}
+    d.setdefault("lenders", ["BAJAJ FIN", "HDB FINANC", "TATA CAPITAL"])
+    d.setdefault("penal_keywords", ["MAB", "MIN BAL", "POS", "PENAL"])
+    d.setdefault("non_penal_charge_keywords", [])
+    d.setdefault("cash_deposit_keywords", ["BY CASH", "CASH DEP", "CDM"])
+    return d
+
+
+_RULES = _load_rules()
+# Normalised (upper, no-space) lender fragments for substring matching.
+_LENDER_KEYS = [re.sub(r"\s+", "", x).upper() for x in _RULES["lenders"]]
+LENDERS = _RULES["lenders"]                       # kept for callers/tests
+
+
+def _matched_lender(desc: str):
+    """The display name of the lender named in the description, or None. Used
+    both to classify and to name the party — a BBPS/UPI lender payment prints a
+    channel marker ("BPAY") or a generic tail ("Bank Account") where the party
+    should be, so when we recognise the lender we say so."""
+    key = re.sub(r"[^A-Za-z0-9]", "", desc).upper()
+    for display, lkey in zip(_RULES["lenders"], _LENDER_KEYS):
+        if lkey in key:
+            return display
+    return None
+
+
+def _has_lender(desc: str) -> bool:
+    return _matched_lender(desc) is not None
+
+
+# Party values too generic to keep when we have something better (a lender name).
+_WEAK_PARTY = {"", "BPAY", "P2A", "P2M", "BANK ACCOUNT", "UNKNOWN PARTY",
+               "BILL", "BBPS"}
 INVESTMENT_HINTS = [
     "SHAREKHAN", "ZERODHA", "GROWW", "UPSTOX", "ANGEL", "ICCLR", "MUTUAL FUND",
     "MF REDEMPTION", "NSE ", "BSE ", "CDSL", "NSDL", "RD MATURITY", "FD CLOS",
@@ -46,11 +85,25 @@ REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF",
                 # "RTGS RETURN-<ref>-<name>-OPERATIONS SUSPENDED" — an outgoing
                 # payment bounced back by the beneficiary's bank
                 r"(RTGS|NEFT|IMPS) RETURN"]
-# "Chrgs"/"Chgs" spellings ("SMS Chrgs Incl GST", "Keeping Chgs--") fell
-# through to Regular debit; \bCHRG\b alone stops before the S.
-# CHARGES? must be word-bounded: unbounded it matched "reCHARGE" inside a
-# "gpayrecharge@" UPI VPA, tagging every mobile/DTH recharge as a penal charge.
-PENAL_HINTS = [r"\bCHRG\b", r"\bCHR?GS?\b", r"\bCHARGES?\b", r"\bMAB\b", r"PENAL", r"\bFEE\b", r"OVERDUE", r"MIN BAL"]
+# Penal detection is now DATA-driven (data/category_rules.yaml). The master
+# defines penal as a threshold/violation charge ("pos threshold, MAB, etc."),
+# NOT an ordinary service fee — the reviewer was explicit that card and
+# transaction charges are not penal. So a charge is penal only if it hits a
+# penal keyword AND is not first excluded by a service-charge keyword.
+# Leading word boundary only — so a phrase never fires inside an unrelated name
+# ("AMB CHG" cannot appear in "jambAMBaga"), but a trailing plural still matches
+# ("AMB CHG" hits "AMB CHGS"). A full \b...\b would miss the plural.
+_PENAL_KEYS = [r"\b" + re.escape(k) for k in _RULES["penal_keywords"]]
+_NON_PENAL_KEYS = [r"\b" + re.escape(k) for k in _RULES["non_penal_charge_keywords"]]
+_CASH_DEP_KEYS = [re.escape(k) for k in _RULES["cash_deposit_keywords"]]
+
+
+def _is_penal(desc: str) -> bool:
+    if _NON_PENAL_KEYS and _any(desc, _NON_PENAL_KEYS):
+        return False
+    return _any(desc, _PENAL_KEYS)
+
+
 BOUNCE_INWARD = [r"ECSRTN", r"I/?W.*(RTN|RETURN|BOUNCE)", r"INWARD.*(RTN|RET)", r"CHQ RETURN.*DEP"]
 # A bank's "inward clearing" is a cheque drawn ON the account — so the charge
 # for its return is the customer's own payment bouncing, an OUTWARD bounce in
@@ -113,6 +166,12 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         d, credit = t.description, t.amount > 0
         tag, src = "", "rule"
 
+        lender_name = _matched_lender(d)
+        lender = lender_name is not None
+        # Name the party after the lender when the extracted one is a channel
+        # marker or a generic tail (BBPS "BPAY", UPI "Bank Account").
+        if lender_name and t.counterparty.strip().upper() in _WEAK_PARTY:
+            t.counterparty = lender_name
         # --- Tier 1: deterministic rules ---
         if not credit and re.search(r"BIL/.*(Loan|EMI)", d, re.I):
             tag = "EMI transaction"
@@ -120,20 +179,33 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             tag = "inward bounce penal charges"
         elif not credit and _any(d, BOUNCE_OUTWARD):
             tag = "Outward Bounced Xns"
-        elif t.mode == "interest" or (credit and re.search(r"Int\.Pd|INTEREST (PAID|CREDIT)", d, re.I)):
-            tag = "Interest received"
-        elif not credit and re.search(
-                r"DEBIT INTEREST|INTEREST (DEBIT|DEBITED|CHARGED|COLLECTED)"
+        # Penal charges are resolved BEFORE interest so a MAB/avg-balance charge
+        # whose reference happens to contain "Int.Pd" reads as penal, not
+        # interest ("Avg bal Chgs Incl GST … Int.Pd:01-10-2025").
+        elif not credit and _is_penal(d):
+            tag = "other penal charges"
+        # Interest, split by SIGN (ID6/ID8): a credit is interest RECEIVED, a
+        # debit is an "Interest payments" (OD interest, or a non-EMI payment to
+        # an NBFC). The old rule tagged every "Int.Pd" as received, so interest
+        # DEBITS were mislabelled as a credit category.
+        elif t.mode == "interest" or re.search(
+                r"\bINT\.?\s?PD\b|DEBIT INTEREST|CREDIT INTEREST"
+                r"|INTEREST (PAID|CREDIT|DEBIT|DEBITED|CHARGED|COLLECTED)"
                 r"|\bINT\.?\s*(DR|DEBIT|COLL)", d, re.I):
-            # OD/CC accounts are charged interest ("DEBIT INTEREST- /" on SBI);
-            # a lender reads these as cost of borrowing, not a regular transfer.
-            tag = "Interest debited"
+            tag = "Interest received" if credit else "Interest payments"
         elif t.mode == "atm-cash" and not credit:
             tag = "cash withdrawal"
-        elif t.mode == "cash-deposit" and credit:
+        elif credit and (t.mode == "cash-deposit" or _any(d, _CASH_DEP_KEYS)):
             tag = "cash deposit"
-        elif credit and _any(d, [re.escape(x) for x in LENDERS]) and t.mode in ("neft", "imps", "nach", "netbanking", "other"):
+        # A known NBFC / lender name decides both directions: a credit is a loan
+        # disbursal; a debit is an EMI if it recurs, otherwise an "Interest
+        # payments" (a non-EMI servicing payment). Data-driven lender list.
+        elif credit and lender:
             tag = "Loan amount disbursal"
+        elif not credit and lender:
+            tag = ("EMI transaction"
+                   if (t.uid in recurring_nach or t.mode == "nach")
+                   else "Interest payments")
         elif credit and _any(d, [re.escape(x) for x in INVESTMENT_HINTS]):
             tag = "Investment return credited"
         elif credit and _any(d, SALARY_HINTS):
@@ -146,18 +218,9 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             tag = "inward bounce penal charges"
         elif not credit and t.mode == "nach":
             # --- Tier 2: recurrence — monthly fixed-amount NACH = EMI ---
+            tag = ("EMI transaction" if t.uid in recurring_nach else "ECS transaction")
             if t.uid in recurring_nach:
-                tag, src = "EMI transaction", "recurrence"
-            elif _any(t.counterparty, [re.escape(x) for x in LENDERS]) or \
-                    _any(d, [re.escape(x) for x in LENDERS]):
-                # A NACH/ECS debit to a known lender is a loan EMI even when a
-                # single statement can't see it recur (ID5: the Bajaj Finance
-                # debit must read as EMI, not a generic ECS transfer).
-                tag = "EMI transaction"
-            else:
-                tag = "ECS transaction"
-        elif not credit and _any(d, PENAL_HINTS) and abs(t.amount) < 5000:
-            tag = "other penal charges"
+                src = "recurrence"
 
         # --- Tier 3: merchant dictionary ---
         if not tag:

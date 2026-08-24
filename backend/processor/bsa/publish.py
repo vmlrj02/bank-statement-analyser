@@ -48,7 +48,7 @@ DESTINATION_SHEETS = {
     "Related party credit": "Regular Credits",
     "Related party debit": "Regular Debits",
     "Interest received": "Other Xns",
-    "Interest debited": "Other Xns",
+    "Interest payments": "Other Xns",
     "Investment return credited": "Other Xns",
     "return / refund": "Other Xns",
 }

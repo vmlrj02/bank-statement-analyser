@@ -33,7 +33,7 @@ MODE_RULES = [
     # form was falling through to Regular debit.
     (r"NFS/CASH WDL|\bATM[-/ ]|ATM trxn", "atm-cash"),
     (r"\bCLG/", "clearing"),
-    (r"BY CASH|CASH DEP|\bCDM\b", "cash-deposit"),
+    (r"BY CASH|CASH ?DEP|\bCDM\b|CASHDEP", "cash-deposit"),
     (r"\bCMS/", "cms"),
     (r"\bSMP/", "standing-instruction"),
     (r"Int\.Pd", "interest"),

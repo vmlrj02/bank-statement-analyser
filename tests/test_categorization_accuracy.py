@@ -1,0 +1,146 @@
+"""Categorisation accuracy harness — the ground-truth set that was missing.
+
+Every case here is a real narration the reviewer labelled (from the master
+taxonomy and review docs ID1-ID8), paired with the category and — where the
+review called it out — the party it must resolve to. The test runs each through
+the real pipeline (detect_mode -> extract_counterparty -> categorize), so it
+measures the whole chain end to end, and prints a per-category scoreboard.
+
+This is how we STOP guessing: a change either moves the number up or it doesn't,
+and a regression in one category is visible immediately. Add a row here for every
+new rule the reviewer gives, and (when they share a labelled CSV) point
+BSA_CATEGORY_TRUTH at it to fold real statements in.
+"""
+import collections
+import csv
+import os
+
+import pytest
+
+from bsa.categorize import categorize
+from bsa.models import Txn
+from bsa.normalize import detect_mode, extract_counterparty
+
+
+def _categorize_one(desc, amount):
+    mode = detect_mode(desc)
+    t = Txn(date="2025-07-01", cheque_no="", description=desc, amount=amount,
+            balance=0.0, mode=mode, counterparty=extract_counterparty(desc, mode))
+    t.compute_uid("1", 0)
+    return categorize([t])[0]
+
+
+# (description, amount, expected_category, expected_party_or_None)
+# amount sign encodes debit/credit; party is checked only when given.
+CASES = [
+    # --- Interest: sign decides received vs payments (ID6/ID8) ---
+    ("SB/925010000665679:Int.Pd:03-01-2025 to 31-", -7000.0, "Interest payments", None),
+    ("SB/925010000665679:Int.Pd:01-04-2025 to 30-", -400.0, "Interest payments", None),
+    ("Int.Pd on Savings", 120.0, "Interest received", None),
+    ("DEBIT INTEREST- /", -456845.0, "Interest payments", None),
+    ("CREDIT INTEREST", 500.0, "Interest received", None),
+
+    # --- NBFC / lender names (ID8: EMI or Interest payments on debit; disbursal on credit) ---
+    ("BIL/BPAY/00000018WXN7/BBPS/KinaraCapital/WC", -71007.0, "Interest payments", "Kinara Capital"),
+    ("ACH/CLIXCAPITALSERVICE/ICIC0000000016310674/TXNR", -36938.0, "EMI transaction", None),
+    ("ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT", -128182.0, "EMI transaction", "Bajaj Finance Ltd"),
+    ("INDIA/INBSGROYAL CAPITAL PRIVATE L UPI/P2A/847055627294/Bank Account", 943725.0, "Loan amount disbursal", "Royal Capital"),
+    ("NEFT-HDFCN123-Aditya Birla Finance-", 500000.0, "Loan amount disbursal", None),
+
+    # --- Charges: MAB/avg-bal penal; card/txn NOT penal (ID4/ID8) ---
+    ("Avg bal Chgs Incl GST OCT-25 SB/925010000665679:Int.Pd:01-10-2025 to 31-", -504.84, "other penal charges", None),
+    ("AMB Chgs Incl GST 01-06-2025", -354.0, "other penal charges", None),
+    ("MIN BAL CHARGES", -300.0, "other penal charges", None),
+    # NOT penal: a POS purchase, and a name that merely contains "AMB".
+    ("POS/MD ENTERPRISES/BANGALORE/311025/20:35/73 1111", -1500.0, "Regular debit", None),
+    ("UPI/P2A/567161905063/BODIDHAMMA JAMBAGA /UPI/State Bank Of I", -500.0, "Regular debit", None),
+    ("BNA Txn Chrgs Incl GST UPI/P2A/848101872379/ASHISH GU/AXIS", -59.0, "Regular debit", None),
+    ("/Paymen/AXIS BANK Dr Card Charges GST ANNUAL", -2000.0, "Regular debit", None),
+    ("Dr Card Charges GST ISSUE", -14999.0, "Regular debit", None),
+
+    # --- Cash deposit variants (ID8: CASHDEP glued) ---
+    ("CAM/77571SRY/CASHDEP-Other/11-02-26/9931", 48500.0, "cash deposit", None),
+    ("BY CASH -NEW DELHI - FATEHPURI", 350000.0, "cash deposit", None),
+
+    # --- Recharge is not penal (ID4) ---
+    ("BAN/528212361969/ICI8e968/ UPI/Google Ind/gpayrecharge@i/UPI/ICICI", -100.0, "Regular debit", None),
+
+    # --- Bounce / return (unchanged expectations) ---
+    ("RTGS RETURN-ICICR42026011900518516-S N S PRODUCTSPVT LTD-OPERATIONS SUSPENDED", 772905.0, "return / refund", None),
+    ("RVSL IW CTR RTN CHQNO:011541", 2900000.0, "return / refund", None),
+    ("Chq Rtrn Chrgs Incl GST", -590.0, "Outward Bounced Xns", None),
+
+    # --- ATM / cash withdrawal ---
+    ("ATM-CASH/+SARJAPUR ROAD BR/BANGALORE-URB/010226", -10000.0, "cash withdrawal", None),
+
+    # --- Salary ---
+    ("NEFT SALARY JULY payroll", 55000.0, "Salary credited", None),
+
+    # --- Plain transfers stay Regular ---
+    ("UPI/P2A/557305326847/K S SHALI/YES BANK /UPI/", 2.0, "Regular credit", "K S SHALI"),
+    ("NEFT/HDFCH00395013738/RHEA HEALTHCARE PVT LTD/HDFC BANK/0001", 150000.0, "Regular credit", "RHEA HEALTHCARE PVT LTD"),
+]
+
+
+def _run_truth_file(path):
+    """Optional real ground truth: a CSV with Description, Amount, Category
+    (and optionally Party) columns of reviewer-labelled rows."""
+    out = []
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            desc = r.get("Description") or r.get("description")
+            amt = r.get("Amount") or r.get("amount")
+            cat = r.get("Category") or r.get("category")
+            if not (desc and amt and cat):
+                continue
+            try:
+                a = float(str(amt).replace(",", "").replace("(", "-").replace(")", ""))
+            except ValueError:
+                continue
+            out.append((desc, a, cat.strip(), (r.get("Party") or "").strip() or None))
+    return out
+
+
+def _all_cases():
+    cases = list(CASES)
+    truth = os.environ.get("BSA_CATEGORY_TRUTH")
+    if truth and os.path.exists(truth):
+        cases += _run_truth_file(truth)
+    return cases
+
+
+def test_categorization_accuracy(capsys):
+    cases = _all_cases()
+    by_cat = collections.Counter()
+    hits = collections.Counter()
+    party_checked = party_hits = 0
+    failures = []
+    for desc, amt, want_cat, want_party in cases:
+        t = _categorize_one(desc, amt)
+        by_cat[want_cat] += 1
+        ok = t.category == want_cat
+        hits[want_cat] += int(ok)
+        if not ok:
+            failures.append(f"  cat  want={want_cat!r:22s} got={t.category!r:22s} | {desc[:52]}")
+        if want_party is not None:
+            party_checked += 1
+            if t.counterparty == want_party:
+                party_hits += 1
+            else:
+                failures.append(f"  party want={want_party!r:20s} got={t.counterparty!r:20s} | {desc[:46]}")
+
+    total = sum(by_cat.values())
+    correct = sum(hits.values())
+    with capsys.disabled():
+        print(f"\n=== Categorisation accuracy: {correct}/{total} "
+              f"({100*correct/total:.0f}%)  party {party_hits}/{party_checked} ===")
+        for cat in sorted(by_cat):
+            print(f"   {hits[cat]:2d}/{by_cat[cat]:<2d}  {cat}")
+        if failures:
+            print("--- misses ---")
+            print("\n".join(failures))
+
+    # The bar the harness enforces. Raise it as coverage improves; today every
+    # labelled case must pass, so a regression fails the build.
+    assert correct == total and party_hits == party_checked, \
+        f"{total-correct} category + {party_checked-party_hits} party misses (see scoreboard above)"

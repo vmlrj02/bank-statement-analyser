@@ -13,11 +13,12 @@ def txn(desc, amount, mode="other"):
     return t
 
 
-def test_od_interest_debit_is_interest_debited_not_regular():
+def test_od_interest_debit_is_interest_payments_not_regular():
     """SBI prints "DEBIT INTEREST- /" on an OD account every month-end; a
-    lender reads that as cost of borrowing, not an ordinary transfer."""
+    lender reads that as cost of borrowing, not an ordinary transfer. The master
+    renamed this category "Interest payments" (ID8)."""
     t = categorize([txn("DEBIT INTEREST- /", -456845.00)])[0]
-    assert t.category == "Interest debited"
+    assert t.category == "Interest payments"
 
 
 def test_interest_received_is_untouched_by_the_debit_rule():
@@ -33,9 +34,9 @@ def test_by_cash_credit_is_a_cash_deposit():
     assert categorize([t])[0].category == "cash deposit"
 
 
-def test_interest_debited_detail_reads_as_itself():
+def test_interest_payments_detail_reads_as_itself():
     t = categorize([txn("DEBIT INTEREST- /", -1000.0)])[0]
-    assert category_detail(t) == "Interest debited"
+    assert category_detail(t) == "Interest payments"
 
 
 def test_atm_withdrawal_with_hyphen_form():
@@ -52,9 +53,13 @@ def test_cheque_return_charges_are_a_bounce_not_a_transfer():
     assert t.category == "Outward Bounced Xns"
 
 
-@pytest.mark.parametrize("desc", ["SMS Chrgs Incl GST", "Keeping Chgs-- / 38976288"])
-def test_chrgs_and_chgs_spellings_are_penal(desc):
-    assert categorize([txn(desc, -649.0)])[0].category == "other penal charges"
+@pytest.mark.parametrize("desc", ["SMS Chrgs Incl GST", "Keeping Chgs-- / 38976288",
+                                  "BNA Txn Chrgs Incl GST", "Dr Card Charges GST ANNUAL"])
+def test_service_charges_are_not_penal(desc):
+    """The master defines penal as a threshold/violation charge (MAB, POS); an
+    ordinary service fee — SMS, card, transaction, folio — is NOT penal (ID8),
+    so it falls through to Regular debit rather than being flagged penal."""
+    assert categorize([txn(desc, -649.0)])[0].category != "other penal charges"
 
 
 @pytest.mark.parametrize("desc", [
@@ -68,9 +73,10 @@ def test_a_gpay_recharge_is_not_a_penal_charge(desc):
     assert t.category != "other penal charges"
 
 
-def test_a_real_cash_deposit_charge_stays_penal():
-    """The fix must not stop matching a genuine "Chgs" charge."""
-    t = categorize([txn("CashDep Chgs 01-30NOV25+GST UPI/p venkatesan81", -118.0)])[0]
+def test_a_genuine_mab_charge_is_penal():
+    """A minimum/average-balance charge is the canonical penal charge (master:
+    "pos threshold, MAB, etc."), and must still be caught."""
+    t = categorize([txn("AMB Chgs Incl GST 01-06-2025", -354.0)])[0]
     assert t.category == "other penal charges"
 
 
