@@ -104,6 +104,17 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .cats span{border:1px solid var(--line);color:var(--mut);font-size:11.5px;padding:2px 9px;border-radius:999px}
 .err{border:1px solid var(--fg);border-left-width:4px;font-size:12.5px;padding:9px 11px;
   border-radius:6px;margin-top:11px;word-break:break-word}
+.credit{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
+.credit .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+  font-weight:700;margin-bottom:9px}
+.cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line)}
+.cx{background:var(--bg);padding:8px 10px}
+.cx b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+.cx span{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
+.creads{margin:10px 0 0;padding-left:17px;font-size:12.5px;color:var(--mut)}
+.creads li{margin:3px 0}
+@media (max-width:560px){.cgrid{grid-template-columns:repeat(2,1fr)}}
 .acts{display:flex;gap:7px;margin-top:13px;flex-wrap:wrap}
 .empty{color:var(--mut);text-align:center;padding:32px 0;font-size:14px;
   border:1px dashed var(--line2);border-radius:var(--radius)}
@@ -441,6 +452,26 @@ function integrityChip(intg){
     ? '<span class="chip done">Integrity verified</span>'
     : '<span class="chip warn">Integrity: review</span>';
 }
+function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
+function creditBlock(cs){
+  if(!cs || !cs.metrics) return '';
+  const m=cs.metrics;
+  const cell=(label,val)=>`<div class="cx"><b>${val}</b><span>${label}</span></div>`;
+  const grid=[
+    cell('Turnover / mo','₹'+inr(m.avg_monthly_credits)),
+    cell('Avg balance','₹'+inr(m.avg_balance)),
+    cell('Min balance','₹'+inr(m.min_balance)),
+    cell('Cash intensity',(m.cash_intensity_pct||0)+'%'),
+    cell('Bounce events',nfmt(m.bounce_count||0)),
+    cell('EMI outflow / mo','₹'+inr(m.emi_outflow_monthly)),
+    cell('Top party',(m.top_party_share_pct||0)+'%'),
+    cell('Months',nfmt(m.months||0)),
+  ].join('');
+  const reads=(cs.reads||[]).map(r=>`<li>${esc(r)}</li>`).join('');
+  return `<div class="credit"><div class="ch">Credit assessment</div>
+    <div class="cgrid">${grid}</div>
+    ${reads?`<ul class="creads">${reads}</ul>`:''}</div>`;
+}
 
 /* Navigation is upload-first: the sidebar lists uploads, and selecting one
    shows every account inside it. Flattening all accounts from all uploads into
@@ -477,6 +508,7 @@ function accountCard(j, a){
     ${a.integrity && a.integrity.assessment!=='verified' && (a.integrity.flags||[]).length
       ? `<div class="err"><b>Integrity — for review:</b><ul style="margin:6px 0 0;padding-left:18px">`
         + a.integrity.flags.map(f=>`<li>${esc(f)}</li>`).join('') + `</ul></div>` : ''}
+    ${creditBlock(a.credit_summary)}
     ${cats?`<div class="cats">${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'

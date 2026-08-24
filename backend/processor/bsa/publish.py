@@ -20,8 +20,28 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 
 from .categorize import category_detail
+from .credit_summary import credit_summary
 from .integrity import account_integrity
 from .models import JobResult, Txn
+
+_CS_LABELS = [
+    ("months", "Months covered", "int"),
+    ("avg_monthly_credits", "Avg monthly credits (turnover)", "money"),
+    ("avg_monthly_debits", "Avg monthly debits", "money"),
+    ("total_credits", "Total credits", "money"),
+    ("total_debits", "Total debits", "money"),
+    ("avg_balance", "Average balance", "money"),
+    ("min_balance", "Minimum balance", "money"),
+    ("closing_balance", "Closing balance", "money"),
+    ("cash_intensity_pct", "Cash intensity", "pct"),
+    ("emi_outflow_monthly", "EMI / interest outflow (monthly)", "money"),
+    ("bounce_count", "Bounce / return events", "int"),
+    ("penal_charges", "Penal charges", "money"),
+    ("loan_disbursals", "Loan disbursals received", "money"),
+    ("related_party_credit_pct", "Related-party share of credits", "pct"),
+    ("distinct_credit_parties", "Distinct credit counterparties", "int"),
+    ("top_party_share_pct", "Top counterparty share of credits", "pct"),
+]
 
 
 def party_key(name: str) -> str:
@@ -130,7 +150,36 @@ def write_workbook(result: JobResult, path: str) -> None:
     wb = Workbook()
     wb.remove(wb.active)
     bold = Font(bold=True)
+    big = Font(bold=True, size=13)
     txns = result.txns
+    integ = account_integrity([result.meta], result.validation.status)
+
+    # --- Credit Assessment (the lender-facing lead sheet) ---
+    cs = credit_summary(txns, integ, result.validation.status)
+    ws = wb.create_sheet("Credit Assessment")
+    ws.append(["Credit Assessment"])
+    ws["A1"].font = big
+    ws.append([result.meta.account_name or "", result.meta.bank or "",
+               result.meta.account_no or ""])
+    ws.append(["Balance reconciliation", result.validation.status,
+               "Integrity", integ["assessment"]])
+    ws.append([])
+    ws.append(["Metric", "Value"])
+    for c in ws[ws.max_row]:
+        c.font = bold
+    m = cs["metrics"]
+    for key, label, kind in _CS_LABELS:
+        v = m.get(key)
+        if kind == "pct":
+            v = f"{v}%"
+        elif kind == "money" and isinstance(v, (int, float)):
+            v = _fmt_amount(v)
+        ws.append([label, v])
+    ws.append([])
+    ws.append(["Underwriting reads"])
+    ws[ws.max_row][0].font = bold
+    for r in cs["reads"]:
+        ws.append(["", r])
 
     # --- Summary ---
     ws = wb.create_sheet("Summary")

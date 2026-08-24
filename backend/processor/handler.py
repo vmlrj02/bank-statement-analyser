@@ -29,6 +29,7 @@ from types import SimpleNamespace
 import boto3
 
 from bsa.categorize import categorize, category_detail
+from bsa.credit_summary import credit_summary
 from bsa.ingest import PasswordRequired
 from bsa.integrity import account_integrity
 from bsa.models import JobResult, StatementMeta, Txn, ValidationReport
@@ -460,6 +461,7 @@ def lambda_handler(event, _ctx):
                 cats: dict[str, int] = {}
                 for t in txns:
                     cats[t.category] = cats.get(t.category, 0) + 1
+                integ = account_integrity(metas, acct_status)
                 accounts_out.append({
                     "slug": slug,
                     "bank": meta0.bank,
@@ -492,7 +494,10 @@ def lambda_handler(event, _ctx):
                     # Statement-integrity signals for lending: balance chain +
                     # scanned-page + PDF-metadata flags. A prompt to look, not
                     # an accusation.
-                    "integrity": account_integrity(metas, acct_status),
+                    "integrity": integ,
+                    # The lender-facing conclusion: turnover, balance, cash
+                    # intensity, bounces, EMI headroom, concentration + reads.
+                    "credit_summary": credit_summary(txns, integ, acct_status),
                 })
 
             # AI accounting stays per uploaded file across the whole job, and

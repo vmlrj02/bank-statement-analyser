@@ -52,9 +52,15 @@ def validate(txns: list[Txn]) -> ValidationReport:
                               f"{t.balance:.2f} ({t.date} {t.description[:60]})")
                     gap = _days_between(prev_date, t.date) if prev_date else 0
                     if gap > GAP_DAYS:
-                        detail += (f" — {gap} days pass between this row and the "
-                                   f"previous one, so the pages for that period "
-                                   f"are most likely missing from the document")
+                        # Two causes look identical here — a real hole in the
+                        # document, or rows dropped in extraction — so name both
+                        # and point at the check that tells them apart (a lesson
+                        # learned the hard way: don't assert "pages missing").
+                        detail += (f" — {gap} days pass since the previous row, so "
+                                   f"either the pages for that period are missing "
+                                   f"from the document, or transactions there were "
+                                   f"not extracted; check the row count against the "
+                                   f"statement's own total")
                     issues.append(ValidationIssue(
                         row_index=i, kind="balance_mismatch", detail=detail))
             prev_balance = t.balance
