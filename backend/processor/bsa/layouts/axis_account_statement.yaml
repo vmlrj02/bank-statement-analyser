@@ -14,6 +14,9 @@ header:
   # named groups are required: account_no, period_from, period_to
   account_line: 'Statement of Axis Account No :(?P<account_no>\d+) for the period \(From : (?P<period_from>[\d-]+) To : (?P<period_to>[\d-]+)\)'
   period_date_format: "%d-%m-%Y"
+  # Axis prints "TRANSACTION TOTAL <debits> <credits>" — the amount totals
+  # let us prove no row was dropped (completeness.py).
+  summary_totals: 'TRANSACTION TOTAL\s+(?P<sum_debits>[\d,]+\.\d{2})\s+(?P<sum_credits>[\d,]+\.\d{2})'
   account_name_line: 0            # account holder is the first line of page 1
 parse:
   table_header_words: ["Particulars", "Debit", "Credit", "Balance"]

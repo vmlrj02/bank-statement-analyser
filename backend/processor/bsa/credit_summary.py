@@ -69,6 +69,39 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
     min_bal = round(min(eod), 2) if eod else 0.0
     closing_bal = round(txns[-1].balance, 2)
 
+    # Monthly credit series (for turnover trend) and monthly average balance
+    # (for stability), oldest month first.
+    monthly_cr: dict[str, float] = defaultdict(float)
+    for t in credits:
+        monthly_cr[t.date[:7]] += t.amount
+    cr_series = [monthly_cr[k] for k in sorted(monthly_cr)]
+    bal_by_month: dict[str, list[float]] = defaultdict(list)
+    bal_seen: dict[str, float] = {}
+    for t in txns:
+        bal_seen[t.date] = t.balance
+    for d, b in bal_seen.items():
+        bal_by_month[d[:7]].append(b)
+    monthly_avg_bal = [sum(v) / len(v) for _, v in sorted(bal_by_month.items())]
+
+    # Turnover trend: compare the first and second halves of the credit series.
+    trend = "flat"
+    if len(cr_series) >= 4:
+        half = len(cr_series) // 2
+        first, second = sum(cr_series[:half]), sum(cr_series[half:])
+        if first > 0:
+            chg = (second - first) / first
+            trend = "rising" if chg > 0.15 else "declining" if chg < -0.15 else "stable"
+
+    # Balance stability: coefficient of variation of monthly average balance
+    # (std / mean). Low = steady; high = swings. Undefined for an OD/negative
+    # account, where "stability" of a drawn balance isn't meaningful.
+    stability_cv = None
+    if len(monthly_avg_bal) >= 2 and avg_bal > 0:
+        mean = sum(monthly_avg_bal) / len(monthly_avg_bal)
+        if mean > 0:
+            var = sum((x - mean) ** 2 for x in monthly_avg_bal) / len(monthly_avg_bal)
+            stability_cv = round((var ** 0.5) / mean, 2)
+
     cash_in = cat_sum("cash deposit")
     emi_out = cat_sum("EMI transaction") + cat_sum("Interest payments")
     bounces = (cat_n("inward bounce penal charges") + cat_n("Outward Bounced Xns"))
@@ -106,6 +139,14 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
         "related_party_credit_pct": round(100 * related_cr / total_cr, 1) if total_cr else 0.0,
         "distinct_credit_parties": len(party_cr),
         "top_party_share_pct": top_share,
+        "turnover_trend": trend,
+        "balance_stability_cv": stability_cv,
+        # Servicing capacity: monthly surplus after existing debt service, and a
+        # simple coverage ratio (inflow ÷ EMI outflow). >1 means inflow covers
+        # current EMIs; higher is more headroom for new debt.
+        "monthly_surplus": round((total_cr - total_dr) / months, 2),
+        "servicing_coverage": (round((total_cr / months) / (emi_out / months), 2)
+                               if emi_out else None),
         "integrity": (integrity or {}).get("assessment", "—"),
         "balance_verified": validation_status == "passed",
     }
@@ -135,6 +176,17 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
     if m["related_party_credit_pct"] >= 25:
         reads.append(f"{m['related_party_credit_pct']}% of credits are from related "
                      f"parties — may overstate genuine third-party turnover.")
+    if trend == "declining":
+        reads.append("Turnover is declining over the period — credits in the "
+                     "later months are materially below the earlier ones.")
+    elif trend == "rising":
+        reads.append("Turnover is rising over the period — a positive trend.")
+    if stability_cv is not None and stability_cv > 0.6:
+        reads.append("Balance swings widely month to month — low liquidity "
+                     "stability, worth probing before relying on the average.")
+    if m["servicing_coverage"] is not None and m["servicing_coverage"] < 1.5:
+        reads.append(f"Debt-service coverage is tight (inflow is ~{m['servicing_coverage']}× "
+                     f"existing EMI outflow) — little room for additional debt.")
     if not reads:
         reads.append("No adverse signals detected on the deterministic checks.")
     return {"metrics": m, "reads": reads}

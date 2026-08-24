@@ -45,25 +45,34 @@ def declared_from_text(text: str, pattern: str) -> dict:
         v = (g.get(k) or "").replace(",", "").strip()
         if v.isdigit():
             out[k] = int(v)
+    for k in ("sum_debits", "sum_credits"):
+        v = (g.get(k) or "").replace(",", "").strip()
+        try:
+            if v:
+                out[k] = float(v)
+        except ValueError:
+            pass
     return out
 
 
 def check_completeness(n_extracted: int, n_debits: int, n_credits: int,
-                       declared: dict) -> dict:
-    """Compare extracted counts to the statement's declared counts."""
+                       declared: dict, sum_debits: float = 0.0,
+                       sum_credits: float = 0.0) -> dict:
+    """Compare what we extracted to the statement's own declared totals — either
+    a transaction COUNT (HDFC, SBI internet) or the debit/credit amount TOTALS
+    (Axis prints "TRANSACTION TOTAL"). Both prove no rows were dropped."""
     if not declared:
         return {"checked": False}
+
+    complete = True
+    notes: list[str] = []
+
+    # (a) Count check — the total count is the hard signal. The per-direction
+    # split is only informational: a reversal posted in the withdrawal column
+    # nets to a positive amount, so our Dr/Cr split can legitimately differ.
     expected = declared.get("n_txns")
     if expected is None and "n_debits" in declared and "n_credits" in declared:
         expected = declared["n_debits"] + declared["n_credits"]
-
-    # The TOTAL count is the hard completeness signal — a mismatch means rows
-    # were dropped or duplicated. The per-direction split is only informational:
-    # a reversal posted in the withdrawal column (a negative withdrawal) nets to
-    # a positive amount, so our Dr/Cr split can legitimately differ from the
-    # bank's while every row is present.
-    complete = True
-    notes: list[str] = []
     if expected is not None and expected != n_extracted:
         complete = False
         gap = expected - n_extracted
@@ -71,7 +80,27 @@ def check_completeness(n_extracted: int, n_debits: int, n_credits: int,
             f"extracted {n_extracted} transactions but the statement declares "
             f"{expected} — {abs(gap)} {'not extracted' if gap > 0 else 'extra'}")
 
+    # (b) Amount check — the extracted debit/credit sums must match the bank's
+    # printed totals. A relative tolerance absorbs rounding; a real dropped row
+    # moves the sum well beyond it.
+    def _off(got, want):
+        return abs(got - want) > max(5.0, abs(want) * 0.0002)
+
+    if "sum_debits" in declared and _off(sum_debits, declared["sum_debits"]):
+        complete = False
+        notes.append(f"debit total {sum_debits:,.2f} vs declared "
+                     f"{declared['sum_debits']:,.2f} — a "
+                     f"{abs(sum_debits - declared['sum_debits']):,.2f} gap "
+                     f"(a row is likely missing or mis-read)")
+    if "sum_credits" in declared and _off(sum_credits, declared["sum_credits"]):
+        complete = False
+        notes.append(f"credit total {sum_credits:,.2f} vs declared "
+                     f"{declared['sum_credits']:,.2f} — a "
+                     f"{abs(sum_credits - declared['sum_credits']):,.2f} gap")
+
     return {"checked": True, "complete": complete, "declared": declared,
             "extracted": {"n": n_extracted, "n_debits": n_debits,
-                          "n_credits": n_credits},
+                          "n_credits": n_credits,
+                          "sum_debits": round(sum_debits, 2),
+                          "sum_credits": round(sum_credits, 2)},
             "notes": notes}

@@ -16,6 +16,9 @@ fingerprints:
 header:
   account_line: 'Statement of Account No\s*:\s*(?P<account_no>\d+)\s*for the period\s*\(From\s*:\s*(?P<period_from>[\d-]+)\s*To\s*:\s*(?P<period_to>[\d-]+)\)'
   period_date_format: "%d-%m-%Y"
+  # Axis prints "TRANSACTION TOTAL <debits> <credits>" — the amount totals
+  # let us prove no row was dropped (completeness.py).
+  summary_totals: 'TRANSACTION TOTAL\s+(?P<sum_debits>[\d,]+\.\d{2})\s+(?P<sum_credits>[\d,]+\.\d{2})'
   account_name_line: 0
 parse:
   table_header_words: ["Particulars", "Debit", "Credit", "Balance"]

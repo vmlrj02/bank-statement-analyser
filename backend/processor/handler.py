@@ -471,7 +471,9 @@ def lambda_handler(event, _ctx):
                         decl[k] = decl.get(k, 0) + v
                 nd = sum(1 for t in txns if t.amount < 0)
                 nc = sum(1 for t in txns if t.amount > 0)
-                completeness = check_completeness(len(txns), nd, nc, decl)
+                sd = sum(-t.amount for t in txns if t.amount < 0)
+                sc = sum(t.amount for t in txns if t.amount > 0)
+                completeness = check_completeness(len(txns), nd, nc, decl, sd, sc)
                 cs = credit_summary(txns, integ, acct_status)
                 if completeness.get("checked") and not completeness.get("complete"):
                     cs["reads"].insert(0, "Extraction incomplete: " +

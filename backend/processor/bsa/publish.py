@@ -41,6 +41,10 @@ _CS_LABELS = [
     ("related_party_credit_pct", "Related-party share of credits", "pct"),
     ("distinct_credit_parties", "Distinct credit counterparties", "int"),
     ("top_party_share_pct", "Top counterparty share of credits", "pct"),
+    ("turnover_trend", "Turnover trend", "text"),
+    ("balance_stability_cv", "Balance stability (variation)", "num"),
+    ("monthly_surplus", "Monthly surplus (net inflow)", "money"),
+    ("servicing_coverage", "Debt-service coverage (× EMI)", "num"),
 ]
 
 
@@ -166,8 +170,10 @@ def write_workbook(result: JobResult, path: str) -> None:
     from .completeness import check_completeness
     nd = sum(1 for t in txns if t.amount < 0)
     nc = sum(1 for t in txns if t.amount > 0)
+    sd = sum(-t.amount for t in txns if t.amount < 0)
+    sc = sum(t.amount for t in txns if t.amount > 0)
     comp = check_completeness(len(txns), nd, nc,
-                              getattr(result.meta, "declared_totals", None) or {})
+                              getattr(result.meta, "declared_totals", None) or {}, sd, sc)
     if comp.get("checked"):
         ws.append(["Completeness",
                    "complete" if comp["complete"] else "INCOMPLETE",

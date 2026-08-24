@@ -457,14 +457,19 @@ function creditBlock(cs){
   if(!cs || !cs.metrics) return '';
   const m=cs.metrics;
   const cell=(label,val)=>`<div class="cx"><b>${val}</b><span>${label}</span></div>`;
+  const cov=(m.servicing_coverage==null?'—':m.servicing_coverage+'×');
   const grid=[
     cell('Turnover / mo','₹'+inr(m.avg_monthly_credits)),
+    cell('Turnover trend',m.turnover_trend||'—'),
     cell('Avg balance','₹'+inr(m.avg_balance)),
     cell('Min balance','₹'+inr(m.min_balance)),
     cell('Cash intensity',(m.cash_intensity_pct||0)+'%'),
     cell('Bounce events',nfmt(m.bounce_count||0)),
     cell('EMI outflow / mo','₹'+inr(m.emi_outflow_monthly)),
+    cell('Debt-svc cover',cov),
+    cell('Monthly surplus','₹'+inr(m.monthly_surplus)),
     cell('Top party',(m.top_party_share_pct||0)+'%'),
+    cell('Related-party',(m.related_party_credit_pct||0)+'%'),
     cell('Months',nfmt(m.months||0)),
   ].join('');
   const reads=(cs.reads||[]).map(r=>`<li>${esc(r)}</li>`).join('');
