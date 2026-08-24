@@ -41,6 +41,15 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
   POST /jobs/{id}/review.
   A customer's job list is a QUERY on the owner-created_at-index GSI, never a
   filtered scan — see gotcha 14.
+- backend/processor/bsa/credit_summary.py — the lender-facing conclusion, not
+  just categorised rows: per account it derives monthly turnover, average / min
+  / closing balance, cash intensity, bounce/return count, penal charges, EMI &
+  interest outflow and headroom, related-party share and counterparty
+  concentration, plus plain-language "reads" that fire only when a number
+  warrants. Deterministic, traceable, no scoring model. Surfaced as the lead
+  workbook sheet ("Credit Assessment"), in the API account summary, and on the
+  account card. This is what a credit team reads first and what the demo leads
+  with; the categorised transaction sheets are the "show the working".
 - frontend/index.html — no-build SPA served via CloudFront.
 - infra/ — CDK (Python). Deploy: `cd infra && source .venv/bin/activate && cdk deploy`.
 
