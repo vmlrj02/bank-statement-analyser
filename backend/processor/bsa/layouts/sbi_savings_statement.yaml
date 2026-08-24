@@ -16,13 +16,17 @@ fingerprints:
     - "SBIN0"
   any_of: []
 header:
-  account_line: 'Account Number\s*:(?:\(cid:\d+\))?\s*(?P<account_no>\d+)'
+  account_line: 'Account Number\s*:(?:\(cid:\d+\))?\s*(?P<account_no>\d+)[\s\S]*?Account Statement from\s+(?P<period_from>\d{1,2} \w{3} \d{4})\s+to\s+(?P<period_to>\d{1,2} \w{3} \d{4})'
+  period_date_format: "%d %b %Y"
   account_name: 'Account Name\s*:\s*([^,\n]+)'
 parse:
   table_header_words: ["Description", "Debit", "Credit", "Balance"]
   header_offset: 16
   date_parts: 3                    # "1 Jul 2025" prints as three tokens
-  row_anchor: '^\d{1,2} [A-Za-z]{3} \d{4}$'
+  # The year wraps to the next line on two-digit-day rows, so it is optional
+  # here and completed from the statement period (infer_year_from_period).
+  row_anchor: '^\d{1,2} [A-Za-z]{3}( \d{4})?$'
+  infer_year_from_period: true
   date_format: "%d %b %Y"
   continuation: below
   skip_rows:

@@ -73,6 +73,28 @@ def _amount_role(x1: float, cols: dict) -> str | None:
     return None
 
 
+def _complete_year(day_month: str, meta) -> str:
+    """Append the year to a "17 Aug" date whose year wrapped to the next line.
+
+    Chooses the year (from the statement period) that places the date inside the
+    period — so a Dec/Jan boundary resolves correctly — and falls back to the
+    period's start year. If no period is known, returns the input unchanged and
+    the row fails to parse loudly rather than being silently misdated.
+    """
+    pf = getattr(meta, "period_from", "") or ""
+    pt = getattr(meta, "period_to", "") or ""
+    years = [y for y in (pf[:4], pt[:4]) if y.isdigit()]
+    for y in dict.fromkeys(years):                       # de-dup, keep order
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                iso = datetime.strptime(f"{day_month} {y}", fmt).date().isoformat()
+            except ValueError:
+                continue
+            if (not pf or iso >= pf) and (not pt or iso <= pt):
+                return f"{day_month} {y}"
+    return f"{day_month} {years[0]}" if years else day_month
+
+
 def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list) -> None:
     """Assign buffered narration lines to the vertically NEAREST anchor, then
     emit the anchors in reading order.
@@ -153,6 +175,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     above = continuation == "above"
     nearest = continuation == "nearest"
     date_parts = int(p.get("date_parts", 1))   # tokens forming a multi-word date
+    infer_year = bool(p.get("infer_year_from_period", False))
     # Some exports run the value date straight into the narration with no
     # separator ("01-07-2025BIL/Auto"), so it arrives as one token.
     strip_date = re.compile(p["strip_leading_date"]) if p.get("strip_leading_date") else None
@@ -222,17 +245,32 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
 
                 first = ws[0]
                 # Most banks print the date as one token ("01/07/2025"); a few
-                # print it as several ("1 Jul 2025"), so date_parts joins the
-                # leading N tokens into the date and excludes them from the
-                # column scan. Default 1 keeps every existing layout unchanged.
+                # print it as several ("1 Jul 2025"), so date_parts gathers the
+                # leading date-column tokens (by x, up to date_parts) and
+                # excludes them from the column scan. Gathering by x — not a
+                # fixed count — matters because SBI wraps the YEAR of a
+                # two-digit-day date onto the next line ("17 Aug" on the anchor,
+                # "2025" below it), so the anchor carries only two tokens there.
+                # Default 1 keeps every existing layout unchanged.
                 if date_parts > 1:
-                    date_str = " ".join(w["text"] for w in ws[:date_parts])
-                    rest = ws[date_parts:]
+                    dtoks = []
+                    for w in ws:
+                        if w["x0"] < active["date_x_max"]:
+                            dtoks.append(w)
+                        else:
+                            break
+                    dtoks = dtoks[:date_parts]
+                    date_str = " ".join(w["text"] for w in dtoks)
+                    rest = ws[len(dtoks):]
                 else:
                     date_str = first["text"]
                     rest = ws[1:]
                 is_anchor = (first["x0"] < active["date_x_max"]
                              and anchor_re.match(date_str))
+                # A year-less date (SBI's wrapped year) is completed from the
+                # statement period, choosing the year that puts it in range.
+                if is_anchor and infer_year and not re.search(r"\d{4}", date_str):
+                    date_str = _complete_year(date_str, meta)
 
                 if is_anchor:
                     # 'above' banks wrap narration before the dated line, so the

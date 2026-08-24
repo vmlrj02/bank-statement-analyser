@@ -1,12 +1,21 @@
 """Template parser: ICICI internet-banking "OpTransactionHistory" layout.
 
-Font-driven grouping (deterministic):
+Font-driven grouping (deterministic), used when the export's real fonts survive:
   - anchor line   : S No. (digit, left edge) + date (dd.mm.yyyy)
   - title line    : remark-zone words in the *Black* face -> belongs to the
                     NEXT anchor (it is printed just above its row)
   - descriptor    : remark-zone words in the *Regular* face -> belongs to the
                     CURRENT (previous) anchor, including across page breaks
 Amounts are assigned withdrawal/deposit/balance by right-edge x cutoffs.
+
+Fallback for font-flattened re-exports: a statement that has been re-saved
+through a PDF tool (pdf-lib, Quartz) loses the Black/Regular distinction —
+every word reports one embedded face — so the title/descriptor split above
+cannot work and the narration shifts by one row. When no Black face exists in
+the document, we assign each remark line to the vertically NEAREST anchor
+instead: the title printed just above a row and the descriptor just below it are
+both closer to their own row than to a neighbour, so the assignment is correct
+without needing the font.
 """
 from __future__ import annotations
 
@@ -41,10 +50,82 @@ def _lines(words: list[dict], tol: float = 3.0) -> list[dict]:
     return out
 
 
+def _anchor_fields(ws, cols):
+    """Parse an anchor line's cheque / withdrawal / deposit / balance / inline
+    remark, shared by both paths. Returns None if it is not a real txn row."""
+    cheque, wd, dep, bal = "", None, None, None
+    inline: list[str] = []
+    for w in ws[2:]:
+        if NUM_RE.match(w["text"]) and w["x0"] > cols["cheque_x_max"]:
+            amt = _parse_amount(w["text"])
+            if w["x1"] <= cols["withdrawal_x1_max"]:
+                wd = amt
+            elif w["x1"] <= cols["deposit_x1_max"]:
+                dep = amt
+            else:
+                bal = amt
+        elif cols["cheque_x_min"] <= w["x0"] < cols["cheque_x_max"]:
+            cheque += w["text"]
+        elif w["x0"] >= cols["remarks_x_min"]:
+            inline.append(w["text"])
+    if bal is None:
+        return None
+    return {"cheque": cheque, "wd": wd, "dep": dep, "bal": bal, "inline": inline}
+
+
+def _extract_nearest(collected, cols, source_file, meta) -> StatementExtract:
+    """Font-free path: assign each remark line to the vertically nearest anchor.
+
+    Used for re-exported PDFs whose Black/Regular faces were flattened, so the
+    title (above a row) and descriptor (below it) can only be told apart by
+    which anchor they sit closest to."""
+    anchors: list[dict] = []
+    remarks: list[tuple] = []          # (globalpos, [words])
+
+    def gpos(page, top):
+        return page * 100000 + top
+
+    for pageno, lines in collected:
+        for ln in lines:
+            ws = ln["words"]
+            is_anchor = (len(ws) >= 2 and ws[0]["x0"] < cols["sl_no_x_max"]
+                         and ws[0]["text"].isdigit()
+                         and DATE_RE.match(ws[1]["text"]))
+            if is_anchor:
+                f = _anchor_fields(ws, cols)
+                if f is None:
+                    continue
+                anchors.append({"sl": ws[0]["text"], "date": ws[1]["text"],
+                                "pos": gpos(pageno, ln["top"]), "page": pageno,
+                                "parts": [(gpos(pageno, ln["top"]), f["inline"])],
+                                **f})
+            elif ws[0]["x0"] >= cols["remarks_x_min"]:
+                remarks.append((gpos(pageno, ln["top"]),
+                                [w["text"] for w in ws]))
+
+    for pos, words in remarks:
+        if not anchors:
+            continue
+        a = min(anchors, key=lambda a: abs(a["pos"] - pos))
+        a["parts"].append((pos, words))
+
+    rows: list[RawRow] = []
+    for a in sorted(anchors, key=lambda a: a["pos"]):
+        desc = [w for _, words in sorted(a["parts"], key=lambda x: x[0])
+                for w in words]
+        rows.append(RawRow(
+            sl_no=a["sl"], date=a["date"], cheque_no=a["cheque"].strip(),
+            description=" ".join(desc).strip(), withdrawal=a["wd"],
+            deposit=a["dep"], balance=a["bal"], page=a["page"]))
+    return StatementExtract(meta=meta, rows=rows)
+
+
 def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     cols = layout["parse"]["columns"]
     rows: list[RawRow] = []
     meta = None
+    collected: list[tuple] = []        # (pageno, [line,...]) for the nearest path
+    has_black = False
     # buffered black (title-face) lines: {page, top, text}
     title_buffer: list[dict] = []
     current: dict | None = None   # {sl,date,cheque,wd,dep,bal,title,desc,page}
@@ -81,6 +162,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     with pdfplumber.open(pdf_path) as pdf:
         for pageno, page in enumerate(pdf.pages, start=1):
             words = page.extract_words(extra_attrs=["fontname"])
+            if any("Black" in w.get("fontname", "") for w in words):
+                has_black = True
             if pageno == 1:
                 meta = _parse_meta(page.extract_text() or "", source_file, layout)
 
@@ -90,11 +173,18 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 continue
             body_top = max(header_tops) + 14
 
+            page_lines = []
             for ln in _lines([w for w in words if w["top"] > body_top]):
                 ws = ln["words"]
                 text = " ".join(w["text"] for w in ws)
                 if any(m in text for m in FOOTER_MARKERS):
                     break  # rest of this page is footer
+                page_lines.append(ln)
+            collected.append((pageno, page_lines))
+
+            for ln in page_lines:
+                ws = ln["words"]
+                text = " ".join(w["text"] for w in ws)
 
                 is_anchor = (len(ws) >= 2 and ws[0]["x0"] < cols["sl_no_x_max"]
                              and ws[0]["text"].isdigit()
@@ -145,6 +235,16 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
 
     if meta is None:
         raise ValueError("could not parse statement header")
+
+    # A font-flattened re-export has no Black face to drive the title/descriptor
+    # split, so the streamed rows above are shifted by one. Re-assign by nearest
+    # anchor instead.
+    if not has_black:
+        ex = _extract_nearest(collected, cols, source_file, meta)
+        for r in ex.rows:
+            r.description = r.description.strip()
+        return ex
+
     for r in rows:
         r.description = r.description.strip()
     return StatementExtract(meta=meta, rows=rows)

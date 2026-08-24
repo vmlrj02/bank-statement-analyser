@@ -48,3 +48,18 @@ def test_flush_clears_its_buffers():
     anchors, narrs, rows = [anchor(100.0, "01-01-2026", 1.0)], [(101.0, ["x"])], []
     _flush_nearest(anchors, narrs, rows)
     assert anchors == [] and narrs == []
+
+
+def test_complete_year_infers_from_period():
+    """SBI wraps the year of a two-digit-day date onto the next line, so the
+    anchor carries only 'day month'; the year is completed from the period."""
+    from bsa.extract.generic_layout import _complete_year
+
+    class M:  # noqa
+        period_from, period_to = "2025-07-01", "2025-09-30"
+    assert _complete_year("17 Aug", M) == "17 Aug 2025"
+
+    class M2:  # a period spanning a year boundary
+        period_from, period_to = "2025-12-01", "2026-01-31"
+    assert _complete_year("15 Jan", M2) == "15 Jan 2026"
+    assert _complete_year("15 Dec", M2) == "15 Dec 2025"

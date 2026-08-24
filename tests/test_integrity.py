@@ -50,3 +50,32 @@ def test_modified_after_creation_is_informational_not_a_review_trigger():
     assert statement_flags(m) == []
     assert account_integrity([m], "passed")["assessment"] == "verified"
     assert modified_gap_days(m) == 50
+
+
+def test_optxn_nearest_assigns_narration_to_the_closest_anchor():
+    """Font-flattened re-export: a title line above a row and a descriptor below
+    it must each attach to their own (nearest) anchor, not shift by one."""
+    from bsa.extract.icici_optransactionhistory import _extract_nearest
+
+    def w(text, x0, top):
+        return {"text": text, "x0": x0, "x1": x0 + 20, "top": top}
+
+    def line(words):
+        return {"words": words, "top": words[0]["top"]}
+
+    cols = {"sl_no_x_max": 40, "cheque_x_min": 300, "cheque_x_max": 340,
+            "remarks_x_min": 100, "withdrawal_x1_max": 470,
+            "deposit_x1_max": 500}
+    collected = [(1, [
+        line([w("TITLE-OF-A", 100, 10)]),                     # above anchor A
+        line([w("1", 10, 20), w("01.07.2025", 45, 20), w("100.00", 445, 20),
+              w("900.00", 520, 20)]),                          # anchor A (wd 100)
+        line([w("DESC-OF-A", 100, 30)]),                       # below A
+        line([w("TITLE-OF-B", 100, 40)]),                      # above anchor B
+        line([w("2", 10, 50), w("02.07.2025", 45, 50), w("50.00", 445, 50),
+              w("850.00", 520, 50)]),                          # anchor B
+        line([w("DESC-OF-B", 100, 60)]),                       # below B
+    ])]
+    ex = _extract_nearest(collected, cols, "x.pdf", None)
+    assert [r.description for r in ex.rows] == \
+        ["TITLE-OF-A DESC-OF-A", "TITLE-OF-B DESC-OF-B"]
