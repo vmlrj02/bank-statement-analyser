@@ -30,6 +30,7 @@ import boto3
 
 from bsa.categorize import categorize, category_detail
 from bsa.ingest import PasswordRequired
+from bsa.integrity import account_integrity
 from bsa.models import JobResult, StatementMeta, Txn, ValidationReport
 from bsa.normalize import normalize, dedup_merge
 from bsa.pipeline import extract_one
@@ -488,6 +489,10 @@ def lambda_handler(event, _ctx):
                     "unreadable_pages": sum(
                         len(getattr(m, "unreadable_pages", []) or []) for m in metas),
                     "categories": cats,
+                    # Statement-integrity signals for lending: balance chain +
+                    # scanned-page + PDF-metadata flags. A prompt to look, not
+                    # an accusation.
+                    "integrity": account_integrity(metas, acct_status),
                 })
 
             # AI accounting stays per uploaded file across the whole job, and

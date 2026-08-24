@@ -43,6 +43,11 @@ class StatementMeta:
     # calls, cost_usd}. None means this statement was parsed by a template and
     # cost nothing, which is the distinction the admin view reports.
     llm_usage: Optional[dict] = None
+    # PDF /Info metadata, carried for the integrity check (see integrity.py).
+    producer: str = ""
+    creator: str = ""
+    pdf_created: str = ""
+    pdf_modified: str = ""
 
 
 @dataclass

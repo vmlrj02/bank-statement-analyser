@@ -27,6 +27,10 @@ def extract_one(path: str, password: str | None = None,
     def _stamp(extract):
         extract.meta.n_pages = ing.n_pages      # page count belongs to the file
         extract.meta.unreadable_pages = list(ing.empty_pages or [])
+        extract.meta.producer = ing.producer
+        extract.meta.creator = ing.creator
+        extract.meta.pdf_created = ing.created
+        extract.meta.pdf_modified = ing.modified
         return extract
 
     if cls.layout_id and ing.is_digital_text:

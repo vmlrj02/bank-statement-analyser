@@ -20,6 +20,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 
 from .categorize import category_detail
+from .integrity import account_integrity
 from .models import JobResult, Txn
 
 
@@ -160,6 +161,16 @@ def write_workbook(result: JobResult, path: str) -> None:
     ws.append(["Validation", result.validation.status,
                f"{result.validation.checked_rows} rows checked",
                f"{len(result.validation.issues)} issues"])
+    # --- Integrity (statement authenticity signals) ---
+    integ = account_integrity([result.meta], result.validation.status)
+    ws.append([])
+    ws.append(["Integrity", integ["assessment"].upper()])
+    ws[ws.max_row][0].font = bold
+    ws.append(["PDF producer", result.meta.producer or "—",
+               "Created", result.meta.pdf_created or "—",
+               "Modified", result.meta.pdf_modified or "—"])
+    for flag in integ["flags"]:
+        ws.append(["", flag])
     ws.append([])
     hdr_row = ws.max_row + 1
     ws.append(["Category", "Count", "Net Amount"])

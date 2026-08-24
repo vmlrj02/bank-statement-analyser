@@ -435,6 +435,12 @@ function validationChip(v){
   if(v==='failed') return '<span class="chip fail">Balance FAILED</span>';
   return '<span class="chip warn">Balance warnings</span>';
 }
+function integrityChip(intg){
+  if(!intg) return '';
+  return intg.assessment==='verified'
+    ? '<span class="chip done">Integrity verified</span>'
+    : '<span class="chip warn">Integrity: review</span>';
+}
 
 /* Navigation is upload-first: the sidebar lists uploads, and selecting one
    shows every account inside it. Flattening all accounts from all uploads into
@@ -453,7 +459,7 @@ function accountCard(j, a){
     ? `<div class="meta">Period: <b>${esc(fmtPeriods(a.periods))}</b></div>` : '';
   return `<div class="job">
     <div class="top"><span class="nm">${esc(a.title || (a.bank+' - '+a.account_no))}</span>
-      ${validationChip(a.validation)}</div>
+      ${validationChip(a.validation)}${integrityChip(a.integrity)}</div>
     ${period}
     <div class="stats">
       <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
@@ -468,6 +474,9 @@ function accountCard(j, a){
     ${a.validation==='failed' && (a.issue_sample||[]).length
       ? `<div class="err"><b>Where the balance chain breaks:</b>
         ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
+    ${a.integrity && a.integrity.assessment!=='verified' && (a.integrity.flags||[]).length
+      ? `<div class="err"><b>Integrity — for review:</b><ul style="margin:6px 0 0;padding-left:18px">`
+        + a.integrity.flags.map(f=>`<li>${esc(f)}</li>`).join('') + `</ul></div>` : ''}
     ${cats?`<div class="cats">${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'

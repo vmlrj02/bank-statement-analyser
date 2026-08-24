@@ -45,6 +45,14 @@ class IngestResult:
     # Seen for real: a statement PDF assembled by hand, with one month
     # scanned in among digital exports.
     empty_pages: list[int] = None
+    # PDF document metadata, for the integrity check. A genuine bank export is
+    # produced by a server PDF library (iText, OpenPDF); a hand-assembled or
+    # edited statement shows an editing tool (pdf-lib, Photoshop, Quartz) and
+    # often a ModDate after its CreationDate.
+    producer: str = ""
+    creator: str = ""
+    created: str = ""
+    modified: str = ""
 
 
 def ingest(path: str, password: str | None = None) -> IngestResult:
@@ -54,10 +62,12 @@ def ingest(path: str, password: str | None = None) -> IngestResult:
         raise IngestError("empty file")
 
     work_path = path
+    docinfo: dict = {}
     # Decrypt if needed
     if HAVE_PIKEPDF:
         try:
             pdf = pikepdf.open(path)                      # unencrypted
+            docinfo = _read_docinfo(pdf)
             pdf.close()
         except pikepdf.PasswordError:
             if not password:
@@ -66,6 +76,7 @@ def ingest(path: str, password: str | None = None) -> IngestResult:
                 pdf = pikepdf.open(path, password=password)
             except pikepdf.PasswordError:
                 raise PasswordRequired("wrong password")
+            docinfo = _read_docinfo(pdf)
             tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
             pdf.save(tmp.name)
             pdf.close()
@@ -86,7 +97,22 @@ def ingest(path: str, password: str | None = None) -> IngestResult:
         is_digital_text=density > 200,   # scanned pages yield ~0
         text_density=density,
         empty_pages=unreadable_pages(work_path),
+        producer=docinfo.get("producer", ""),
+        creator=docinfo.get("creator", ""),
+        created=docinfo.get("created", ""),
+        modified=docinfo.get("modified", ""),
     )
+
+
+def _read_docinfo(pdf) -> dict:
+    """PDF /Info metadata as plain strings — diagnostic only, never fatal."""
+    try:
+        di = pdf.docinfo
+        g = lambda k: str(di.get(k, "")) if di.get(k) is not None else ""
+        return {"producer": g("/Producer"), "creator": g("/Creator"),
+                "created": g("/CreationDate"), "modified": g("/ModDate")}
+    except Exception:                                       # noqa: BLE001
+        return {}
 
 
 def unreadable_pages(path: str) -> list[int]:
