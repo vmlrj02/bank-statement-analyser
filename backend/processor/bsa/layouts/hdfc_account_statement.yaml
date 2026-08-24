@@ -19,6 +19,9 @@ fingerprints:
 header:
   account_line: 'AccountNo\s*:\s*(?P<account_no>\d+)[\s\S]*?From\s*:\s*(?P<period_from>[\d/]+)\s*To\s*:\s*(?P<period_to>[\d/]+)'
   period_date_format: "%d/%m/%Y"
+  # The footer prints "OpeningBalance DrCount CrCount …" then a value row;
+  # the two counts prove the whole statement was extracted (completeness.py).
+  summary_totals: 'DrCount CrCount[\s\S]*?[\d,]+\.\d{2}\s+(?P<n_debits>\d+)\s+(?P<n_credits>\d+)\s'
   account_name: '\n((?:MR|MRS|MS|M/S)\.?\s*[A-Z][A-Z0-9 ./&-]+)'
 parse:
   table_header_words: ["Narration", "WithdrawalAmt.", "DepositAmt.", "ClosingBalance"]

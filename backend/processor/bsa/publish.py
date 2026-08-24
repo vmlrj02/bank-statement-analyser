@@ -163,6 +163,16 @@ def write_workbook(result: JobResult, path: str) -> None:
                result.meta.account_no or ""])
     ws.append(["Balance reconciliation", result.validation.status,
                "Integrity", integ["assessment"]])
+    from .completeness import check_completeness
+    nd = sum(1 for t in txns if t.amount < 0)
+    nc = sum(1 for t in txns if t.amount > 0)
+    comp = check_completeness(len(txns), nd, nc,
+                              getattr(result.meta, "declared_totals", None) or {})
+    if comp.get("checked"):
+        ws.append(["Completeness",
+                   "complete" if comp["complete"] else "INCOMPLETE",
+                   "; ".join(comp.get("notes", [])) or
+                   f"{len(txns)} of {comp['declared']} declared"])
     ws.append([])
     ws.append(["Metric", "Value"])
     for c in ws[ws.max_row]:

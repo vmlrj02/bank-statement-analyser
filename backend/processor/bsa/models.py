@@ -48,6 +48,9 @@ class StatementMeta:
     creator: str = ""
     pdf_created: str = ""
     pdf_modified: str = ""
+    # The statement's own declared transaction counts, when it prints them
+    # (e.g. HDFC's Dr/Cr count). Used to prove no rows were silently dropped.
+    declared_totals: dict = None
 
 
 @dataclass

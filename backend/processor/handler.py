@@ -29,6 +29,7 @@ from types import SimpleNamespace
 import boto3
 
 from bsa.categorize import categorize, category_detail
+from bsa.completeness import check_completeness
 from bsa.credit_summary import credit_summary
 from bsa.ingest import PasswordRequired
 from bsa.integrity import account_integrity
@@ -462,6 +463,19 @@ def lambda_handler(event, _ctx):
                 for t in txns:
                     cats[t.category] = cats.get(t.category, 0) + 1
                 integ = account_integrity(metas, acct_status)
+                # Completeness: the statement's own declared Dr/Cr counts vs what
+                # we extracted — proof no rows were silently dropped.
+                decl: dict = {}
+                for m in metas:
+                    for k, v in (getattr(m, "declared_totals", None) or {}).items():
+                        decl[k] = decl.get(k, 0) + v
+                nd = sum(1 for t in txns if t.amount < 0)
+                nc = sum(1 for t in txns if t.amount > 0)
+                completeness = check_completeness(len(txns), nd, nc, decl)
+                cs = credit_summary(txns, integ, acct_status)
+                if completeness.get("checked") and not completeness.get("complete"):
+                    cs["reads"].insert(0, "Extraction incomplete: " +
+                                       "; ".join(completeness["notes"]))
                 accounts_out.append({
                     "slug": slug,
                     "bank": meta0.bank,
@@ -497,7 +511,8 @@ def lambda_handler(event, _ctx):
                     "integrity": integ,
                     # The lender-facing conclusion: turnover, balance, cash
                     # intensity, bounces, EMI headroom, concentration + reads.
-                    "credit_summary": credit_summary(txns, integ, acct_status),
+                    "credit_summary": cs,
+                    "completeness": completeness,
                 })
 
             # AI accounting stays per uploaded file across the whole job, and

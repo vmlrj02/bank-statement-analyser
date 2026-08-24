@@ -31,6 +31,13 @@ def extract_one(path: str, password: str | None = None,
         extract.meta.creator = ing.creator
         extract.meta.pdf_created = ing.created
         extract.meta.pdf_modified = ing.modified
+        # The statement's own declared Dr/Cr counts, if the layout knows where
+        # they print — for the completeness check (no silent row drops).
+        if cls.layout_id and ing.is_digital_text:
+            from .completeness import declared_from_pdf
+            pat = (get_layout(cls.layout_id).get("header") or {}).get("summary_totals")
+            if pat:
+                extract.meta.declared_totals = declared_from_pdf(ing.path, pat) or None
         return extract
 
     if cls.layout_id and ing.is_digital_text:

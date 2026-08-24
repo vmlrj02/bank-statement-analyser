@@ -19,6 +19,8 @@ fingerprints:
 header:
   account_line: 'Account Number\s*:\s*(?P<account_no>\d+)'
   account_name_line: 2
+  # "Statement Summary : …" then "<opening>CR <nDr> <nCr> <debits> <credits> …"
+  summary_totals: 'Statement Summary[\s\S]*?[\d,]+\.\d{2}\s*C?R?\s+(?P<n_debits>\d+)\s+(?P<n_credits>\d+)\s+[\d,]+\.\d{2}'
 parse:
   table_header_words: ["Description", "Debit", "Credit", "Balance"]
   header_offset: 14
