@@ -58,9 +58,17 @@ CASES = [
     ("/Paymen/AXIS BANK Dr Card Charges GST ANNUAL", -2000.0, "Regular debit", None),
     ("Dr Card Charges GST ISSUE", -14999.0, "Regular debit", None),
 
-    # --- Cash deposit variants (ID8: CASHDEP glued) ---
+    # --- Cash deposit variants (ID8/ID9: CASHDEP glued; ATM-CASH credit) ---
     ("CAM/77571SRY/CASHDEP-Other/11-02-26/9931", 48500.0, "cash deposit", None),
     ("BY CASH -NEW DELHI - FATEHPURI", 350000.0, "cash deposit", None),
+    ("B/Payment/ ATM-CASH-", 18000.0, "cash deposit", None),
+    ("OF I/Payment/ ATM-CASH", 25000.0, "cash deposit", None),
+    # ...but an ATM-CASH DEBIT is still a withdrawal, not a deposit.
+    ("ATM-CASH- AXIS/DPRH515001/5685/250526/BANGALORE", -10000.0, "cash withdrawal", None),
+
+    # --- Party names the reviewer corrected (ID9) ---
+    ("Ban/Payment/ UPI/P2M/580669431573/M/S.VINAY", 40000.0, "Regular credit", "VINAY"),
+    ("TRF/GEETA/TRANSFER IMPS/MRT/526827147422/9186901641146/91869", 60000.0, "Regular credit", "GEETA"),
 
     # --- Recharge is not penal (ID4) ---
     ("BAN/528212361969/ICI8e968/ UPI/Google Ind/gpayrecharge@i/UPI/ICICI", -100.0, "Regular debit", None),

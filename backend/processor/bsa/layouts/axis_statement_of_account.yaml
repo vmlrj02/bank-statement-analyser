@@ -39,3 +39,10 @@ parse:
     tail_x_min: 536            # Init.Br branch code column
   footer_markers:
     - "End of Statement"
+    # The closing legal legend / DICGC block prints below the last transaction
+    # with no date, so continuation appended it to the final row (a 1,370-char
+    # narration). Break at its first line instead.
+    - "notifies the bank"
+    - "Deposit Insurance and Credit"
+    - "system generated output"
+    - "Legends :"

@@ -92,3 +92,9 @@ cash_deposit_keywords:
   - CDM
   - BY CASH
   - CASH DEPOSIT
+  # A CREDIT with "ATM-CASH" is cash deposited at a machine (ID9). A DEBIT with
+  # the same text is an ATM withdrawal — handled first, by mode, so this only
+  # catches the credit direction.
+  - ATM-CASH
+  - ATM CASH
+  - ATMCASH

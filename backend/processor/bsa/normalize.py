@@ -106,6 +106,14 @@ def _clean_segment(seg: str) -> str:
 def extract_counterparty(desc: str, mode: str) -> str:
     """Best-effort counterparty display name from Indian payment descriptors."""
     d = re.sub(r"\s+", " ", desc)
+    # "M/S." (Messrs) is a company prefix, not a name segment — without this the
+    # slash splits "M/S.VINAY" into "M" and the wrong half wins (ID9).
+    d = re.sub(r"\bM/S[./ ]*", "", d, flags=re.I)
+    # "TRF/<NAME>/…" names the party in the prefix even when a later "IMPS/"
+    # token makes the mode look like imps (ID9: TRF/GEETA/… → GEETA).
+    m = re.match(r"TRF/([^/]+)", d)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
     if mode == "upi":
         # UPI/<NAME>/… on some banks; Axis prints UPI/P2A/<ref>/<NAME>/<bank>/…
         # so the first PLAUSIBLE segment is the party, never blindly the first.
