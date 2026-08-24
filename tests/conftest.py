@@ -25,6 +25,23 @@ sys.path.insert(0, str(ROOT / "backend" / "processor"))
 
 # ---------------------------------------------------------------- fake AWS --
 
+def _reject_floats(obj, path="item"):
+    """Real DynamoDB's resource interface refuses Python floats ("Float types
+    are not supported. Use Decimal types instead."). The fake used to accept
+    them, so a float written into the job summary passed every test and failed
+    only in production. Model the rejection here so that gap can't reopen."""
+    if isinstance(obj, bool):
+        return
+    if isinstance(obj, float):
+        raise TypeError(f"Float types are not supported at {path}; use Decimal")
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _reject_floats(v, f"{path}.{k}")
+    elif isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            _reject_floats(v, f"{path}[{i}]")
+
+
 class FakeTable:
     """Enough DynamoDB to exercise our own logic.
 
@@ -40,6 +57,7 @@ class FakeTable:
 
     # -- api surface --
     def put_item(self, Item):
+        _reject_floats(Item)
         self.items[Item[self.key]] = dict(Item)
         self.writes.append(("put", Item[self.key]))
 
@@ -81,6 +99,7 @@ class FakeTable:
                     ReturnValues=None):
         names = ExpressionAttributeNames or {}
         values = ExpressionAttributeValues or {}
+        _reject_floats(values, "update-values")
         item = self.items.setdefault(Key[self.key], dict(Key))
         if ConditionExpression is not None and not _cond_ok(
                 ConditionExpression, item, names, values):

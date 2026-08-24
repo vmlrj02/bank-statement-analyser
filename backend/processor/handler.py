@@ -45,6 +45,27 @@ TABLE = ddb.Table(os.environ["JOBS_TABLE"])
 BUCKET = os.environ["DATA_BUCKET"]
 
 
+def _ddb_safe(v):
+    """DynamoDB's resource interface rejects Python floats — every number must
+    be a Decimal. Convert recursively on the way in (the API converts back to
+    plain numbers on the way out). NaN/Inf can't be a Decimal, so they become
+    None. Note: the in-memory test fake accepts floats, so this gap only shows
+    in production — hence converting at the single write path, not per caller."""
+    import math
+    from decimal import Decimal
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return Decimal(str(round(v, 4)))
+    if isinstance(v, dict):
+        return {k: _ddb_safe(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_ddb_safe(x) for x in v]
+    return v
+
+
 def _update(job_id, **attrs):
     """Write job attributes, always stamping updated_at.
 
@@ -53,7 +74,7 @@ def _update(job_id, **attrs):
     runs for a long time after it was created. Stamping here — the one place
     every status change goes through — means no writer can forget to.
     """
-    attrs = dict(attrs, updated_at=int(time.time()))
+    attrs = _ddb_safe(dict(attrs, updated_at=int(time.time())))
     expr = ", ".join(f"#k{i} = :v{i}" for i in range(len(attrs)))
     TABLE.update_item(
         Key={"job_id": job_id},
