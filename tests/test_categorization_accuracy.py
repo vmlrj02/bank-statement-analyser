@@ -152,3 +152,13 @@ def test_categorization_accuracy(capsys):
     # labelled case must pass, so a regression fails the build.
     assert correct == total and party_hits == party_checked, \
         f"{total-correct} category + {party_checked-party_hits} party misses (see scoreboard above)"
+
+
+# ID7 (SBI v2): merchant after a 4-letter bank code, else the account number.
+ID7_PARTY = [
+    ("TRANSFER- TRANSFER 4897696162090 L/UTIB/swiggyinst/UPI-", -696.0, "Regular debit", "swiggyinst"),
+    ("TRANSFER- TRANSFER 4897696162090 /HDFC/grofersind/Payvi-", -433.0, "Regular debit", "grofersind"),
+    ("TRANSFER 4897691162095 I/RATN/amazon@rap/You a-", -222.0, "Regular debit", "amazon"),
+    ("TRANSFER- TRANSFER 4897695162091", -712.0, "Regular debit", "4897695162091"),
+]
+CASES += ID7_PARTY

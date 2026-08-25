@@ -208,6 +208,18 @@ def extract_counterparty(desc: str, mode: str) -> str:
             name = _clean_segment(name)
             if name and not _REFNUM.match(name):
                 return name
+        # SBI's "TRANSFER- TRANSFER <acct> [<x>/<BANK>/<merchant>/UPI-]" form
+        # (ID7). Prefer the merchant/VPA that sits after a 4-letter bank code
+        # (L/UTIB/swiggyinst/UPI-, /HDFC/grofersind/, I/RATN/amazon@rap/ →
+        # swiggyinst / grofersind / amazon); otherwise fall back to the
+        # counterparty ACCOUNT NUMBER, which consolidates the name-less ones.
+        if re.search(r"\bTRANSFER\b", d, re.I):
+            mm = re.search(r"/[A-Z]{4}/([^/@\s]+)", d)
+            if mm and not _REFNUM.match(mm.group(1)):
+                return _clean_segment(mm.group(1))
+            mn = re.search(r"\bTRANSFER[- ]+(?:TRANSFER\s+)?(?:N\s+|FROM\s+|TO\s+)?(\d{6,})", d, re.I)
+            if mn:
+                return mn.group(1)
     if mode == "standing-instruction":
         m = re.search(r"SMP/\w+_(.+)$", d)               # SMP/<ref>_<NAME>
         if m:
