@@ -194,3 +194,14 @@ AUDIT_PARTY_2 = [
     ("NEFT DR-ESFBN52026031602720350-SHRI LAKSHMI STEEL S-UTIB0000129-HEADOF", -50000.0, "Regular debit", "SHRI LAKSHMI STEEL S"),
 ]
 CASES += AUDIT_PARTY_2
+
+
+# Order-independent entity recognition: ICICI INF/NEFT prints the REMARK before
+# the recipient ("…/Steel 1573/SRIVENKATESHWAR"), so a "take the first segment"
+# rule wrongly picked the remark. Casing/anchor scoring picks the name whatever
+# the order — the crux Gopi raised (remark-first vs recipient-first varies).
+ENTITY_PARTY = [
+    ("INF/NEFT/IN42608259516600/SIBL0000591/Steel 1573/SRIVENKATESHWAR", -1050000.0, "Regular debit", "SRIVENKATESHWAR"),
+    ("INF/NEFT/IN42608752699922/CNRB0004171/Vendor pay/NAMOUPVC", -200000.0, "Regular debit", "NAMOUPVC"),
+]
+CASES += ENTITY_PARTY

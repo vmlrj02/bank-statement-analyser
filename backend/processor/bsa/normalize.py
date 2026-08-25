@@ -78,6 +78,44 @@ def _name_segments(raw: str) -> list[str]:
     return out
 
 
+# Words that mark a segment as a REMARK / purpose the sender typed, not the
+# recipient — used to tell the two apart when their order is not fixed.
+_REMARK_WORDS = {"PAY", "PAYME", "PAYMENT", "PAYMENTS", "TRANSFER", "TRF", "FUND",
+                 "FUNDS", "TXN", "BILL", "PYMT", "TRF.", "SALARY", "RENT", "GST"}
+
+
+def _name_score(s: str) -> float:
+    """How much a narration segment looks like a counterparty NAME rather than a
+    typed remark. The recipient is bank-populated and usually UPPERCASE and
+    digit-free ("SRIVENKATESHWAR", "QUEST RE"); the remark is sender-typed, mixed
+    case and often carries digits or a purpose word ("Steel 1573", "Pay",
+    "amzn-dja7p"). This is order-independent, which is the whole point: banks put
+    the remark before the name in one export and after it in another."""
+    su = s.upper()
+    words = su.split()
+    score = 0.0
+    if re.search(r"\d", s):                         # digits read as a ref/remark
+        score -= 3
+    if _BANKISH.search(s):                          # the counterparty's own bank
+        score -= 4
+    if any(w in _REMARK_WORDS for w in words):      # a purpose word
+        score -= 3
+    letters = s.replace(" ", "")
+    if letters.isalpha() and s.isupper():           # bank-populated recipient
+        score += 2
+    score += min(len(letters), 24) * 0.05           # mild bias to a fuller name
+    return score
+
+
+def _best_name(segs: list[str]) -> str:
+    """Pick the segment most like a counterparty name, order-independent. Ties
+    keep the earliest, preserving prior behaviour where all segments look equal."""
+    if not segs:
+        return ""
+    best = max(range(len(segs)), key=lambda i: (_name_score(segs[i]), -i))
+    return segs[best]
+
+
 def _first_name(segs: list[str]) -> str:
     """First segment that is a plausible party. A counterparty's BANK also
     rides in these descriptors ("…/RHEA HEALTHCARE PVT LTD/HDFC BANK/…"), so a
@@ -155,7 +193,7 @@ def extract_counterparty(desc: str, mode: str) -> str:
         # NEFT/<ref>/<NAME>/<bank>/… (Axis slash form)
         m = re.search(r"NEFT[/:](.+)$", d)
         if m:
-            return _first_name(_name_segments(m.group(1)))
+            return _best_name(_name_segments(m.group(1)))
     if mode == "rtgs":
         m = re.search(r"RTGS-[A-Z0-9]+-([^-]+)", d)      # RTGS-<ref>-<NAME>-…
         if m and not _REFNUM.match(m.group(1).strip()):
@@ -166,7 +204,7 @@ def extract_counterparty(desc: str, mode: str) -> str:
         # the last one reported "HDFC BANK" as a customer's counterparty.
         m = re.search(r"RTGS[/:][A-Z0-9]+[/:](.+)$", d)
         if m:
-            return _first_name(_name_segments(re.sub(r":", "/", m.group(1))))
+            return _best_name(_name_segments(re.sub(r":", "/", m.group(1))))
     if mode == "nach":
         m = re.search(r"ACH/([^/]+)/", d)
         if m and not _REFNUM.match(m.group(1).split("-")[0]):
