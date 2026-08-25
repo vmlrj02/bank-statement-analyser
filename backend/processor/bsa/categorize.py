@@ -50,8 +50,11 @@ def _load_rules() -> dict:
 
 
 _RULES = _load_rules()
-# Normalised (upper, no-space) lender fragments for substring matching.
-_LENDER_KEYS = [re.sub(r"\s+", "", x).upper() for x in _RULES["lenders"]]
+# Normalised lender fragments for substring matching. Strip ALL non-alphanumeric
+# (not just spaces) so the key matches the description, which is normalised the
+# same way in _matched_lender — otherwise a lender with punctuation ("L&T
+# Finance") could never match its glued narration form ("L&TFINANCELIMITED").
+_LENDER_KEYS = [re.sub(r"[^A-Za-z0-9]", "", x).upper() for x in _RULES["lenders"]]
 LENDERS = _RULES["lenders"]                       # kept for callers/tests
 
 

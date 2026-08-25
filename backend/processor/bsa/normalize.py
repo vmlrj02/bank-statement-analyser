@@ -31,7 +31,9 @@ MODE_RULES = [
     (r"\bNEFT[-/:]", "neft"),
     (r"\bRTGS[-/:]", "rtgs"),
     (r"\bECSRTN|\bRTN CHG|\bRET CHG", "ecs-return"),
-    (r"\bACH/|\bNACH\b|\bECS(?!RTN)", "nach"),
+    # ACH mandates print as "ACH/…", "ACH-DR-…" and glued "ACHD-…" / "ACHC-…";
+    # all are NACH so a lender debit reads as an EMI, not a generic payment.
+    (r"\bACH[DC]?[-/]|\bNACH\b|\bECS(?!RTN)", "nach"),
     (r"\bBIL/|Bil Payment", "billpay"),
     # Axis prints "ATM-CASH/+<branch>" and "ATM-CASH- AXIS/…" — the hyphen
     # form was falling through to Regular debit.

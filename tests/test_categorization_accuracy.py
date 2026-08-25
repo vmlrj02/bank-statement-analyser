@@ -189,7 +189,7 @@ CASES += AUDIT_PARTY
 # NACH-mandate / TPT / ref-first NEFT party formats (second audit round).
 AUDIT_PARTY_2 = [
     ("ACHD-L&TFINANCELIMITED-BL2501258261493", -12000.0, "EMI transaction", "L&TFINANCELIMITED"),
-    ("ACH-DR-Indian Overseas Bank- 20250414000000000380-", -5000.0, "Regular debit", "Indian Overseas Bank"),
+    ("ACH-DR-Indian Overseas Bank- 20250414000000000380-", -5000.0, "ECS transaction", "Indian Overseas Bank"),
     ("59209813398001-TPT-MATERIALPAYMENT-SKY DREAMINFRA", -50000.0, "Regular debit", "SKY DREAMINFRA"),
     ("NEFT DR-ESFBN52026031602720350-SHRI LAKSHMI STEEL S-UTIB0000129-HEADOF", -50000.0, "Regular debit", "SHRI LAKSHMI STEEL S"),
 ]
