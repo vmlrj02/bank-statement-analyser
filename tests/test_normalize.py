@@ -165,3 +165,17 @@ def test_identical_same_day_rows_are_not_a_duplicate_within_one_statement():
         raw("01-01-2026", 100.0, None, 900.0, "SAME"),
         raw("01-01-2026", None, 100.0, 1000.0, "SAME")])
     assert len({t.uid for t in normalize(ex)}) == 2
+
+
+def test_parse_amount_handles_the_sbi_cr_dr_balance_suffix():
+    """Some SBI exports glue a CR/DR flag onto the balance ("2,47,946.81CR").
+    The amount reader must strip it (negating a DR balance) and NUM_RE must still
+    match it — otherwise the row's balance reads as None and the row is dropped."""
+    from bsa.extract.generic_layout import NUM_RE, _parse_amount
+    assert NUM_RE.match("2,47,946.81CR") and NUM_RE.match("500.00DR")
+    assert _parse_amount("2,47,946.81CR") == 247946.81
+    assert _parse_amount("500.00DR") == -500.00
+    assert _parse_amount("1,820.00") == 1820.00          # plain amount unchanged
+    assert _parse_amount("157.7") == 157.7               # one-decimal (PNB)
+    # a bare integer or ref must NOT look like an amount
+    assert not NUM_RE.match("990640") and not NUM_RE.match("SBIN0001626")

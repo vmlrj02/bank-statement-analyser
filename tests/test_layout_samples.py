@@ -64,4 +64,31 @@ def test_sample_statement_reconciles(pdf):
     assert report.status == "passed", (
         f"{pdf.name} [{cls.layout_id}] {report.status} over {len(txns)} rows; "
         f"first issue: {report.issues[0].detail if report.issues else 'n/a'}")
-    print(f"{pdf.name}: {cls.layout_id} — {len(txns)} rows, passed")
+
+    # A statement can reconcile yet still be mis-extracted: the SBI "Nithya"
+    # description bug mangled every narration to "TRANSFER- - / -" while the
+    # balance chain still passed, so party detection collapsed to ~2%. Guard the
+    # quality too — on statements with enough name-bearing transfer rows, party
+    # fill must not fall through the floor. It is a catastrophe detector (catches
+    # a 2% collapse), not an accuracy bar, so the threshold is deliberately low
+    # and only applies when there are enough candidates to be meaningful.
+    import re as _re
+    from bsa.categorize import categorize
+    categorize(txns)
+    unnameable = _re.compile(r"UPISETTLEMENT|\bPOS\b|ATW-|CHRGS|/GST/|CASH", _re.I)
+    transferish = _re.compile(r"UPI|NEFT|RTGS|IMPS|MMT|ACH|TRANSFER|TRF|INF[/-]", _re.I)
+    nameable = [t for t in txns
+                if transferish.search(t.description) and not unnameable.search(t.description)]
+    filled = sum(1 for t in nameable
+                 if t.counterparty and t.counterparty != "unknown party")
+    pct = round(100 * filled / len(nameable)) if nameable else None
+    # Co-operative banks transfer internally by a member/loan serial number, not
+    # a name, so a low fill there is real, not a regression — exempt them.
+    bank = (extract.meta.bank or "").lower()
+    is_coop = "co-op" in bank or "cooperative" in bank or "co operative" in bank
+    if len(nameable) >= 25 and not is_coop:
+        assert filled / len(nameable) >= 0.10, (
+            f"{pdf.name} [{cls.layout_id}]: party fill collapsed to {pct}% "
+            f"({filled}/{len(nameable)} name-bearing rows) — a description or "
+            f"party-rule regression, even though the balance still reconciles")
+    print(f"{pdf.name}: {cls.layout_id} — {len(txns)} rows, passed, party {pct}%")
