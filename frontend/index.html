@@ -443,20 +443,24 @@ function renderTray(){
     ${staged.map(s=>`<div class="f">
       <div class="doc">${s.locked?'LOCK':'PDF'}</div>
       <div class="info"><div class="nm">${esc(s.name)}</div>
-        <div class="sz">${kb(s.size)}${s.locked?' · password protected':''}</div>
-        ${s.locked&&!s.pw?'<div class="lockmsg">Password required</div>':''}</div>
-      ${s.locked?`<input type="password" placeholder="Password" value="${esc(s.pw)}"
-         oninput="setPw(${s.id},this.value)" class="${s.pw?'':'miss'}">`:''}
+        <div class="sz">${kb(s.size)}${s.locked?' · may be protected':''}</div>
+        ${s.locked&&!s.pw?'<div class="lockmsg">Add a password only if it is protected</div>':''}</div>
+      ${s.locked?`<input type="password" placeholder="Password (if protected)" value="${esc(s.pw)}"
+         oninput="setPw(${s.id},this.value)">`:''}
       <button class="x" title="Remove" onclick="removeFile(${s.id})">&times;</button>
     </div>`).join('')}</div>`;
   updateGo();
 }
 function updateGo(){
-  const missing = staged.filter(s=>s.locked && !s.pw).length;
-  $('go').disabled = !staged.length || missing>0;
+  // A file that merely CONTAINS an /Encrypt dictionary is often encrypted with
+  // an EMPTY password and opens without one, so a password is never required to
+  // continue: the processor tries the empty password first and only fails a file
+  // that genuinely needs one — gracefully, with a plain reason, leaving the rest.
+  $('go').disabled = !staged.length;
   $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
-  $('hint').textContent = missing
-    ? `${missing} file${missing>1?'s need':' needs'} a password before you can continue.`
+  const maybe = staged.filter(s=>s.locked && !s.pw).length;
+  $('hint').textContent = maybe
+    ? `If a file is password-protected, add its password — otherwise just continue.`
     : (staged.length>1 ? 'Grouped by account — one report per account.' : '');
 }
 $('go').onclick = async () => {
