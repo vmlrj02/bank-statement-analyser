@@ -247,9 +247,18 @@ class _Body:
 class FakeLambda:
     def __init__(self):
         self.invocations = []
+        # What a RequestResponse invoke reads back from Payload. The categoriser
+        # playground invokes the processor synchronously and parses this; tests
+        # can override it to model a specific classification or a bad reply.
+        self.response = {"description": "x", "amount": 0.0, "mode": "other",
+                         "party": "unknown party", "category": "Regular debit",
+                         "detail": "regular debit"}
 
     def invoke(self, FunctionName, InvocationType, Payload):
         self.invocations.append((FunctionName, Payload))
+        if InvocationType == "RequestResponse":
+            import json as _json
+            return {"StatusCode": 200, "Payload": _Body(_json.dumps(self.response))}
         return {"StatusCode": 202}
 
 
@@ -334,10 +343,13 @@ def s3():
 def api(jobs_table, auth_table, s3):
     """The API Lambda, wired to fakes."""
     stub = FakeBoto3({"jobs": jobs_table, "auth": auth_table}, s3=s3)
-    return load_module("backend/api/handler.py", "api_handler_undertest", stub, {
+    mod = load_module("backend/api/handler.py", "api_handler_undertest", stub, {
         "JOBS_TABLE": "jobs", "AUTH_TABLE": "auth", "DATA_BUCKET": "bucket",
         "AWS_REGION": "ap-south-1", "OWNER_INDEX": "owner-created_at-index",
+        "PROCESSOR_FUNCTION": "proc-fn",
     })
+    mod._fake_lambda = stub.lam
+    return mod
 
 
 @pytest.fixture

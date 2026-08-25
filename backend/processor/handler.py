@@ -319,6 +319,26 @@ def _claim_merge(job_id: str) -> bool:
 
 
 def lambda_handler(event, _ctx):
+    # Admin "categorisation playground" — a synchronous invoke from the API to
+    # show how a single narration is read, without going near a real job. Reuses
+    # the exact pipeline functions so the UI can never drift from production.
+    if "try_categorize" in event:
+        req = event["try_categorize"]
+        from bsa.normalize import detect_mode, extract_counterparty
+        desc = re.sub(r"\s+", " ", str(req.get("description", ""))).strip()
+        try:
+            amount = float(req.get("amount", 0) or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        mode = detect_mode(desc)
+        t = Txn(date="2025-01-01", cheque_no="", description=desc, amount=amount,
+                balance=0.0, mode=mode, counterparty=extract_counterparty(desc, mode))
+        t.compute_uid("playground", 0)
+        categorize([t])
+        return {"description": desc, "amount": amount, "mode": t.mode,
+                "party": t.counterparty or "unknown party",
+                "category": t.category, "detail": category_detail(t)}
+
     for rec in event.get("Records", []):
         key = rec["s3"]["object"]["key"]
         job_id = _job_id_from_key(key)

@@ -35,9 +35,11 @@ s3 = boto3.client(
 )
 
 ddb = boto3.resource("dynamodb")
+lam = boto3.client("lambda")
 TABLE = ddb.Table(os.environ["JOBS_TABLE"])
 AUTH = ddb.Table(os.environ["AUTH_TABLE"])
 BUCKET = os.environ["DATA_BUCKET"]
+PROCESSOR_FUNCTION = os.environ.get("PROCESSOR_FUNCTION", "")
 OWNER_INDEX = os.environ.get("OWNER_INDEX", "owner-created_at-index")
 
 SESSION_TTL = 12 * 3600
@@ -391,5 +393,38 @@ def lambda_handler(event, _ctx):
                 ":t": int(time.time())},
         )
         return _resp(200, {"ok": True, "status": "reviewed"})
+
+    # Categorisation playground (beta) — admin-only. Lets the domain owner type a
+    # narration and see exactly how the engine reads it (mode, party, category),
+    # so the categorisation logic is inspectable from the UI without a developer.
+    # The actual work runs in the processor, which owns the pipeline code, so the
+    # UI can never diverge from what a real statement gets. No statement data,
+    # no S3, no DynamoDB — just one string in, one classification out.
+    if route == "POST /admin/try-categorize":
+        if not is_admin:
+            return _resp(403, {"error": "admin only"})
+        if not PROCESSOR_FUNCTION:
+            return _resp(503, {"error": "categoriser not configured"})
+        body = json.loads(event.get("body") or "{}")
+        desc = str(body.get("description") or "").strip()
+        if not desc:
+            return _resp(400, {"error": "description required"})
+        try:
+            amount = float(str(body.get("amount") or 0).replace(",", ""))
+        except ValueError:
+            return _resp(400, {"error": "amount must be a number"})
+        try:
+            out = lam.invoke(
+                FunctionName=PROCESSOR_FUNCTION, InvocationType="RequestResponse",
+                Payload=json.dumps({"try_categorize":
+                                    {"description": desc[:500], "amount": amount}}
+                                   ).encode(),
+            )
+            result = json.loads(out["Payload"].read() or "{}")
+        except Exception as e:                                   # noqa: BLE001
+            return _resp(502, {"error": f"categoriser unavailable: {e}"})
+        if not isinstance(result, dict) or "category" not in result:
+            return _resp(502, {"error": "categoriser returned no result"})
+        return _resp(200, result)
 
     return _resp(404, {"error": f"no route {route}"})

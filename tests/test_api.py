@@ -285,3 +285,47 @@ def test_a_job_that_is_not_awaiting_review_cannot_be_reviewed(api, jobs_table,
     r = api.lambda_handler(_ev("POST /jobs/{id}/review", token, path_id="j",
                                body={}), None)
     assert r["statusCode"] == 409
+
+
+# ------------------------------------------------ categoriser playground (beta) --
+
+def test_categoriser_playground_is_admin_only(api, signed_in):
+    """A customer must not reach the categoriser playground — it is an admin
+    diagnostic. The gate is the role on the session, same as the AI block."""
+    token, _ = signed_in(role="customer")
+    r = api.lambda_handler(_ev("POST /admin/try-categorize", token,
+                               body={"description": "x", "amount": -1}), None)
+    assert r["statusCode"] == 403
+
+
+def test_categoriser_playground_needs_authentication(api):
+    r = api.lambda_handler(_ev("POST /admin/try-categorize",
+                               body={"description": "x"}), None)
+    assert r["statusCode"] == 401
+
+
+def test_categoriser_playground_invokes_the_processor_and_returns_it(api, signed_in):
+    """An admin's narration is classified by the processor (the one place the
+    pipeline lives) and the result is passed straight back to the UI."""
+    api._fake_lambda.response = {"category": "EMI transaction",
+                                 "party": "Bajaj Finance Ltd", "mode": "emi",
+                                 "detail": "EMI paid to Bajaj Finance Ltd"}
+    token, _ = signed_in(role="admin")
+    r = api.lambda_handler(_ev("POST /admin/try-categorize", token,
+                               body={"description": "ECS/.../Bajaj Finance Ltd",
+                                     "amount": -128182}), None)
+    assert r["statusCode"] == 200
+    assert _body(r)["category"] == "EMI transaction"
+    assert _body(r)["party"] == "Bajaj Finance Ltd"
+    # It really went to the processor with the narration in the payload.
+    fn, payload = api._fake_lambda.invocations[-1]
+    assert fn == "proc-fn"
+    sent = json.loads(payload)["try_categorize"]
+    assert sent["description"].startswith("ECS/") and sent["amount"] == -128182
+
+
+def test_categoriser_playground_rejects_an_empty_narration(api, signed_in):
+    token, _ = signed_in(role="admin")
+    r = api.lambda_handler(_ev("POST /admin/try-categorize", token,
+                               body={"description": "   ", "amount": 0}), None)
+    assert r["statusCode"] == 400

@@ -209,6 +209,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     </div>
     <div class="who">
       <span id="whoami"></span><span class="chip done" id="role" hidden></span>
+      <button class="ghost" id="cat" hidden>Categoriser · beta</button>
       <button class="ghost" id="chpw">Change password</button>
       <button class="ghost" id="out">Sign out</button>
     </div>
@@ -266,6 +267,24 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <div class="db" id="pvBody"></div>
 </dialog>
 
+<dialog id="cd">
+  <div class="dh"><b>Categoriser <span class="chip" style="margin-left:6px">beta</span></b>
+    <span style="margin-left:auto"><button class="ghost" onclick="cd.close()">Close</button></span></div>
+  <div class="db" style="padding:17px">
+    <p class="sub" style="margin:0 0 14px">
+      Type a transaction narration exactly as it prints on a statement and see
+      how the engine reads it — the same code that runs on a real upload. Nothing
+      here touches customer data or a job. Admin only, experimental.</p>
+    <label for="cdDesc">Narration</label>
+    <input id="cdDesc" type="text" placeholder="e.g. ECS/UTIBDE.../Bajaj Finance Ltd_SMS OT">
+    <label for="cdAmt" style="margin-top:10px">Amount <span class="sub" style="font-weight:400">— negative for a debit, positive for a credit</span></label>
+    <input id="cdAmt" type="text" inputmode="decimal" placeholder="-128182">
+    <div id="cdEx" style="margin:12px 0;display:flex;flex-wrap:wrap;gap:8px"></div>
+    <button class="go" id="cdGo" style="width:100%;margin-top:6px">Categorise</button>
+    <div id="cdOut" style="margin-top:16px" hidden></div>
+  </div>
+</dialog>
+
 <script src="config.js"></script>
 <script>
 const API = window.BSA_API;
@@ -287,6 +306,7 @@ function showApp(){
   $('gate').hidden = true; $('app').hidden = false;
   $('whoami').textContent = WHO;
   $('role').hidden = false; $('role').textContent = IS_ADMIN ? 'admin' : 'customer';
+  $('cat').hidden = !IS_ADMIN;
   refresh();
 }
 $('signin').onclick = async () => {
@@ -327,6 +347,48 @@ $('pwGo').onclick = async () => {
   }catch(e){ $('pwMsg').hidden = false; $('pwMsg').textContent = e.message; }
   finally{ b.disabled = false; }
 };
+
+/* ---------- categoriser playground (admin, beta) ---------- */
+const CD_EXAMPLES = [
+  ['ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT', '-128182'],
+  ['BIL/BPAY/00000018WXN7/BBPS/KinaraCapital/WC', '-71007'],
+  ['CAM/77571SRY/CASHDEP-Other/11-02-26/9931', '48500'],
+  ['AMB Chgs Incl GST 01-06-2025', '-354'],
+  ['NEFT/HDFCH00395013738/RHEA HEALTHCARE PVT LTD/HDFC BANK/0001', '150000'],
+];
+$('cat').onclick = () => {
+  $('cdOut').hidden = true;
+  $('cdEx').innerHTML = CD_EXAMPLES.map((e,i)=>
+    `<button class="ghost" data-ex="${i}" style="font-size:12px">${esc(e[0].slice(0,34))}…</button>`).join('');
+  $('cdEx').querySelectorAll('button').forEach(b => b.onclick = () => {
+    const e = CD_EXAMPLES[+b.dataset.ex]; $('cdDesc').value = e[0]; $('cdAmt').value = e[1];
+  });
+  $('cd').showModal();
+};
+$('cdGo').onclick = async () => {
+  const b = $('cdGo'); const desc = $('cdDesc').value.trim();
+  if(!desc){ $('cdDesc').focus(); return; }
+  b.disabled = true; b.textContent = 'Categorising…';
+  try{
+    const j = await api('/admin/try-categorize', {method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({description:desc, amount:$('cdAmt').value || 0})});
+    const dr = Number(($('cdAmt').value||'0').replace(/,/g,'')) < 0;
+    $('cdOut').hidden = false;
+    $('cdOut').innerHTML =
+      `<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:14px;display:grid;grid-template-columns:auto 1fr;gap:8px 16px">
+        <b>Category</b><span>${esc(j.category||'—')}</span>
+        <b>Party</b><span>${esc(j.party||'—')}</span>
+        <b>Direction</b><span>${dr?'debit':'credit'}</span>
+        <b>Mode</b><span>${esc(j.mode||'—')}</span>
+        <b>Detail</b><span>${esc(j.detail||'—')}</span>
+      </div>`;
+  }catch(e){
+    $('cdOut').hidden = false;
+    $('cdOut').innerHTML = `<div class="msg">${esc(e.message||'failed')}</div>`;
+  }finally{ b.disabled = false; b.textContent = 'Categorise'; }
+};
+$('cdDesc') && $('cdDesc').addEventListener('keydown', e => { if(e.key==='Enter') $('cdGo').click(); });
 
 async function api(path, opts){
   const t = token();

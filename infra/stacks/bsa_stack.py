@@ -267,11 +267,15 @@ class BsaStack(Stack):
                 "JOBS_TABLE": jobs_table.table_name,
                 "AUTH_TABLE": auth_table.table_name,
                 "OWNER_INDEX": OWNER_INDEX,
+                # admin categorisation playground invokes the processor to
+                # classify a single narration through the real pipeline.
+                "PROCESSOR_FUNCTION": processor.function_name,
             },
         )
         data_bucket.grant_read_write(api_fn)
         jobs_table.grant_read_write_data(api_fn)
         auth_table.grant_read_write_data(api_fn)
+        processor.grant_invoke(api_fn)
 
         api = apigw.HttpApi(
             self, "Api",
@@ -291,6 +295,7 @@ class BsaStack(Stack):
             ("/jobs/{id}", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/download", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/review", [apigw.HttpMethod.POST]),
+            ("/admin/try-categorize", [apigw.HttpMethod.POST]),  # admin beta
         ]:
             api.add_routes(path=route, methods=methods, integration=integ)
 
