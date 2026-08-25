@@ -12,10 +12,14 @@ layout_name: Statement of account
 version: 1
 parser: generic
 fingerprints:
+  # HDFC's text layer glues words inconsistently: some exports render the title
+  # as "Statementof account" (a stray space), others as "Statementofaccount".
+  # Match either so both reach this one descriptor.
   all_of:
-    - "Statementof account"
     - "HDFC0"
-  any_of: []
+  any_of:
+    - "Statementof account"
+    - "Statementofaccount"
 header:
   account_line: 'AccountNo\s*:\s*(?P<account_no>\d+)[\s\S]*?From\s*:\s*(?P<period_from>[\d/]+)\s*To\s*:\s*(?P<period_to>[\d/]+)'
   period_date_format: "%d/%m/%Y"
