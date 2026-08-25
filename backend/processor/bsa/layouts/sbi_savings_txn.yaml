@@ -1,0 +1,40 @@
+# Layout descriptor: State Bank of India — savings "Statement of ... between
+# <from> to <to>" export. Columns: Txn Date | Value Date | Description | Debit |
+# Credit | Balance. A standard two-amount-column generic format, distinct from
+# the OD and passbook SBI layouts. Amounts right-align: debit ~397, credit ~475,
+# balance ~533.
+id: sbi_savings_txn
+bank: State Bank of India
+layout_name: Savings statement
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "Txn Date"
+    - "Debit Credit Balance"
+    - "Statement of"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:\s*(?P<account_no>[xX\d]+)[\s\S]*?between\s*(?P<period_from>\d{2}/\d{2}/\d{4})\s*to\s*(?P<period_to>\d{2}/\d{2}/\d{4})'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Statement of\s+(.+?)\s*\(A/c'
+parse:
+  table_header_words: ["Debit", "Credit", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  columns:
+    date_x_max: 95              # Txn Date ends ~84; Value Date starts ~103
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    remarks_x_min: 155          # Description after the Value Date column
+    remarks_x_max: 360          # stops before the Debit column (values from ~365)
+    withdrawal_x1_max: 425      # Debit   — right edge ~397
+    deposit_x1_max: 490         # Credit  — right edge ~475
+    balance_x1_max: 560         # Balance — right edge ~533
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Please do not share"
