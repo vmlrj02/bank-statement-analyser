@@ -167,11 +167,18 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             if pageno == 1:
                 meta = _parse_meta(page.extract_text() or "", source_file, layout)
 
-            header_tops = [w["top"] for w in words
-                           if w["text"] in ("Withdrawal", "Deposit", "Balance")]
-            if not header_tops:
+            # The table header is the line where Withdrawal, Deposit and Balance
+            # co-occur. Keying on the max top of any of those words broke when a
+            # lone "Balance" printed lower on the page (a closing-balance summary
+            # on the 7137 export), which pushed body_top below every row and
+            # dropped the whole statement. Require all three on one line, take
+            # the topmost such line.
+            hdr_tops = [ln["top"] for ln in _lines(words)
+                        if {"Withdrawal", "Deposit", "Balance"}
+                        <= {w["text"] for w in ln["words"]}]
+            if not hdr_tops:
                 continue
-            body_top = max(header_tops) + 14
+            body_top = min(hdr_tops) + 14
 
             page_lines = []
             for ln in _lines([w for w in words if w["top"] > body_top]):

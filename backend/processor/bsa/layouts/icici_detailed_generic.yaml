@@ -1,0 +1,41 @@
+# Layout descriptor: ICICI Bank — "DETAILED STATEMENT" export (the net-banking
+# "Detailed Statement" download, distinct from the columnar Detailed Statement
+# and from OpTransactionHistory). One line per row on a large 1072-pt page.
+# Columns: S No. | Value Date | Transaction Date | Cheque Number | Transaction
+# Remarks | Withdrawal Amount | Deposit Amount | Balance. Amounts right-align:
+# withdrawal ~765, deposit ~852, balance ~939.
+id: icici_detailed_generic
+bank: ICICI Bank
+layout_name: Detailed Statement (net-banking)
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "DETAILED STATEMENT"
+    - "Transaction Date from"
+  any_of: []
+header:
+  account_line: 'Account Number (?P<account_no>\d+)[\s\S]*?Transaction Date from (?P<period_from>\d{2}/\d{2}/\d{4}) to (?P<period_to>\d{2}/\d{2}/\d{4})'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Account Number \d+\(INR\)\s*-\s*(.+)'
+parse:
+  table_header_words: ["Withdrawal", "Deposit", "Balance"]
+  header_offset: 15
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  columns:
+    date_x_max: 290             # Value Date ends ~285 (the row anchor)
+    cheque_x_min: 410           # Cheque Number column (keeps "414" out of amounts)
+    cheque_x_max: 496
+    remarks_x_min: 496          # Transaction Remarks start ~501
+    remarks_x_max: 670          # stops before the Withdrawal column
+    withdrawal_x1_max: 800      # Withdrawal — right edge ~765
+    deposit_x1_max: 895         # Deposit    — right edge ~852
+    balance_x1_max: 975         # Balance    — right edge ~939
+    tail_x_min: 99999
+  footer_markers:
+    - "Legends"
+    - "This is a system generated"
+    - "Total No. of Transactions"
