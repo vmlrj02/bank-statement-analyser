@@ -32,12 +32,17 @@ from ..models import RawRow, StatementMeta, StatementExtract
 
 # Amounts carry a decimal part: two places on almost every bank, but PNB prints
 # one ("157.7"), so accept one or two. Requiring a decimal point still keeps
-# bare integers (serial numbers, ref codes) out of the amount columns.
-NUM_RE = re.compile(r"^-?\d{1,3}(,\d{2,3})*\.\d{1,2}$|^-?\d+\.\d{1,2}$")
+# bare integers (serial numbers, ref codes) out of the amount columns. Some SBI
+# exports glue a CR/DR flag onto the BALANCE ("2,47,946.81CR"), so allow an
+# optional trailing CR/DR — _parse_amount strips it and negates a DR balance.
+NUM_RE = re.compile(r"^-?\d{1,3}(,\d{2,3})*\.\d{1,2}(CR|DR)?$|^-?\d+\.\d{1,2}(CR|DR)?$",
+                    re.I)
 
 
 def _parse_amount(tok: str) -> float:
-    return float(tok.replace(",", ""))
+    neg = bool(re.search(r"DR$", tok, re.I))
+    v = float(re.sub(r"(?i)(CR|DR)$", "", tok).replace(",", ""))
+    return -v if neg else v
 
 
 def _lines(words: list[dict], tol: float = 3.0) -> list[dict]:

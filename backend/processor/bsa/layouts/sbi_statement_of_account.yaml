@@ -1,0 +1,41 @@
+# Layout descriptor: State Bank of India — "STATEMENT OF ACCOUNT" export for a
+# REGULAR SB CHQ (savings) account. Distinct masthead from the OD ("Account
+# Statement from …") and the SBCHQ savings-cheque export; here the balance
+# carries a CR/DR suffix ("2,47,946.81CR"), handled by the parser's amount
+# reader. Columns: Txn Date | Value Date | Description | Cheque | Debit |
+# Credit | Balance.
+id: sbi_statement_of_account
+bank: State Bank of India
+layout_name: Statement of Account (SB)
+version: 1
+parser: generic
+priority: 20
+fingerprints:
+  all_of:
+    - "STATEMENT OF ACCOUNT"
+    - "Statement From :"
+    - "SBIN0"
+  any_of: []
+header:
+  account_line: 'Account No\s*:\s*(?P<account_no>\d+)[\s\S]*?Statement From\s*:\s*(?P<period_from>\d{2}-\d{2}-\d{4})\s+To\s+(?P<period_to>\d{2}-\d{2}-\d{4})'
+  period_date_format: "%d-%m-%Y"
+  account_name: '(?m)^((?:Mr|Mrs|Ms|M/S)\.?\s+[A-Z][A-Z .]+?)\s*$'
+parse:
+  table_header_words: ["Description", "Debit", "Credit", "Balance"]
+  header_offset: 14
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  columns:
+    date_x_max: 78              # Txn date ends ~68; Value date starts ~85
+    remarks_x_min: 128          # description after the Value Date column
+    remarks_x_max: 300          # stops before the Cheque column (~302)
+    cheque_x_min: 300
+    cheque_x_max: 375
+    withdrawal_x1_max: 430      # Debit   — right edge ~408
+    deposit_x1_max: 510         # Credit  — right edge ~479
+    balance_x1_max: 580         # Balance — right edge ~562 (CR/DR suffix stripped)
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Please do not share"
