@@ -33,8 +33,10 @@ parse:
     cheque_x_max: 99999
     remarks_x_min: 145
     remarks_x_max: 320         # stops before the Branch Code column at x0 329
-    withdrawal_x1_max: 425     # Debit   — right edge 414
-    deposit_x1_max: 490        # Credit  — right edge 478
+    withdrawal_x1_max: 440     # Debit   — right edge 414 on the OD export, 426
+                               # on the CA export; 440 admits both without
+                               # reaching the Credit column (right edge ~478).
+    deposit_x1_max: 500        # Credit  — right edge 478
     balance_x1_max: 575        # Balance — right edge 557, negative on an OD
   footer_markers:
     - "This is a computer generated statement"
