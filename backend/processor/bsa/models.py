@@ -71,6 +71,9 @@ class Txn:
     counterparty: str             # extracted display name, may be ""
     category: str = ""            # filled by categorize stage
     category_source: str = ""     # rule | counterparty | dictionary | llm | fallback
+    confidence: str = "high"      # high | medium | low — how sure the tag is; a
+                                  # low row is surfaced for human review, never
+                                  # presented as a certain answer
     page: int = 0
     # Account identity travels with the row: one job may merge statements from
     # several banks/accounts, and a balance chain is only meaningful per account.

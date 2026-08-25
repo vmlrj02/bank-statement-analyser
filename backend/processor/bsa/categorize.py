@@ -248,6 +248,19 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             src = "fallback"
 
         t.category, t.category_source = tag, src
+        # Confidence: a definitive signal (a rule, recurrence, the merchant
+        # dictionary, a related-party match) is HIGH. A row that fell through to
+        # the "Regular debit/credit" default is only as good as its party — with
+        # a real counterparty it is a known-party transfer (MEDIUM); with none it
+        # is genuinely "we don't know what or who" (LOW), and those are what a
+        # reviewer should eyeball rather than trust. The report never presents a
+        # low row as certain.
+        if src != "fallback":
+            t.confidence = "high"
+        elif t.counterparty and t.counterparty.strip().upper() not in _WEAK_PARTY:
+            t.confidence = "medium"
+        else:
+            t.confidence = "low"
     return txns
 
 

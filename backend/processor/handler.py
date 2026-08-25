@@ -488,6 +488,7 @@ def lambda_handler(event, _ctx):
                     "description": t.description,
                     "amount": t.amount, "balance": t.balance,
                     "category": t.category, "detail": category_detail(t),
+                    "confidence": t.confidence,
                 } for t in txns[:150]]
                 with open(os.path.join(outdir, "preview.json"), "w") as fh:
                     json.dump({"rows": preview, "total": len(txns)}, fh)
@@ -505,8 +506,10 @@ def lambda_handler(event, _ctx):
                                    f"outputs/{job_id}/{slug}/{os.path.basename(pth)}")
 
                 cats: dict[str, int] = {}
+                conf = {"high": 0, "medium": 0, "low": 0}
                 for t in txns:
                     cats[t.category] = cats.get(t.category, 0) + 1
+                    conf[t.confidence] = conf.get(t.confidence, 0) + 1
                 integ = account_integrity(metas, acct_status)
                 # Completeness: the statement's own declared Dr/Cr counts vs what
                 # we extracted — proof no rows were silently dropped.
@@ -552,6 +555,11 @@ def lambda_handler(event, _ctx):
                     "unreadable_pages": sum(
                         len(getattr(m, "unreadable_pages", []) or []) for m in metas),
                     "categories": cats,
+                    # Categorisation confidence: how many rows are a certain tag
+                    # vs a known-party regular transfer vs genuinely unsure. The
+                    # "low" count is what a reviewer eyeballs — the report never
+                    # presents those as certain.
+                    "confidence": conf,
                     # Statement-integrity signals for lending: balance chain +
                     # scanned-page + PDF-metadata flags. A prompt to look, not
                     # an accusation.

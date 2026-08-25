@@ -102,3 +102,36 @@ def test_an_ecs_debit_to_a_known_lender_is_an_emi():
     out = categorize([t])[0]
     assert out.category == "EMI transaction"
     assert out.counterparty == "Bajaj Finance Ltd"   # _SMS OT suffix stripped
+
+
+def _one(desc, amount):
+    from bsa.categorize import categorize
+    from bsa.models import Txn
+    from bsa.normalize import detect_mode, extract_counterparty
+    m = detect_mode(desc)
+    t = Txn(date="2025-07-01", cheque_no="", description=desc, amount=amount,
+            balance=0.0, mode=m, counterparty=extract_counterparty(desc, m))
+    t.compute_uid("1", 0)
+    return categorize([t])[0]
+
+
+def test_confidence_high_for_a_rule_match():
+    # A lender EMI is a definite category -> high confidence.
+    assert _one("ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT", -128182.0).confidence == "high"
+    # A penal charge, a cash deposit -> high.
+    assert _one("AMB Chgs Incl GST 01-06-2025", -354.0).confidence == "high"
+    assert _one("CAM/77571SRY/CASHDEP-Other/11-02-26/9931", 48500.0).confidence == "high"
+
+
+def test_confidence_medium_for_a_known_party_regular_transfer():
+    # A plain transfer we could not specially categorise, but the party is known.
+    t = _one("UPI/P2A/557305326847/K S SHALI/YES BANK /UPI/", 2.0)
+    assert t.category == "Regular credit" and t.counterparty == "K S SHALI"
+    assert t.confidence == "medium"
+
+
+def test_confidence_low_when_neither_category_nor_party_is_known():
+    # A settlement/merchant ref with no name and no special category -> review.
+    t = _one("UPISETTLEMENT-549564-07/05/25 000000000000000", 500.0)
+    assert t.category == "Regular credit" and not (t.counterparty and t.counterparty != "unknown party")
+    assert t.confidence == "low"
