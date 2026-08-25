@@ -30,7 +30,10 @@ import pdfplumber
 
 from ..models import RawRow, StatementMeta, StatementExtract
 
-NUM_RE = re.compile(r"^-?\d{1,3}(,\d{2,3})*\.\d{2}$|^-?\d+\.\d{2}$")
+# Amounts carry a decimal part: two places on almost every bank, but PNB prints
+# one ("157.7"), so accept one or two. Requiring a decimal point still keeps
+# bare integers (serial numbers, ref codes) out of the amount columns.
+NUM_RE = re.compile(r"^-?\d{1,3}(,\d{2,3})*\.\d{1,2}$|^-?\d+\.\d{1,2}$")
 
 
 def _parse_amount(tok: str) -> float:
@@ -63,6 +66,16 @@ def _amount_role(x1: float, cols: dict) -> str | None:
             b = bands.get(role)
             if b and b[0] <= x1 <= b[1]:
                 return role
+        return None
+    # Single-amount-column exports: one Amount column whose sign comes from a
+    # separate DR/CR flag, not from which column it sits in (Axis cash-credit
+    # "Report" export, PNB). The flag is read separately; here we only place the
+    # number as "amount" or "balance".
+    if (amt := cols.get("amount_x1_max")) is not None:
+        if x1 <= amt:
+            return "amount"
+        if x1 <= cols["balance_x1_max"]:
+            return "balance"
         return None
     if x1 <= cols["withdrawal_x1_max"]:
         return "withdrawal"
@@ -243,6 +256,13 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     pending.clear()
                     continue
 
+                # Some exports lead each row with a serial number before the
+                # date column (Axis cash-credit "Report"). Drop tokens left of
+                # the date column so the date is still ws[0] for the scan below.
+                if (slx := active.get("sl_no_x_max")) is not None:
+                    ws = [w for w in ws if w["x0"] >= slx]
+                    if not ws:
+                        continue
                 first = ws[0]
                 # Most banks print the date as one token ("01/07/2025"); a few
                 # print it as several ("1 Jul 2025"), so date_parts gathers the
@@ -278,17 +298,26 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     # theirs to the previous row.
                     finalize()
                     cheque, wd, dep, bal = "", None, None, None
+                    amount_val, dir_flag = None, ""
+                    tb = active.get("type_band")   # [x_min, x_max] of DR/CR flag
+                    debit_flags = active.get("debit_flags", ("DR", "Dr", "D"))
                     desc = list(pending) if above else []
                     pending.clear()
                     for w in rest:
                         if w["x0"] >= active.get("tail_x_min", 1e9):
                             continue                  # trailing branch/init code
+                        if tb and tb[0] <= w["x0"] < tb[1] and w["text"] in (
+                                "DR", "CR", "Dr", "Cr", "D", "C"):
+                            dir_flag = w["text"]
+                            continue
                         if NUM_RE.match(w["text"]) and w["x0"] > active["remarks_x_min"]:
                             role = _amount_role(w["x1"], active)
                             if role == "withdrawal":
                                 wd = _parse_amount(w["text"])
                             elif role == "deposit":
                                 dep = _parse_amount(w["text"])
+                            elif role == "amount":
+                                amount_val = _parse_amount(w["text"])
                             elif role == "balance":
                                 bal = _parse_amount(w["text"])
                         elif active["cheque_x_min"] <= w["x0"] < active["cheque_x_max"]:
@@ -299,6 +328,12 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                             # trailing column (SBI prints a Branch Code between
                             # narration and amounts) stays out of the narration
                             desc.append(w["text"])
+                    # Single-amount-column export: resolve the sign from the flag.
+                    if amount_val is not None:
+                        if dir_flag in debit_flags:
+                            wd = amount_val
+                        else:
+                            dep = amount_val
                     if strip_date and desc:
                         desc[0] = strip_date.sub("", desc[0], count=1)
                         if not desc[0]:
@@ -339,4 +374,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
 
     if meta is None:
         raise ValueError("could not parse statement header")
+    # Some banks print newest-first (PNB); reverse to oldest-first so the
+    # running-balance chain reconciles forward like every other layout.
+    if p.get("reverse"):
+        rows.reverse()
     return StatementExtract(meta=meta, rows=rows)

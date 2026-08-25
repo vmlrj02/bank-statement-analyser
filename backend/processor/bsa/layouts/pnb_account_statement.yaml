@@ -1,0 +1,39 @@
+# Layout descriptor: Punjab National Bank — statement of account. A single
+# Amount(INR) column whose sign comes from a separate Type (DR/CR) flag, plus a
+# Balance column and the narration to its right. Rows print newest-first, so
+# the extract is reversed to oldest-first for the running-balance check.
+# Columns: Date | Instrument ID | Amount(INR) | Type | Balance | Remarks.
+id: pnb_account_statement
+bank: Punjab National Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "PUNB0"
+    - "Statement of Account:"
+  any_of: []
+header:
+  account_line: 'Statement of Account:(?P<account_no>\d+)\s*For Period:\s*(?P<period_from>[\d-]+)\s*to\s*(?P<period_to>[\d-]+)'
+  period_date_format: "%d-%m-%Y"
+  account_name: 'Customer Name:\s*(.+)'
+parse:
+  table_header_words: ["Amount(INR)", "Type", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  reverse: true                 # statement prints newest-first
+  columns:
+    date_x_max: 95              # date right edge ~89
+    cheque_x_min: 99999         # Instrument ID column, usually empty
+    cheque_x_max: 99999
+    remarks_x_min: 95           # narration is to the RIGHT of the amounts here;
+    remarks_x_max: 580          # amounts/balance (num, x0 183+) are read by band
+    amount_x1_max: 220          # single Amount(INR) column — right edge ~205
+    type_band: [225, 262]       # Type flag (DR/CR) at x ~234-248
+    balance_x1_max: 330         # Balance — right edge ~313
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a system generated"
+    - "Page No"
