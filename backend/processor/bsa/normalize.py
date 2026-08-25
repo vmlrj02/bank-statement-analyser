@@ -246,6 +246,22 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"(?:NEFT|RTGS|IMPS)\s*(?:CR|DR)-?\s*[A-Z]{4}0[A-Z0-9]{6}-([^-]+)", d, re.I)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
+    # Ref-first variant: "NEFT DR-<ref>-<NAME>-<IFSC>-…" (name between the
+    # reference and the IFSC), e.g. "NEFT DR-ESFBN…-SHRI LAKSHMI STEEL S-UTIB…".
+    m = re.search(r"(?:NEFT|RTGS)\s*(?:CR|DR)-[A-Z0-9]{8,}-([^-]+)-[A-Z]{4}0[A-Z0-9]{6}", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # NACH debit naming the mandate holder: "ACHD-HDFCBANKLTD-<ref>",
+    # "ACHD-L&TFINANCELIMITED-<ref>", and the hyphen "ACH-DR-Indian Overseas
+    # Bank- <ref>" form that mode detection routes to "other".
+    m = re.search(r"\bACHD-([A-Za-z][^-]*)", d) \
+        or re.search(r"\bACH-(?:CR|DR)-([^-]+)", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # "<ref>-TPT-<remark>-<NAME>" fund transfer — the party is the last segment.
+    m = re.search(r"\bTPT-.+-([A-Za-z][A-Za-z0-9& .]+)$", d)
+    if m:
+        return _clean_segment(m.group(1))
     # HDFC internet-banking transfer: "IBFUNDSTRANSFERDR-<acct> -<NAME>"
     m = re.search(r"IBFUNDSTRANSFER(?:DR|CR)-\d+\s*-\s*(.+)", d, re.I)
     if m:
