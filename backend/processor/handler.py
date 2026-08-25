@@ -63,6 +63,10 @@ def _ddb_safe(v):
         return {k: _ddb_safe(x) for k, x in v.items()}
     if isinstance(v, (list, tuple)):
         return [_ddb_safe(x) for x in v]
+    if isinstance(v, (set, frozenset)):
+        # A number set must hold Decimals too; a string set is unchanged. Without
+        # this a float inside a set would slip past and DynamoDB would reject it.
+        return {_ddb_safe(x) for x in v}
     return v
 
 

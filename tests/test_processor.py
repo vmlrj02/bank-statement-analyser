@@ -286,3 +286,19 @@ def test_a_fully_readable_statement_reports_no_unreadable_pages(three_file_job):
     _run_all(proc, files)
     for a in jobs_table.items["j1"]["summary"]["accounts"]:
         assert a["unreadable_pages"] == 0
+
+
+def test_ddb_safe_converts_every_float_including_inside_a_set(proc):
+    """DynamoDB rejects Python floats anywhere in the item — a float in a dict,
+    a list, or a SET (the last one used to slip past). All must become Decimal;
+    NaN/Inf become None; strings and bools are untouched."""
+    from decimal import Decimal
+    out = proc._ddb_safe({
+        "x": 1.5, "n": [2.5, {"y": 3.5}], "s": {4.5, "keep"},
+        "flag": True, "bad": float("nan"), "txt": "hi",
+    })
+    assert out["x"] == Decimal("1.5")
+    assert out["n"][0] == Decimal("2.5") and out["n"][1]["y"] == Decimal("3.5")
+    assert Decimal("4.5") in out["s"] and "keep" in out["s"]
+    assert not any(isinstance(v, float) for v in out["s"])
+    assert out["flag"] is True and out["bad"] is None and out["txt"] == "hi"
