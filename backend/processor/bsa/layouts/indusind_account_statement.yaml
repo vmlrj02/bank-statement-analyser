@@ -1,0 +1,39 @@
+# Layout descriptor: IndusInd Bank — account statement export (wide 1019-pt
+# page). Columns: Date | Type | Description | Debit | Credit | Balance. The date
+# prints as three tokens ("02 Jan 2026"), and empty amount cells print a bare
+# "-". Standard two-amount-column export, so the generic parser handles it.
+# Amounts right-align: debit ~637, credit ~784, balance ~940.
+id: indusind_account_statement
+bank: IndusInd Bank
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "INDB0"
+    - "Account No. :"
+  any_of: []
+header:
+  account_line: 'Account No\.\s*:\s*(?P<account_no>\d+)[\s\S]*?From\s*:\s*(?P<period_from>\d{2} \w{3} \d{4})\s*To\s*:\s*(?P<period_to>\d{2} \w{3} \d{4})'
+  period_date_format: "%d %b %Y"
+  account_name: '(?m)^([A-Z][A-Z .&]+(?:PRIVATE LIMITED|LIMITED|LLP))'
+parse:
+  table_header_words: ["Debit", "Credit", "Balance"]
+  header_offset: 12
+  date_parts: 3                    # "02 Jan 2026" prints as three tokens
+  row_anchor: '^\d{2} [A-Za-z]{3} \d{4}$'
+  date_format: "%d %b %Y"
+  continuation: below
+  columns:
+    date_x_max: 130               # date right edge ~117
+    cheque_x_min: 99999           # no cheque column
+    cheque_x_max: 99999
+    remarks_x_min: 260            # after the Type column; Description starts ~294
+    remarks_x_max: 565            # stops before the Debit column (values from ~569)
+    withdrawal_x1_max: 700        # Debit   — right edge ~637
+    deposit_x1_max: 860           # Credit  — right edge ~784
+    balance_x1_max: 970           # Balance — right edge ~940
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a system generated"
+    - "Page"

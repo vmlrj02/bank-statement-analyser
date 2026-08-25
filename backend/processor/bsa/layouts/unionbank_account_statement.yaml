@@ -1,0 +1,37 @@
+# Layout descriptor: Union Bank of India — statement of account (782-pt page).
+# Columns: Date | Remarks | Tran Id | UTR Number | Instr. ID | Withdrawals |
+# Deposits | Balance. Standard two-amount-column export → generic parser.
+# Amounts right-align: withdrawals ~538, deposits ~633, balance ~723.
+id: unionbank_account_statement
+bank: Union Bank of India
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "Union Bank of India"
+    - "Statement of Account"
+  any_of: []
+header:
+  account_line: 'Account No (?P<account_no>\d+)[\s\S]*?Statement Period From\s*-?(?P<period_from>\d{2}/\d{2}/\d{4})\s*To\s*(?P<period_to>\d{2}/\d{2}/\d{4})'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Statement of Account\s+(.+?)\s+Union Bank of India'
+parse:
+  table_header_words: ["Withdrawals", "Deposits", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  columns:
+    date_x_max: 95                # date right edge ~90
+    cheque_x_min: 99999           # ref columns kept in the description instead
+    cheque_x_max: 99999
+    remarks_x_min: 95             # Remarks + ref columns
+    remarks_x_max: 455            # stops before the Withdrawals column
+    withdrawal_x1_max: 585        # Withdrawals — right edge ~538
+    deposit_x1_max: 680           # Deposits    — right edge ~633
+    balance_x1_max: 760           # Balance     — right edge ~723
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "No more records available"

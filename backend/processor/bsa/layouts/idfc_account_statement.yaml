@@ -1,0 +1,38 @@
+# Layout descriptor: IDFC FIRST Bank — statement of account (595-pt page).
+# Columns: Transaction Date | Value Date | Particulars | Cheque | Debit |
+# Credit | Balance. A summary block near the top repeats Debit/Credit/Balance,
+# so the table_header_words include "Particulars" to lock onto the real
+# transaction header. Amounts right-align: debit ~417, credit ~490, bal ~570.
+id: idfc_account_statement
+bank: IDFC FIRST Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "IDFB0"
+    - "STATEMENT PERIOD :"
+  any_of: []
+header:
+  account_line: 'ACCOUNT NO\s*:\s*(?P<account_no>\d+)[\s\S]*?STATEMENT PERIOD\s*:\s*(?P<period_from>\d{4}-\d{2}-\d{2})\s*TO\s*(?P<period_to>\d{4}-\d{2}-\d{2})'
+  period_date_format: "%Y-%m-%d"
+  account_name: 'CUSTOMER NAME\s*:\s*(.+?)\s+ACCOUNT BRANCH'
+parse:
+  table_header_words: ["Particulars", "Debit", "Credit", "Balance"]
+  header_offset: 14
+  row_anchor: '^\d{2}-[A-Za-z]{3}-\d{4}$'
+  date_format: "%d-%b-%Y"
+  continuation: below
+  columns:
+    date_x_max: 80                # Transaction Date ~72; Value Date starts ~90
+    cheque_x_min: 99999          # cheque kept in the description
+    cheque_x_max: 99999
+    remarks_x_min: 145           # Particulars starts ~152
+    remarks_x_max: 365           # stops before the Debit column (values from ~370)
+    withdrawal_x1_max: 450       # Debit   — right edge ~417
+    deposit_x1_max: 530          # Credit  — right edge ~490
+    balance_x1_max: 590          # Balance — right edge ~570
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a system generated"
+    - "IDFC FIRST Bank Limited"

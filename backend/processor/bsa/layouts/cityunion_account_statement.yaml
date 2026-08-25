@@ -1,0 +1,37 @@
+# Layout descriptor: City Union Bank — statement of account (large 1191-pt
+# page, ~2x scale). Columns: DATE | DESCRIPTION | CHEQUE NO | DEBIT | CREDIT |
+# BALANCE. Standard two-amount-column export → generic parser. Amounts
+# right-align: debit ~855, credit ~1001, balance ~1168.
+id: cityunion_account_statement
+bank: City Union Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "CITY UNION BANK"
+    - "STATEMENT OF ACCOUNT from"
+  any_of: []
+header:
+  account_line: 'ACCOUNT NO\(15 DIGIT\):(?P<account_no>\d+)[\s\S]*?from\s+(?P<period_from>\d{2}/\d{2}/\d{4})\s+to\s+(?P<period_to>\d{2}/\d{2}/\d{4})'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'CUSTOMER DETAILS :\s*(.+)'
+parse:
+  table_header_words: ["DEBIT", "CREDIT", "BALANCE"]
+  header_offset: 12
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  columns:
+    date_x_max: 115               # date right edge ~107
+    cheque_x_min: 629             # CHEQUE NO column, usually empty
+    cheque_x_max: 810
+    remarks_x_min: 60             # DESCRIPTION after the date column
+    remarks_x_max: 625            # stops before the CHEQUE NO column
+    withdrawal_x1_max: 920        # DEBIT   — right edge ~855
+    deposit_x1_max: 1080          # CREDIT  — right edge ~1001
+    balance_x1_max: 1210          # BALANCE — right edge ~1168
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "End of Statement"

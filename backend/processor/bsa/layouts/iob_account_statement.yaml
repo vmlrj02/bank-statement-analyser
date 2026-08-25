@@ -1,0 +1,38 @@
+# Layout descriptor: Indian Overseas Bank — account statement export.
+# The bank name is not on page 1; the IOBA0 IFSC prefix plus the statement
+# line is the stable fingerprint. Columns: DATE CHQ NO NARRATION COD DEBIT
+# CREDIT BALANCE — a standard two-amount-column export, so the generic parser
+# handles it. Amounts are right-aligned: debit values right-edge ~402, credit
+# ~472, balance ~543 on a 595-pt page.
+id: iob_account_statement
+bank: Indian Overseas Bank
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "IOBA0"
+    - "Statement for the period from"
+  any_of: []
+header:
+  account_line: 'Account Number\s*-\s*(?P<account_no>\d+)[\s\S]*?Statement for the period from\s+(?P<period_from>[\d/]+)\s+to\s+(?P<period_to>[\d/]+)'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Account Number\s*-\s*\d+\s+(.+?)\s*\('
+parse:
+  table_header_words: ["DEBIT", "CREDIT", "BALANCE"]
+  header_offset: 15            # the header's "NO" wraps onto a second line
+  row_anchor: '^\d{2}-[A-Z]{3}-\d{4}$'
+  date_format: "%d-%b-%Y"
+  continuation: below
+  columns:
+    date_x_max: 110            # date right edge ~100
+    cheque_x_min: 110          # CHQ NO column, usually empty
+    cheque_x_max: 155
+    remarks_x_min: 155         # NARRATION starts x0 ~158
+    remarks_x_max: 298         # stops before the COD (TRF/CLG) column at x0 ~299
+    withdrawal_x1_max: 437     # DEBIT   — right edge ~402
+    deposit_x1_max: 507        # CREDIT  — right edge ~472
+    balance_x1_max: 560        # BALANCE — right edge ~543
+  footer_markers:
+    - "This is system generated"
+    - "Page"

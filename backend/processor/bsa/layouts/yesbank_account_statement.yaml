@@ -1,0 +1,39 @@
+# Layout descriptor: YES Bank — statement of account (750-pt page). Columns:
+# Transaction Date | Value Date | Cheque | Description | Withdrawals | Deposits
+# | Balance. The date prints as three tokens ("06 Feb 2026") on the amount
+# line, so the generic parser handles it. Amounts right-align: withdrawals
+# ~569, deposits ~652, balance ~734.
+id: yesbank_account_statement
+bank: YES Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "YESB0"
+    - "Transaction details for your account number"
+  any_of: []
+header:
+  account_line: 'Statement of account:\s*(?P<account_no>\d+)[\s\S]*?Period:\s*(?P<period_from>\d{2} \w{3} \d{4})\s*-\s*(?P<period_to>\d{2} \w{3} \d{4})'
+  period_date_format: "%d %b %Y"
+  account_name: 'Primary Holder:\s*(.+?)\s+A/C'
+parse:
+  table_header_words: ["Withdrawals", "Deposits", "Balance"]
+  header_offset: 15
+  date_parts: 3                    # "06 Feb 2026" prints as three tokens
+  row_anchor: '^\d{2} [A-Za-z]{3} \d{4}$'
+  date_format: "%d %b %Y"
+  continuation: below
+  columns:
+    date_x_max: 70                # Transaction Date ~62; Value Date starts ~75
+    cheque_x_min: 99999          # cheque kept in the description
+    cheque_x_max: 99999
+    remarks_x_min: 125           # after the Value Date column
+    remarks_x_max: 505           # stops before the Withdrawals column
+    withdrawal_x1_max: 610       # Withdrawals — right edge ~569
+    deposit_x1_max: 690          # Deposits    — right edge ~652
+    balance_x1_max: 760          # Balance     — right edge ~734
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a system generated"
+    - "Registered Office"
