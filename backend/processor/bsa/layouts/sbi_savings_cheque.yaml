@@ -1,0 +1,45 @@
+# Layout descriptor: State Bank of India — savings-cheque (SBCHQ) account
+# statement. Same "Account Statement from …" masthead as the OD export, but a
+# different table: it inserts a Ref No./Cheque and a Branch Code column between
+# the description and the amounts, and the narration begins at x0 144. The OD
+# layout's remarks band (145–320) both clipped the first token and swallowed the
+# "- / -" ref, mangling the description to "TRANSFER- - / -". Fingerprint keys on
+# SBCHQ (unique to this export) with higher priority so the OD/CA files are
+# unaffected. Columns: Txn Date | Value Date | Description | Ref No./Cheque |
+# Branch Code | Debit | Credit | Balance.
+id: sbi_savings_cheque
+bank: State Bank of India
+layout_name: Savings-cheque statement
+version: 1
+parser: generic
+priority: 20
+fingerprints:
+  all_of:
+    - "SBCHQ"
+    - "Account Statement from"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:\s*(?:\(cid:\d+\))?\s*(?P<account_no>\d+)[\s\S]*?Account Statement from\s+(?P<period_from>\d{1,2}\s+\w{3}\s+\d{4})\s+to\s+(?P<period_to>\d{1,2}\s+\w{3}\s+\d{4})'
+  period_date_format: "%d %b %Y"
+  account_name: 'Account Name\s*:\s*(?:\(cid:\d+\))?\s*([^,\n]+)'
+parse:
+  table_header_words: ["Description", "Debit", "Credit", "Balance"]
+  header_offset: 20            # Ref/No. and Branch/Code headers wrap to a 2nd line
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  skip_rows:
+    - "Balance as on"
+  columns:
+    date_x_max: 92             # Txn date ends ~87; Value date starts ~100
+    remarks_x_min: 141         # narration begins at x0 144
+    remarks_x_max: 218         # stops before the Ref No./Cheque column (~223)
+    cheque_x_min: 220          # Ref No./Cheque + Branch Code kept out of narration
+    cheque_x_max: 390
+    withdrawal_x1_max: 435     # Debit   — right edge ~414
+    deposit_x1_max: 510        # Credit  — right edge ~478
+    balance_x1_max: 580        # Balance — right edge ~557
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Please do not share"
