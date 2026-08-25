@@ -358,6 +358,10 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     # balance — never on a guess, so a genuine extraction error still fails.
     _repair_swapped_pairs(txns)
 
+    # Self-learning within the statement: a counterparty read cleanly in one row
+    # fills the same name where another row's format hid it.
+    _apply_gazetteer(txns)
+
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
     # across merged files is a duplicate)
@@ -373,6 +377,42 @@ def normalize(extract: StatementExtract) -> list[Txn]:
 def account_key(t: Txn) -> str:
     """Identity of the account a row belongs to."""
     return f"{(t.bank or '').strip()}|{(t.account_no or '').strip()}"
+
+
+# Narrations that carry no personal/company name, so the gazetteer must not try
+# to force one onto them (they are un-nameable merchant/settlement refs).
+_UNNAMEABLE = re.compile(r"UPISETTLEMENT|\bPOS\b|ATW-|CHRGS|/GST/|CASH\s*DEP|BY CASH", re.I)
+
+
+def _apply_gazetteer(txns: list[Txn]) -> None:
+    """In-statement entity gazetteer. A counterparty resolved cleanly in one row
+    ("SHREE LAKSHMI STEEL" via NEFT) fills the SAME name where another row's
+    format left it blank (the same party paid by a shape we don't parse as well).
+    Conservative on purpose: only distinctive, alphabetic names of six or more
+    letters, matched on a word boundary, and only into rows that resolved to
+    nothing — never overriding a name we already have, and never onto an
+    un-nameable ref. It learns from the data itself, so it needs no model or
+    training set, and runs entirely in-account."""
+    names: dict[str, str] = {}
+    for t in txns:
+        n = (t.counterparty or "").strip()
+        key = re.sub(r"[ .&]", "", n).upper()
+        if len(key) >= 6 and key.isalpha() and n.upper() not in _CHANNEL_TOKENS:
+            names[n.upper()] = n
+    if not names:
+        return
+    # Longest first so "SHREE LAKSHMI STEEL" wins over a bare "STEEL".
+    ordered = sorted(names, key=len, reverse=True)
+    for t in txns:
+        if t.counterparty and t.counterparty != "unknown party":
+            continue
+        du = re.sub(r"\s+", " ", t.description).upper()
+        if _UNNAMEABLE.search(du):
+            continue
+        for nu in ordered:
+            if re.search(r"\b" + re.escape(nu) + r"\b", du):
+                t.counterparty = names[nu]
+                break
 
 
 def _repair_swapped_pairs(txns: list[Txn]) -> int:
