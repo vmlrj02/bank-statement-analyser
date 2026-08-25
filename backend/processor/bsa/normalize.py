@@ -22,7 +22,11 @@ DATE_FORMATS = ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y",
 # Word-boundary patterns: descriptions are usually prefixed by a bold title
 # ("SATHYA PRASAD B RTGS-…"), so modes must match mid-string, never only at ^.
 MODE_RULES = [
-    (r"\bUPI/", "upi"),
+    # HDFC prints UPI with a hyphen and no slashes ("UPI-ASHOK GARG-<phone>@<vpa>",
+    # "UPI-MUSHARRAF <ref>"), so match either separator. "UPISETTLEMENT-…" has no
+    # separator right after UPI, so it stays out of this rule (it is a merchant
+    # settlement, not a person).
+    (r"\bUPI/|\bUPI-[A-Za-z]", "upi"),
     (r"\bMMT/IMPS|/IMPS/|\bIMPS[/:]", "imps"),
     (r"\bNEFT[-/:]", "neft"),
     (r"\bRTGS[-/:]", "rtgs"),
@@ -120,6 +124,12 @@ def extract_counterparty(desc: str, mode: str) -> str:
         m = re.search(r"UPI/(.+)$", d)
         if m:
             return _first_name(_name_segments(m.group(1)))
+        # HDFC hyphen form: UPI-<NAME>-<phone>@<vpa>… or UPI-<NAME> <ref>… — the
+        # name is the text after "UPI-" up to the first phone/ref digit or "@".
+        m = re.search(r"UPI-([A-Za-z][A-Za-z. ]+?)\s*[-\s](?:\d|@)", d) \
+            or re.search(r"UPI-([A-Za-z][A-Za-z. ]+?)@", d)
+        if m:
+            return _clean_segment(m.group(1))
     if mode == "imps":
         m = re.search(r"MMT/IMPS/\d+/(.+)$", d)
         if m:
