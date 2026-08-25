@@ -124,12 +124,16 @@ def extract_counterparty(desc: str, mode: str) -> str:
         m = re.search(r"UPI/(.+)$", d)
         if m:
             return _first_name(_name_segments(m.group(1)))
-        # HDFC hyphen form: UPI-<NAME>-<phone>@<vpa>… or UPI-<NAME> <ref>… — the
-        # name is the text after "UPI-" up to the first phone/ref digit or "@".
-        m = re.search(r"UPI-([A-Za-z][A-Za-z. ]+?)\s*[-\s](?:\d|@)", d) \
-            or re.search(r"UPI-([A-Za-z][A-Za-z. ]+?)@", d)
+        # HDFC hyphen form + merchant UPIs: "UPI-ASHOK GARG-<phone>@<vpa>",
+        # "UPI-BLINKIT-<vpa>@<bank>", "UPI-MUSHARRAF <ref>". The party is the
+        # text right after "UPI-" up to the first delimiter (hyphen, @, or a
+        # digit run). A purely numeric first segment (PhonePe merchant refs like
+        # "UPI-3154000…-<phone>@…") has no name and is left unresolved.
+        m = re.search(r"UPI-([A-Za-z][A-Za-z0-9 .&']*?)(?=[-@]|\s+\d|\s*$)", d)
         if m:
-            return _clean_segment(m.group(1))
+            name = m.group(1).strip()
+            if name and not name.isdigit():
+                return _clean_segment(name)
     if mode == "imps":
         m = re.search(r"MMT/IMPS/\d+/(.+)$", d)
         if m:
@@ -234,6 +238,25 @@ def extract_counterparty(desc: str, mode: str) -> str:
         m = re.search(r"SMP/\w+_(.+)$", d)               # SMP/<ref>_<NAME>
         if m:
             return _clean_segment(m.group(1))
+    # --- General bank-independent forms, reached when no mode rule resolved a
+    # name. Found by auditing the party-less transfer rows across every bank. ---
+    # NEFT/RTGS/IMPS with a Cr/Dr flag, then an IFSC, then the party name:
+    # "NEFT Cr-ICIC0SF0002-VIVISH TECHNOLOGIES-…" (YES), "RTGSDR-ICIC0000610-…",
+    # "NEFTCR-CBIN0280410-SHRI… CO.-…" (HDFC), "RTGS DR-UTIB0000129-SHRI LAKSHMI…"
+    m = re.search(r"(?:NEFT|RTGS|IMPS)\s*(?:CR|DR)-?\s*[A-Z]{4}0[A-Z0-9]{6}-([^-]+)", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # HDFC internet-banking transfer: "IBFUNDSTRANSFERDR-<acct> -<NAME>"
+    m = re.search(r"IBFUNDSTRANSFER(?:DR|CR)-\d+\s*-\s*(.+)", d, re.I)
+    if m:
+        return _clean_segment(m.group(1))
+    # IMPS/P2A|P2M/<ref>/<NAME>/<bank>  and  IMPS-<ref>-<NAME>-<bank>
+    m = re.search(r"IMPS/P2[AM]/\d+/([^/]+)", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bIMPS-\d+-([^-]+)", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
     return ""
 
 
