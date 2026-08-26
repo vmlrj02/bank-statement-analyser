@@ -1,0 +1,41 @@
+# Layout descriptor: Punjab National Bank — "Account Statement for Account
+# Number" (current-account) export. Columns: Txn No. | Txn Date | Description |
+# Branch | Cheque No. | Dr Amount | Cr Amount | Balance (with a trailing Cr./Dr.
+# marker). Newest-first, so the extract is reversed. Distinct from the PNB
+# "Statement of Account" amount+type export.
+id: pnb_ca_statement
+bank: Punjab National Bank
+layout_name: Account Statement (current)
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "PUNB0"
+    - "Account Statement for Account Number"
+  any_of: []
+header:
+  account_line: 'Account Statement for Account Number\s*(?P<account_no>\d+)[\s\S]*?Statement Period\s*:\s*(?P<period_from>[\d-]+)\s*to\s*(?P<period_to>[\d-]+)'
+  period_date_format: "%d-%m-%Y"
+  account_name: 'Customer Name\s*:\s*(.+)'
+parse:
+  table_header_words: ["Dr", "Cr", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  reverse: true                 # statement prints newest-first
+  columns:
+    sl_no_x_max: 100            # drop the leading Txn No. column
+    date_x_max: 160             # Txn Date ends ~154
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    remarks_x_min: 165          # Description after the date
+    remarks_x_max: 370          # stops before the Dr Amount column (~377)
+    withdrawal_x1_max: 449      # Dr Amount — right edge ~418
+    deposit_x1_max: 508         # Cr Amount — right edge ~480
+    balance_x1_max: 546         # Balance   — right edge ~536 (Cr./Dr. token excluded)
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a system generated"
+    - "Page No"
