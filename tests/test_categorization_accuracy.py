@@ -226,3 +226,14 @@ def test_upi_vpa_fallback():
     assert party("UPI-9963059528-9963059528@YBL-SBIN0-517620-PAYMENT") == "9963059528@ybl"
     assert party("UPI-RAMESH KUMAR-ramesh@oksbi-SBIN0-511-PAY") == "RAMESH KUMAR"
     assert party("NEFT CMS SALARY XYZ LTD") == ""  # no VPA, stays unresolved
+
+
+# Party formats on the columnar / current-account layouts added for full coverage
+# (AU/Perfios, PNB current, IndusInd, SBI).
+AUDIT_PARTY_4 = [
+    ("IMPS-518212113933 -MSPANDEYANDSONS -UTIB0002588", -5000.0, "Regular debit", "MSPANDEYANDSONS"),
+    ("To:XXXX0717:SAHU CONSTRUCTION & BORWELLS", -5000.0, "Regular debit", "SAHU CONSTRUCTION & BORWELLS"),
+    ("IMPS-OUT/518218154130/SBIN0009378/STEELWORLD", -5000.0, "Regular debit", "STEELWORLD"),
+    ("R/INDBR2026070800792016/ICIC/NAVED AHMED", -5000.0, "Regular debit", "NAVED AHMED"),
+]
+CASES += AUDIT_PARTY_4

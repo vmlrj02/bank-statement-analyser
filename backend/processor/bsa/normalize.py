@@ -329,6 +329,31 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"\bIMPS/([A-Za-z][A-Za-z .]+?)/", d)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
+    # PNB "To:XXXX<ref>:<NAME>" / "From:XXXX<ref>:<NAME>" mapped transfers.
+    m = re.search(r"\b(?:To|From):X+\d+:\s*([A-Za-z][^:]+)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # PNB "IMPS-OUT/<ref>/<IFSC>/<NAME>", "IMPS-IN/<ref>/<ref>/<NAME>".
+    m = re.search(r"\bIMPS-(?:OUT|IN|CHG)/\d+/[A-Z0-9]+/([A-Za-z][^/]+)", d)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # AU/Perfios "IMPS-<ref> -<NAME> -<bank>" (a space precedes the name dash)
+    # and "RTGS CR-<ref> -<NAME>" / "RTGS DR-<ref> -<NAME>".
+    m = re.search(r"\bIMPS-\d+\s+-\s*([A-Za-z][^-]+)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bRTGS\s+(?:CR|DR)-\w+\s+-\s*([A-Za-z][^-]+)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # IndusInd "R/<ref>/<bank>/<NAME>", "N/<ref>/<bank>/<NAME>" — the counterparty
+    # is the segment after the bank code.
+    m = re.search(r"\b[RN]/[A-Z0-9]+/[A-Za-z]+/([A-Za-z][^/]+)", d)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # SBI "<ref> OF Mr./Mrs. <NAME>".
+    m = re.search(r"\bOF Mr?s?\.?\s+([A-Za-z][A-Za-z .]+)", d)
+    if m:
+        return _clean_segment(m.group(1))
     # Last resort: a UPI VPA handle. HDFC (and others) print many UPI rows with
     # NO name, only "UPI-<ref>-<mobile>@<psp>-…" — the name is not in the
     # statement to extract. The VPA that IS there is the real payee identifier a
