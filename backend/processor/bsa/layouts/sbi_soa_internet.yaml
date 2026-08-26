@@ -1,0 +1,40 @@
+# Layout descriptor: State Bank of India — "STATEMENT OF ACCOUNT" internet
+# export (the "Welcome: / As on / CIF Number" cover). Columns: Txn Date | Value
+# Date | Description | Ref/Cheque | Debit | Credit | Balance. The description is
+# printed on the lines ABOVE and BELOW the dated amount line, so a row is a
+# centred block — continuation: nearest. Distinct from the other SBI exports.
+id: sbi_soa_internet
+bank: State Bank of India
+layout_name: Statement of Account (internet)
+version: 1
+parser: generic
+priority: 25                     # above sbi_statement_of_account (20), which
+                                # also matches this file's "Statement From :"
+fingerprints:
+  all_of:
+    - "Welcome:"
+    - "CIF Number"
+    - "Clear Balance"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:\s*(?P<account_no>\d+)'
+  account_name_line: 2
+parse:
+  table_header_words: ["Debit", "Credit", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: nearest
+  columns:
+    date_x_max: 75              # Txn Date ~27-68 (Value Date ~82 is ignored)
+    remarks_x_min: 130          # Description ~138-300
+    remarks_x_max: 300          # before the "-" placeholder (~304) and Debit
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    withdrawal_x1_max: 405      # Debit right edge ~389
+    deposit_x1_max: 485         # Credit right edge ~469
+    balance_x1_max: 560         # Balance right edge ~548
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Please do not share"

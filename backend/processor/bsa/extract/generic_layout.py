@@ -247,18 +247,28 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
         # having to hand-list every footer phrase. Built in one pre-pass; the
         # per-page words are cached so pages are read only once.
         pages_words, page1_text = [], ""
+        head_texts: list[str] = []
         line_pages: dict[str, set] = {}
         for pageno, page in enumerate(pdf.pages, start=1):
             ws = page.extract_words()
             pages_words.append(ws)
             if pageno == 1:
                 page1_text = page.extract_text() or ""
+            if pageno <= 3:
+                head_texts.append(page.extract_text() or "")
             for ln in _lines(ws):
                 t = " ".join(w["text"] for w in ln["words"])
                 if len(t) > 8:
                     line_pages.setdefault(t, set()).add(pageno)
         furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
-        meta = _meta(page1_text, source_file, layout)
+        # Most statements carry the account line on page 1, but some print the
+        # per-account transaction header on the transaction page instead (ICICI's
+        # monthly export opens with a cover summary and only names the account
+        # above the table on page 2). Feed the first few pages to _meta so its
+        # account_line still resolves; page 1 stays first, so any page-1 match
+        # still wins and account_name_line: 0 is unaffected.
+        meta = _meta("\n".join(head_texts) if head_texts else page1_text,
+                     source_file, layout)
 
         for pageno, words in enumerate(pages_words, start=1):
             # The table header is typically printed on page 1 only, with

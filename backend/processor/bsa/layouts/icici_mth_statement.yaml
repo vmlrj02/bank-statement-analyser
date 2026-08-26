@@ -1,0 +1,47 @@
+# Layout descriptor: ICICI Bank — monthly "Statement_YYYYMTHnn" export. Opens
+# with a cover STATEMENT SUMMARY on page 1 and prints the transaction table from
+# page 2 under: DATE | MODE | PARTICULARS | DEPOSITS | WITHDRAWALS | BALANCE.
+# Deposits sit to the LEFT of withdrawals, so the money columns are named
+# explicitly via amount_bands. The account line is on the transaction page, not
+# the cover, which _meta now reaches. Distinct from icici_combined_statement
+# ("Statement of transactions in ... in Currency", with a Location column).
+id: icici_mth_statement
+bank: ICICI Bank
+layout_name: Monthly Statement
+version: 1
+parser: generic
+priority: 12
+fingerprints:
+  all_of:
+    - "STATEMENT SUMMARY"
+    - "Base Branch"
+  any_of: []
+header:
+  account_line: 'Statement of Transactions in .*?Account\s+(?P<account_no>[X\d]+)\s+in INR for the period\s+(?P<period_from>[A-Za-z]+ \d{2}, \d{4})\s*-\s*(?P<period_to>[A-Za-z]+ \d{2}, \d{4})'
+  period_date_format: "%B %d, %Y"
+  account_name_line: 1
+parse:
+  table_header_words: ["DATE", "MODE", "PARTICULARS", "DEPOSITS", "WITHDRAWALS", "BALANCE"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  columns:
+    date_x_max: 72              # DATE ~30-68
+    remarks_x_min: 72           # MODE (~73) + PARTICULARS (~140)
+    remarks_x_max: 345          # before DEPOSITS (~355)
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    amount_bands:
+      deposit:    [352, 412]    # DEPOSITS right edge ~406
+      withdrawal: [445, 498]    # WITHDRAWALS right edge ~489
+      balance:    [512, 572]    # BALANCE right edge ~564
+    tail_x_min: 99999
+  skip_rows:
+    - "B/F"
+    - "Total of Transactions"
+    - "Total :"
+    - "Total:"
+  footer_markers:
+    - "This is a system generated"
+    - "Page "
