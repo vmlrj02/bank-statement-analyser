@@ -215,3 +215,14 @@ AUDIT_PARTY_3 = [
     ("YBP5186268567597 IMPS/SWATI TALWAR/XXX5512/ RRN:518611379404/HDF", 5000.0, "Regular credit", "SWATI TALWAR"),
 ]
 CASES += AUDIT_PARTY_3
+
+
+# HDFC-style UPI rows carry no name, only a VPA handle — surface it (the real
+# payee identifier) rather than leaving the row anonymous. Named handle wins
+# over a bare mobile number.
+def test_upi_vpa_fallback():
+    from bsa.normalize import detect_mode, extract_counterparty
+    def party(d): return extract_counterparty(d, detect_mode(d))
+    assert party("UPI-9963059528-9963059528@YBL-SBIN0-517620-PAYMENT") == "9963059528@ybl"
+    assert party("UPI-RAMESH KUMAR-ramesh@oksbi-SBIN0-511-PAY") == "RAMESH KUMAR"
+    assert party("NEFT CMS SALARY XYZ LTD") == ""  # no VPA, stays unresolved

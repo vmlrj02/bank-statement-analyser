@@ -329,6 +329,15 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"\bIMPS/([A-Za-z][A-Za-z .]+?)/", d)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
+    # Last resort: a UPI VPA handle. HDFC (and others) print many UPI rows with
+    # NO name, only "UPI-<ref>-<mobile>@<psp>-…" — the name is not in the
+    # statement to extract. The VPA that IS there is the real payee identifier a
+    # lender can act on, so surface it rather than leaving the row anonymous.
+    # Prefer a human-readable handle (name@bank) over a bare mobile number.
+    vpas = re.findall(r"(?:^|[\s\-/])([A-Za-z0-9._]{2,}@[A-Za-z]{2,})", d)
+    if vpas:
+        named = [v for v in vpas if not v.split("@")[0].isdigit()]
+        return (named[0] if named else vpas[0]).lower()
     return ""
 
 
