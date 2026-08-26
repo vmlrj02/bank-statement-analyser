@@ -137,6 +137,13 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     # swallows the next page's header and its balance becomes unparseable
     # ("-14,807,971.91Balance"), silently dropping one row per page.
     ignore_lines = tuple(p.get("ignore_lines", []))
+    # A line that marks the START of a new page's table (the repeated column
+    # header) FLUSHES the current block: the previous page's last transaction is
+    # complete, and without this its block runs on to absorb the page furniture
+    # below the header — a currency-label row ("INR INR") lands in the Debit and
+    # Credit bands, nulling both amounts, so normalize drops that row (one per
+    # page). Flushing at the header closes the row cleanly first.
+    flush_markers = tuple(p.get("flush_markers", []))
 
     rows: list[RawRow] = []
     meta: StatementMeta | None = None
@@ -179,6 +186,10 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 if any(m in text for m in end_markers):
                     stop = True
                     break
+                if any(m in text for m in flush_markers):
+                    flush(block, block_page)  # new page's table starts here
+                    block = []
+                    continue
                 if any(x in text for x in ignore_lines):
                     continue                  # skip the line, keep the block
                 if any(f in text for f in footers) or \

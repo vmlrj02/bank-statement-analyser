@@ -1,0 +1,47 @@
+# Layout descriptor: AU Small Finance Bank — Perfios-rendered "Statement".
+# Columns: Trans Date | Value Date | Description/Narration | Chq./Ref.No. |
+# Debit(Dr.) | Credit(Cr.) | Balance. The narration wraps over several physical
+# lines, so a row is a COLUMNAR block reassembled by x band. Dates are ISO
+# (2025-07-01). An overdraft account: the balance is printed as a negative
+# magnitude whose minus sign can wrap onto its own line (like ICICI Detailed).
+id: au_perfios_statement
+bank: AU Small Finance Bank
+layout_name: Statement (Perfios)
+version: 1
+parser: columnar
+priority: 12
+fingerprints:
+  all_of:
+    - "Description/Narration"
+    - "Debit(Dr.)"
+    - "Credit(Cr.)"
+  any_of: []
+header:
+  account_line: 'Account No\.\s*:\s*(?P<account_no>\d+)'
+  period_line: 'Statement Period\s*:\s*(?P<period_from>[\dA-Za-z-]+)\s*To\s*(?P<period_to>[\dA-Za-z-]+)'
+  period_date_format: "%d-%b-%Y"
+  account_name: 'CUSTOMER NAME\s*:\s*(.+?)\s+Statement Date'
+parse:
+  row_anchor: '^\d{4}-\d{2}-\d{2}$'
+  anchor_x_max: 112
+  field_map:
+    date: date
+    description: remarks
+    cheque_no: cheque
+    withdrawal: debit
+    deposit: credit
+    balance: balance
+  columns:
+    date:    [55, 112]           # Trans Date ~62-102 (Value Date ~118 ignored)
+    remarks: [160, 305]          # Description/Narration ~174-306 (wraps)
+    cheque:  [305, 372]          # Chq./Ref.No. ~314-365
+    debit:   [372, 428]          # Debit(Dr.) right edge ~421
+    credit:  [428, 481]          # Credit(Cr.) right edge ~477
+    balance: [481, 540]          # Balance right edge ~533 (overdrawn = negative,
+                                # its minus sign can wrap onto a continuation line)
+  footer_patterns:
+    - "Page \\d+ of \\d+"
+  flush_markers:
+    - "Trans Date Value Date"      # the repeated column header ends the prior row
+  ignore_lines:
+    - "Description/Narration"
