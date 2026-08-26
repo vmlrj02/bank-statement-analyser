@@ -200,6 +200,12 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     above = continuation == "above"
     nearest = continuation == "nearest"
     invert = bool(p.get("invert_balance"))     # cash-credit / overdraft chain
+    # Most layouts print the narration first and the money columns to its right,
+    # so a number is only an amount if it sits right of remarks_x_min (this keeps
+    # a ref number inside the narration from being read as an amount). A few
+    # (PNB "Statement of Account") invert that — Withdrawal/Deposit/Balance sit
+    # to the LEFT of the narration — so the guard flips.
+    amounts_left = bool(p.get("amounts_left"))
     date_parts = int(p.get("date_parts", 1))   # tokens forming a multi-word date
     infer_year = bool(p.get("infer_year_from_period", False))
     # Some exports run the value date straight into the narration with no
@@ -331,7 +337,9 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     finalize()
                     cheque, wd, dep, bal = "", None, None, None
                     amount_val, dir_flag = None, ""
+                    bal_dr = False
                     tb = active.get("type_band")   # [x_min, x_max] of DR/CR flag
+                    cb = active.get("balance_crdr_band")   # Cr./Dr. after balance
                     debit_flags = active.get("debit_flags", ("DR", "Dr", "D"))
                     desc = list(pending) if above else []
                     pending.clear()
@@ -342,7 +350,16 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                                 "DR", "CR", "Dr", "Cr", "D", "C"):
                             dir_flag = w["text"]
                             continue
-                        if NUM_RE.match(w["text"]) and w["x0"] > active["remarks_x_min"]:
+                        # A Cr./Dr. token in its own column marks the balance's
+                        # SIGN (PNB prints the balance as a magnitude, so a CA
+                        # that goes overdrawn shows "116646.77 Dr."). Negate on Dr.
+                        if cb and cb[0] <= w["x0"] < cb[1] and \
+                                w["text"].rstrip(".").upper() in ("CR", "DR"):
+                            bal_dr = w["text"].rstrip(".").upper() == "DR"
+                            continue
+                        in_money = (w["x0"] < active["remarks_x_min"] if amounts_left
+                                    else w["x0"] > active["remarks_x_min"])
+                        if NUM_RE.match(w["text"]) and in_money:
                             role = _amount_role(w["x1"], active)
                             if role == "withdrawal":
                                 wd = _parse_amount(w["text"])
@@ -373,6 +390,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     if bal is None:
                         current = None       # not a transaction row
                         continue
+                    if bal_dr:               # balance printed as an overdrawn magnitude
+                        bal = -abs(bal)
                     if nearest:
                         seg_anchors.append({
                             "top": ln["top"], "date": date_str,

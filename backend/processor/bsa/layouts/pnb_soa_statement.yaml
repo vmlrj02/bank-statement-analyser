@@ -1,0 +1,43 @@
+# Layout descriptor: Punjab National Bank — "Statement of Account No:" export
+# (the retail internet-banking statement, both SA and CA). Columns:
+# Tran Date | Withdrawal | Deposit | Balance (with a Cr./Dr. suffix token) |
+# Alpha | CHQ. NO. | Narration | Additional Info. Unusually the amounts sit to
+# the LEFT of the narration. Distinct from pnb_ca_statement ("Account Statement
+# for Account Number") and pnb_ca ("Dr/Cr Amount" columns).
+id: pnb_soa_statement
+bank: Punjab National Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+priority: 12
+fingerprints:
+  all_of:
+    - "Statement of Account No:"
+    - "PUNB0"
+  any_of: []
+header:
+  account_line: 'Statement of Account No:\s*(?P<account_no>\d+)[\s\S]*?Statement for Period\s*:\s*(?P<period_from>[\d-]+)\s*to\s*(?P<period_to>[\d-]+)'
+  period_date_format: "%d-%m-%Y"
+  account_name: 'Customer Name:\s*(.+)'
+parse:
+  table_header_words: ["Tran", "Withdrawal", "Balance", "Narration"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  amounts_left: true            # Withdrawal/Deposit/Balance sit LEFT of narration
+  columns:
+    date_x_max: 90              # Tran Date ~47-78
+    withdrawal_x1_max: 140      # Withdrawal right edge ~129
+    deposit_x1_max: 200         # Deposit right edge ~188
+    balance_x1_max: 256         # Balance right edge ~244 (Cr./Dr. token excluded)
+    balance_crdr_band: [244, 258]  # "Cr."/"Dr." suffix — Dr = overdrawn (negate)
+    cheque_x_min: 258           # Alpha / CHQ. NO. between balance and narration
+    cheque_x_max: 322
+    remarks_x_min: 322          # Narration + Additional Info to the right
+    remarks_x_max: 900
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Page "
+    - "Opening Balance"
