@@ -202,3 +202,14 @@ def test_repeated_footer_lines_are_dropped_structurally():
     furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
     assert "This is a system generated statement" in furniture
     assert "01/01/2026 UPI ALICE 100.00 900.00" not in furniture  # unique txn kept
+
+
+def test_party_kind_splits_names_from_handles():
+    from bsa.normalize import party_kind
+    assert party_kind("SUKUMAR", "NEFT/..") == "named"
+    assert party_kind("SAHU CONSTRUCTION & BORWELLS", "To:..") == "named"
+    assert party_kind("4698150044305", "TRANSFER TO ..") == "handle"   # account no.
+    assert party_kind("9963059528@ybl", "UPI-..") == "handle"          # a VPA
+    assert party_kind("", "NEFT/..") == "none"
+    assert party_kind("unknown party", "x") == "none"
+    assert party_kind("", "BRN BY CASH self") == "na"                  # un-nameable

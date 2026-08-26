@@ -462,6 +462,32 @@ def account_key(t: Txn) -> str:
 _UNNAMEABLE = re.compile(r"UPISETTLEMENT|\bPOS\b|ATW-|CHRGS|/GST/|CASH\s*DEP|BY CASH", re.I)
 
 
+def party_kind(counterparty: str, description: str) -> str:
+    """How identifying the resolved counterparty is — the honest read on party
+    quality, which raw party-fill hides because it counts a beneficiary account
+    number the same as a real name.
+
+    - "na":     the row carries no counterparty by nature (cash, ATM, charges,
+                settlement) — excluded from the quality denominator.
+    - "none":   a party could have been named but was not resolved.
+    - "handle": a machine identifier — an account/reference number, or a UPI VPA
+                — real, but not a name an underwriter recognises.
+    - "named":  an actual person or business name.
+    """
+    if _UNNAMEABLE.search(description or ""):
+        return "na"
+    cp = (counterparty or "").strip()
+    if not cp or cp.lower() == "unknown party":
+        return "none"
+    if "@" in cp:
+        return "handle"                       # a UPI VPA / email address
+    letters = sum(c.isalpha() for c in cp)
+    digits = sum(c.isdigit() for c in cp)
+    if letters < 2 or digits >= letters:
+        return "handle"                       # an account / reference number
+    return "named"
+
+
 def _apply_gazetteer(txns: list[Txn]) -> None:
     """In-statement entity gazetteer. A counterparty resolved cleanly in one row
     ("SHREE LAKSHMI STEEL" via NEFT) fills the SAME name where another row's

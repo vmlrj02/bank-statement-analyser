@@ -505,11 +505,20 @@ def lambda_handler(event, _ctx):
                     s3.upload_file(pth, BUCKET,
                                    f"outputs/{job_id}/{slug}/{os.path.basename(pth)}")
 
+                from bsa.normalize import party_kind
                 cats: dict[str, int] = {}
                 conf = {"high": 0, "medium": 0, "low": 0}
+                # Party quality is a different axis from confidence: how many rows
+                # name a real counterparty vs only a machine handle (account
+                # number / VPA) vs none. Raw party-fill hides this by counting a
+                # handle as "party present"; this splits it out honestly.
+                pq = {"named": 0, "handle": 0, "none": 0}
                 for t in txns:
                     cats[t.category] = cats.get(t.category, 0) + 1
                     conf[t.confidence] = conf.get(t.confidence, 0) + 1
+                    kind = party_kind(t.counterparty, t.description)
+                    if kind != "na":
+                        pq[kind] += 1
                 integ = account_integrity(metas, acct_status)
                 # Completeness: the statement's own declared Dr/Cr counts vs what
                 # we extracted — proof no rows were silently dropped.
@@ -560,6 +569,10 @@ def lambda_handler(event, _ctx):
                     # "low" count is what a reviewer eyeballs — the report never
                     # presents those as certain.
                     "confidence": conf,
+                    # Party quality: named counterparty vs machine handle
+                    # (account/VPA) vs none — the honest read that party-fill
+                    # hides by counting a handle as a party.
+                    "party_quality": pq,
                     # Statement-integrity signals for lending: balance chain +
                     # scanned-page + PDF-metadata flags. A prompt to look, not
                     # an accusation.
