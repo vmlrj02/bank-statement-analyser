@@ -16,6 +16,7 @@ from .validate import validate
 
 TEMPLATE_PARSERS = {
     "icici_optransactionhistory": "bsa.extract.icici_optransactionhistory",
+    "axis_report_statement": "bsa.extract.axis_report",
 }
 
 

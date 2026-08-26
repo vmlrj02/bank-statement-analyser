@@ -1,0 +1,48 @@
+# Layout descriptor: Axis Bank — "Account Statement Report" export. The money
+# (amount, Debit/Credit flag, balance) is on the FIRST line of a row and the
+# S.NO + dates on the line below; the export also glues columns together, so a
+# long particulars cell overflows into the amount column and pdfplumber merges
+# the glyphs into one band-spanning token. Both defeat YAML geometry, so this is
+# a bank-specific MODULE (bsa.extract.axis_report) that bands per glyph and
+# anchors on the balance-bearing line. Columns: S.NO | Transaction Date | Value
+# Date | Particulars | Amount(INR) | Debit/Credit | Balance(INR) | Cheque |
+# Branch. Distinct from axis_cc_statement, which prints the same account positive.
+id: axis_report_statement
+bank: Axis Bank
+layout_name: Account Statement Report
+version: 1
+parser: module
+priority: 10
+fingerprints:
+  all_of:
+    - "Account Statement Report"
+    - "Balance(INR)"          # both the Amount+flag and the Debit/Credit variants
+  any_of: []
+header:
+  account_line: 'Statement of Axis Bank Account No\s*:\s*(?P<account_no>\d+)'
+  period_line: 'for the period\s*\(\s*From\s*:\s*(?P<period_from>[\d/]+)\s*To\s*:\s*(?P<period_to>[\d/]+)'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Account Statement Report\s*\n\s*(.+)'
+parse:
+  debit_flags: ["DR"]
+  columns:
+    sl_no:   [10, 40]            # S.NO ~15
+    date:    [40, 90]            # Transaction Date ~42; Value Date (~93) ignored
+    remarks: [130, 252]          # Particulars ~144-250
+    # The amount, Debit/Credit flag and balance are read by VALUE from this
+    # region (the two rightmost decimals + the flag between them), because their
+    # exact x shifts between the two sub-layouts. Stops before the branch (~500).
+    money:   [250, 495]
+    balance_probe: [378, 495]    # a decimal here marks a money (balance) line
+    debit:   [250, 311]          # Debit/Credit-column variant (no flag): sign
+    credit:  [311, 362]          # comes from which column the amount sits in
+  skip_rows:
+    - "Opening Balance"
+  end_markers:
+    - "TRANSACTION TOTAL"
+    - "Closing Balance"
+    - "Cheque Return Details"
+  ignore_lines:
+    - "S.NO Transaction"
+    - "dd/mm/yyyy"
+    - "Amount(INR)"
