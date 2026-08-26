@@ -306,11 +306,27 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"IBFUNDSTRANSFER(?:DR|CR)-\d+\s*-\s*(.+)", d, re.I)
     if m:
         return _clean_segment(m.group(1))
-    # IMPS/P2A|P2M/<ref>/<NAME>/<bank>  and  IMPS-<ref>-<NAME>-<bank>
-    m = re.search(r"IMPS/P2[AM]/\d+/([^/]+)", d, re.I)
+    # IMPS/P2A|P2M/<ref>/<NAME>/<bank>  and  IMPS-<ref>-<NAME>-<bank>. The /+
+    # skips an empty segment ("…/501323167432//TIMEZONE").
+    m = re.search(r"IMPS/P2[AM]/\d+/+([A-Za-z][^/]*)", d, re.I)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
     m = re.search(r"\bIMPS-\d+-([^-]+)", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # CMS/<ref>/<NAME> — cash-management collection (big on ICICI current a/cs).
+    m = re.search(r"\bCMS/\d+/([A-Za-z][^/]*)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # "PAYMENT TRANSFER CR -<NAME>" / "... DR -<NAME>"
+    m = re.search(r"PAYMENT TRANSFER (?:CR|DR)\s*-\s*(.+?)(?:\s{2,}|$)", d, re.I)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # spaced IMPS: "IMP P2A <ref> - <NAME> - …" and "IMPS/<NAME>/<ref>/…" (YES).
+    m = re.search(r"\bIMPS?\s+P2[APM]\s+\d+\s*-\s*([A-Za-z][A-Za-z .]+?)\s*-", d, re.I)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bIMPS/([A-Za-z][A-Za-z .]+?)/", d)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
     return ""
