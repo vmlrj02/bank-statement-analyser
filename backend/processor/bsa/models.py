@@ -27,6 +27,12 @@ class RawRow:
     # subtracts instead of adds; the money-flow sign of the amount is unchanged,
     # so categorisation still sees a credit as a credit.
     balance_inverted: bool = False
+    # Some exports print WIDE numbers with the last decimal clipped by the column
+    # (IndusInd shows a true 15,339,837.84 as "15339837.8"), so the printed chain
+    # is imprecise by up to ~0.1 and no parser can recover the lost digit. A
+    # layout may raise the per-row reconciliation tolerance to absorb exactly
+    # that display artifact — never enough to hide a dropped row.
+    balance_tolerance: float = 0.0
 
 
 @dataclass
@@ -91,6 +97,7 @@ class Txn:
     # See RawRow.balance_inverted — carried through so validate reconciles a
     # cash-credit/overdraft chain by subtracting the amount instead of adding it.
     balance_inverted: bool = False
+    balance_tolerance: float = 0.0   # see RawRow.balance_tolerance
 
     def compute_uid(self, account_no: str, occurrence: int) -> None:
         key = f"{account_no}|{self.date}|{self.description}|{self.amount:.2f}|{self.balance:.2f}|{occurrence}"

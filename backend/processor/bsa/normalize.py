@@ -370,6 +370,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
             page=r.page, source_file=extract.meta.source_file,
             account_no=extract.meta.account_no, bank=extract.meta.bank,
             balance_inverted=r.balance_inverted,
+            balance_tolerance=r.balance_tolerance,
         ))
 
     # "New Criteria": statements ordered latest-to-oldest — detect & flip

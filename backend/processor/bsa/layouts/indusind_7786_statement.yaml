@@ -1,0 +1,47 @@
+# Layout descriptor: IndusInd Bank — "Account Statement" export with a Bank
+# Reference leading column. Columns: Bank Reference | Value Date | Transaction
+# Date & Time | Type | Payment Narration | Debit | Credit | Available Balance.
+# The row anchor is the Value Date ("12 Jul 2026", three tokens), which is the
+# SECOND column, so sl_no_x_max drops the leading Bank Reference. Debit and
+# Credit both always print (one as 0.00). Distinct from the other IndusInd
+# export already covered by indusind_account_statement.
+id: indusind_7786_statement
+bank: IndusInd Bank
+layout_name: Account Statement (bank-reference)
+version: 1
+parser: generic
+priority: 12
+fingerprints:
+  all_of:
+    - "Bank Reference"
+    - "Payment Narration"
+    - "Available"
+  any_of: []
+header:
+  account_line: 'Account No\s*:(?P<account_no>\d+)[\s\S]*?From Date\s*(?P<period_from>\d{2}-[A-Za-z]{3}-\d{4})\s*To Date\s*(?P<period_to>\d{2}-[A-Za-z]{3}-\d{4})'
+  period_date_format: "%d-%b-%Y"
+  account_name: 'Customer Name\s*(.+?)\s*Account No'
+parse:
+  table_header_words: ["Bank", "Reference", "Payment", "Narration", "Debit", "Credit"]
+  header_offset: 20
+  row_anchor: '^\d{1,2} [A-Za-z]{3} \d{4}$'
+  date_format: "%d %b %Y"
+  date_parts: 3
+  continuation: below
+  # IndusInd clips the last decimal of a wide number ("15339837.8" for a true
+  # ...84), so the printed chain is imprecise by up to ~0.1 — absorb it.
+  balance_tolerance: 0.1
+  columns:
+    sl_no_x_max: 120            # drop the leading Bank Reference column (~45-113)
+    date_x_max: 175             # Value Date tokens ~124-166
+    remarks_x_min: 340          # Payment Narration ~351 (Type/txn-time excluded)
+    remarks_x_max: 640          # before Debit (~651)
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    withdrawal_x1_max: 700      # Debit right edge ~689
+    deposit_x1_max: 752         # Credit right edge ~743
+    balance_x1_max: 810         # Available Balance right edge ~797
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "Page "

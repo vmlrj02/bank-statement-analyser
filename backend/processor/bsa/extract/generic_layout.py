@@ -206,6 +206,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     # (PNB "Statement of Account") invert that — Withdrawal/Deposit/Balance sit
     # to the LEFT of the narration — so the guard flips.
     amounts_left = bool(p.get("amounts_left"))
+    bal_tol = float(p.get("balance_tolerance", 0.0))   # display-truncation slack
     date_parts = int(p.get("date_parts", 1))   # tokens forming a multi-word date
     infer_year = bool(p.get("infer_year_from_period", False))
     # Some exports run the value date straight into the narration with no
@@ -234,7 +235,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             description=" ".join(current["desc"]).strip(),
             withdrawal=current["wd"], deposit=current["dep"],
             balance=current["bal"], page=current["page"],
-            balance_inverted=invert,
+            balance_inverted=invert, balance_tolerance=bal_tol,
         ))
         current = None
 

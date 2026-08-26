@@ -49,7 +49,8 @@ def validate(txns: list[Txn]) -> ValidationReport:
                 # owed, so it moves opposite to the money-flow sign: subtract.
                 delta = -t.amount if t.balance_inverted else t.amount
                 expected = round(prev_balance + delta, 2)
-                if abs(expected - t.balance) > TOL:
+                tol = max(TOL, t.balance_tolerance)
+                if abs(expected - t.balance) > tol:
                     detail = (f"row {i}{where}: prev {prev_balance:.2f} + amount "
                               f"{delta:+.2f} = {expected:.2f}, statement says "
                               f"{t.balance:.2f} ({t.date} {t.description[:60]})")
