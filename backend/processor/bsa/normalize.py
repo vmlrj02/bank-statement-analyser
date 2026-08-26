@@ -244,6 +244,13 @@ def extract_counterparty(desc: str, mode: str) -> str:
             if segs:
                 return segs[-1]
     if mode == "other":
+        # SBI internet NEFT: "TO TRANSFER-INB NEFT … SBIN<ref>- <code> <NAME>
+        # TRANSFER TO <acct>". The beneficiary sits between the bank code and the
+        # "TRANSFER TO" tail — read it BEFORE the generic transfer rules below,
+        # which would otherwise fall back to the counterparty account number.
+        m = re.search(r"SBIN\d+-\s*\w+\s+([A-Za-z][A-Za-z .]+?)\s+TRANSFER TO", d)
+        if m:
+            return _clean_segment(m.group(1))
         # GIB/<ref>/GST /<ref> — government internet banking; the tax head
         # is the only party there is.
         m = re.search(r"\bGIB/\d+/([A-Z]+)\b", d)
@@ -316,6 +323,11 @@ def extract_counterparty(desc: str, mode: str) -> str:
         return _clean_segment(m.group(1))
     # CMS/<ref>/<NAME> — cash-management collection (big on ICICI current a/cs).
     m = re.search(r"\bCMS/\d+/([A-Za-z][^/]*)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # Axis POS/merchant collections: "IPS/<MERCHANT>/<ref>/<ref>/<location>" and
+    # "VPS/<MERCHANT>/…" — the merchant (a fuel station, retailer) is the party.
+    m = re.search(r"\b[IV]PS/([A-Za-z][A-Za-z0-9 &.]*)/", d)
     if m:
         return _clean_segment(m.group(1))
     # "PAYMENT TRANSFER CR -<NAME>" / "... DR -<NAME>"
