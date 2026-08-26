@@ -344,6 +344,20 @@ def extract_counterparty(desc: str, mode: str) -> str:
 def normalize(extract: StatementExtract) -> list[Txn]:
     txns: list[Txn] = []
     for r in extract.rows:
+        if r.is_opening:
+            # A brought-forward / opening row: no transaction, but its balance
+            # re-bases the chain for the period that follows (see validate).
+            try:
+                iso_date = parse_date(r.date)
+            except ValueError:
+                iso_date = ""
+            txns.append(Txn(
+                date=iso_date, cheque_no="", description="Balance brought forward",
+                amount=0.0, balance=r.balance, mode="other", counterparty="",
+                page=r.page, source_file=extract.meta.source_file,
+                account_no=extract.meta.account_no, bank=extract.meta.bank,
+                is_opening=True))
+            continue
         if r.withdrawal is not None and r.deposit is not None:
             # both printed (rare OCR error) — trust the balance delta later
             amount = (r.deposit or 0) - (r.withdrawal or 0)

@@ -144,7 +144,7 @@ def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
             description=" ".join(desc).strip(),
             withdrawal=a["wd"], deposit=a["dep"],
             balance=a["bal"], page=a["page"],
-            balance_inverted=invert,
+            balance_inverted=invert, is_opening=a.get("opening", False),
         ))
     anchors.clear()
     narrs.clear()
@@ -207,6 +207,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     # to the LEFT of the narration — so the guard flips.
     amounts_left = bool(p.get("amounts_left"))
     bal_tol = float(p.get("balance_tolerance", 0.0))   # display-truncation slack
+    cf_re = re.compile(p["carry_forward"]) if p.get("carry_forward") else None
     date_parts = int(p.get("date_parts", 1))   # tokens forming a multi-word date
     infer_year = bool(p.get("infer_year_from_period", False))
     # Some exports run the value date straight into the narration with no
@@ -236,6 +237,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             withdrawal=current["wd"], deposit=current["dep"],
             balance=current["bal"], page=current["page"],
             balance_inverted=invert, balance_tolerance=bal_tol,
+            is_opening=current.get("opening", False),
         ))
         current = None
 
@@ -271,6 +273,19 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                      source_file, layout)
 
         for pageno, words in enumerate(pages_words, start=1):
+            # A section header naming this page's format is often printed in the
+            # page furniture ABOVE the table header, so it never reaches the
+            # body-line section switch below (a single ICICI PDF can splice the
+            # old "in Currency" combined format and the new "in INR" monthly
+            # format, each page carrying its own header). Pick the profile from
+            # the whole page's text so the right column geometry is in force for
+            # the first row. A page with no section header keeps the current one.
+            if sections:
+                page_text = " ".join(w["text"] for w in words)
+                for rx, scols in sections:
+                    if rx.search(page_text):
+                        active = scols or cols
+                        break
             # The table header is typically printed on page 1 only, with
             # continuation pages starting straight into rows — so a page
             # without one is parsed whole rather than skipped. Require the
@@ -403,16 +418,17 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                         continue
                     if bal_dr:               # balance printed as an overdrawn magnitude
                         bal = -abs(bal)
+                    opening = bool(cf_re and cf_re.search(text))
                     if nearest:
                         seg_anchors.append({
                             "top": ln["top"], "date": date_str,
                             "cheque": cheque, "wd": wd, "dep": dep, "bal": bal,
-                            "page": pageno,
+                            "page": pageno, "opening": opening,
                             "parts": [(ln["top"], desc)] if desc else []})
                         continue
                     current = {"date": date_str, "cheque": cheque,
                                "wd": wd, "dep": dep, "bal": bal,
-                               "desc": desc, "page": pageno}
+                               "desc": desc, "page": pageno, "opening": opening}
                     continue
 
                 # narration-only line

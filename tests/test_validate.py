@@ -50,6 +50,24 @@ def test_cash_credit_balance_reconciles_inverted():
                      txn("2026-01-02", 200, 800)]).status == "failed"
 
 
+def test_opening_row_rebases_the_chain():
+    """A brought-forward opening re-bases the running balance: a multi-period
+    statement prints each month's own B/F and the periods need not be
+    contiguous, so the chain must anchor to the B/F, not chain the new period's
+    first row onto the previous period's close (gotcha 12). Pins the ICICI
+    combined carry_forward fix (644 breaks -> 0)."""
+    def opening(date, balance):
+        t = txn(date, 0.0, balance); t.is_opening = True
+        return t
+    rows = [txn("2025-11-29", -100, 500), txn("2025-11-30", -50, 450),
+            opening("2025-12-01", 9000),          # new month, unrelated balance
+            txn("2025-12-01", -1000, 8000)]
+    assert validate(rows).status == "passed"
+    # without the opening flag the same jump is a real break
+    flat = [txn("2025-11-30", -50, 450), txn("2025-12-01", -1000, 8000)]
+    assert validate(flat).status == "failed"
+
+
 def test_a_run_of_dropped_rows_shows_as_one_mismatch():
     """Documented in CLAUDE.md gotcha 7 and worth pinning: issue COUNT is not
     a count of wrong rows. Here five rows are missing and exactly one issue is

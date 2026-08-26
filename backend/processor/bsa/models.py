@@ -21,6 +21,11 @@ class RawRow:
     deposit: Optional[float]
     balance: float
     page: int
+    # A "balance brought forward" / opening row: it carries a balance but no
+    # transaction. It RE-BASES the running chain (a multi-period statement prints
+    # each month's own B/F, and the periods need not be contiguous — gotcha 12),
+    # so validate anchors to it instead of checking against the previous period.
+    is_opening: bool = False
     # Cash-credit / overdraft accounts print the balance as an amount OWED, so a
     # credit REDUCES it and a debit INCREASES it — the running balance moves
     # opposite to the money-flow sign. Set from the layout so reconciliation
@@ -98,6 +103,7 @@ class Txn:
     # cash-credit/overdraft chain by subtracting the amount instead of adding it.
     balance_inverted: bool = False
     balance_tolerance: float = 0.0   # see RawRow.balance_tolerance
+    is_opening: bool = False         # see RawRow.is_opening — rebases the chain
 
     def compute_uid(self, account_no: str, occurrence: int) -> None:
         key = f"{account_no}|{self.date}|{self.description}|{self.amount:.2f}|{self.balance:.2f}|{occurrence}"

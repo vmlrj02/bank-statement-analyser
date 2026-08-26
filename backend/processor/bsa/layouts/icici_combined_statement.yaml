@@ -29,8 +29,11 @@ parse:
   # first line onto the previous row, shifting every description one row off.
   continuation: nearest
   strip_leading_date: '^\d{2}[-/]\d{2}[-/]\d{4}'   # value date glued to narration
+  # Each monthly period prints its own "B/F" opening; treat it as a chain rebase
+  # (the periods need not be contiguous — gotcha 12) rather than skipping it,
+  # which used to chain one period's opening onto the previous period's close.
+  carry_forward: '\bB/F\b'
   skip_rows:
-    - "B/F"
     - "Total of Transactions"
     - "Total :"                  # section totals row ("Total : <wd> <dep> <bal>")
     - "Total:"                   # the December-onward section drops the space

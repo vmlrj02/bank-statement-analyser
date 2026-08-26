@@ -44,6 +44,13 @@ def validate(txns: list[Txn]) -> ValidationReport:
         prev_balance = None
         prev_date = None
         for i, t in items:
+            if getattr(t, "is_opening", False):
+                # A brought-forward opening re-bases the chain: the period that
+                # follows reconciles from THIS balance, not the previous period's
+                # close (which may sit across a gap — gotcha 12).
+                prev_balance = t.balance
+                prev_date = t.date
+                continue
             if prev_balance is not None:
                 # A cash-credit/overdraft chain prints the balance as an amount
                 # owed, so it moves opposite to the money-flow sign: subtract.
