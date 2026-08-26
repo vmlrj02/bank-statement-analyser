@@ -224,11 +224,27 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
         current = None
 
     with pdfplumber.open(pdf_path) as pdf:
+        # Structural page furniture: a line whose exact text repeats on two or
+        # more pages is a footer/header disclaimer, never a transaction (a real
+        # row is unique within a statement). Dropping these catches the "footer
+        # getting added to the description" case on ANY bank, without each layout
+        # having to hand-list every footer phrase. Built in one pre-pass; the
+        # per-page words are cached so pages are read only once.
+        pages_words, page1_text = [], ""
+        line_pages: dict[str, set] = {}
         for pageno, page in enumerate(pdf.pages, start=1):
-            words = page.extract_words()
+            ws = page.extract_words()
+            pages_words.append(ws)
             if pageno == 1:
-                meta = _meta(page.extract_text() or "", source_file, layout)
+                page1_text = page.extract_text() or ""
+            for ln in _lines(ws):
+                t = " ".join(w["text"] for w in ln["words"])
+                if len(t) > 8:
+                    line_pages.setdefault(t, set()).add(pageno)
+        furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
+        meta = _meta(page1_text, source_file, layout)
 
+        for pageno, words in enumerate(pages_words, start=1):
             # The table header is typically printed on page 1 only, with
             # continuation pages starting straight into rows — so a page
             # without one is parsed whole rather than skipped. Require the
@@ -246,6 +262,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 text = " ".join(w["text"] for w in ws)
                 if any(m in text for m in footers):
                     break
+                if text in furniture:
+                    continue                 # repeated footer/header — not a row
                 switched = False
                 for rx, scols in sections:
                     if rx.search(text):

@@ -179,3 +179,26 @@ def test_parse_amount_handles_the_sbi_cr_dr_balance_suffix():
     assert _parse_amount("157.7") == 157.7               # one-decimal (PNB)
     # a bare integer or ref must NOT look like an amount
     assert not NUM_RE.match("990640") and not NUM_RE.match("SBIN0001626")
+
+
+def test_repeated_footer_lines_are_dropped_structurally():
+    """A line whose exact text repeats across pages is page furniture (a footer
+    or repeated header) and must never become a transaction — caught structurally
+    so a new bank's footer doesn't need to be hand-listed."""
+    import bsa.extract.generic_layout as g
+    # two "pages" of _lines-style groups sharing a footer line, unique txns.
+    def line(top, *toks, x0=40):
+        return {"top": top, "words": [{"text": t, "x0": x0 + 20*i, "x1": x0 + 20*i + 15}
+                                      for i, t in enumerate(toks)]}
+    # A furniture set built the way extract() builds it: text on >=2 pages.
+    from collections import defaultdict
+    line_pages = defaultdict(set)
+    p1 = ["01/01/2026 UPI ALICE 100.00 900.00", "This is a system generated statement"]
+    p2 = ["02/01/2026 UPI BOB 50.00 850.00", "This is a system generated statement"]
+    for pg, lines in ((1, p1), (2, p2)):
+        for t in lines:
+            if len(t) > 8:
+                line_pages[t].add(pg)
+    furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
+    assert "This is a system generated statement" in furniture
+    assert "01/01/2026 UPI ALICE 100.00 900.00" not in furniture  # unique txn kept
