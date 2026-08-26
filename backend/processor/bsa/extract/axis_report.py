@@ -129,10 +129,12 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
         nonlocal block
         if not block:
             return
-        # The money line's amount, flag and balance sit between the particulars
-        # and the branch, and their exact x shifts between the two sub-layouts —
-        # so read them by VALUE, not by fixed band: the two rightmost decimal
-        # numbers are (amount, balance), and the flag is the CR/DR between them.
+        # The money's amount, flag and balance sit between the particulars and
+        # the branch, and their exact x shifts between the sub-layouts — so read
+        # them by VALUE, not by fixed band: the two rightmost decimals are
+        # (amount, balance), the flag is the CR/DR between them. Join the block's
+        # money regions with NO separator so a balance whose minus sign / digits
+        # wrapped onto the next line ("…CR -" + ",14,93,20,450.00") reassembles.
         money = block[0].get("money", "")
         nums = _nums(money)
         if not nums:

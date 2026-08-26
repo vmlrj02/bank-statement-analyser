@@ -34,7 +34,8 @@ parse:
     remarks_x_max: 370          # stops before the Dr Amount column (~377)
     withdrawal_x1_max: 449      # Dr Amount — right edge ~418
     deposit_x1_max: 508         # Cr Amount — right edge ~480
-    balance_x1_max: 546         # Balance   — right edge ~536 (Cr./Dr. token excluded)
+    balance_x1_max: 558         # Balance   — right edge ~536-550 across exports
+                                # (the joint-account variant prints it ~4px wider)
     tail_x_min: 99999
   footer_markers:
     - "This is a system generated"
