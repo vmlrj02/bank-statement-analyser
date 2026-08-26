@@ -144,7 +144,16 @@ def detect_mode(desc: str) -> str:
 
 
 def _clean_segment(seg: str) -> str:
-    return re.sub(r"\s+", " ", seg).strip()
+    seg = re.sub(r"\s+", " ", seg).strip()
+    # A beneficiary account number often rides along with the name ("CHOLAMANDALAM
+    # 0000003023864727", "MANISH 000..29 SHADCOLO"), which drops an otherwise
+    # good name to a machine "handle". Strip standalone 6+ digit runs WHEN a name
+    # component is present; leave a pure-number counterparty (or a VPA) intact,
+    # since that number is then the only identifier there is.
+    toks = seg.split()
+    if any(re.search(r"[A-Za-z]", t) for t in toks):
+        toks = [t for t in toks if not re.fullmatch(r"\d{6,}", t)]
+    return " ".join(toks).strip()
 
 
 def extract_counterparty(desc: str, mode: str) -> str:
