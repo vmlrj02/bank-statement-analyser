@@ -63,3 +63,15 @@ def test_complete_year_infers_from_period():
         period_from, period_to = "2025-12-01", "2026-01-31"
     assert _complete_year("15 Jan", M2) == "15 Jan 2026"
     assert _complete_year("15 Dec", M2) == "15 Dec 2025"
+
+
+def test_num_re_accepts_leading_dot_amount():
+    """Axis prints a sub-rupee charge with no leading zero (".90" for GST on a
+    small fee). Without matching it, the row is dropped and the balance chain
+    breaks by exactly that amount — pins the NUM_RE fix."""
+    from bsa.extract.generic_layout import NUM_RE, _parse_amount
+    assert NUM_RE.match(".90")
+    assert _parse_amount(".90") == 0.9
+    assert NUM_RE.match("-.05")
+    assert not NUM_RE.match(".")        # a bare dot is not an amount
+    assert NUM_RE.match("1,14,95,250.00")   # wide crore amount still matches

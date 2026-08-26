@@ -30,6 +30,26 @@ def test_broken_chain_fails():
     assert "999.00" in r.issues[0].detail
 
 
+def test_cash_credit_balance_reconciles_inverted():
+    """A cash-credit / OD account prints the balance as an amount OWED, so a
+    credit REDUCES it and a debit INCREASES it — the chain moves opposite to the
+    money-flow sign. With balance_inverted the reconciliation subtracts, and the
+    amount keeps its money-flow sign so categorisation still sees a credit as a
+    credit. Pins the Axis cash-credit layout (axis_cc_statement)."""
+    def cc(date, amount, balance):
+        t = txn(date, amount, balance)
+        t.balance_inverted = True
+        return t
+    # opening owed 1000; a +200 credit drops it to 800; a -50 debit lifts it to 850
+    r = validate([cc("2026-01-01", 200, 1000), cc("2026-01-02", 200, 800),
+                  cc("2026-01-03", -50, 850)])
+    assert r.status == "passed"
+    # the SAME numbers with normal (additive) reconciliation must fail, proving
+    # the flag is what makes the chain close
+    assert validate([txn("2026-01-01", 200, 1000),
+                     txn("2026-01-02", 200, 800)]).status == "failed"
+
+
 def test_a_run_of_dropped_rows_shows_as_one_mismatch():
     """Documented in CLAUDE.md gotcha 7 and worth pinning: issue COUNT is not
     a count of wrong rows. Here five rows are missing and exactly one issue is
