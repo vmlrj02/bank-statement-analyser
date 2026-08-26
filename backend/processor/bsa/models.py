@@ -21,6 +21,12 @@ class RawRow:
     deposit: Optional[float]
     balance: float
     page: int
+    # Cash-credit / overdraft accounts print the balance as an amount OWED, so a
+    # credit REDUCES it and a debit INCREASES it — the running balance moves
+    # opposite to the money-flow sign. Set from the layout so reconciliation
+    # subtracts instead of adds; the money-flow sign of the amount is unchanged,
+    # so categorisation still sees a credit as a credit.
+    balance_inverted: bool = False
 
 
 @dataclass
@@ -82,6 +88,9 @@ class Txn:
     source_file: str = ""
     uid: str = ""
     is_duplicate: bool = False
+    # See RawRow.balance_inverted — carried through so validate reconciles a
+    # cash-credit/overdraft chain by subtracting the amount instead of adding it.
+    balance_inverted: bool = False
 
     def compute_uid(self, account_no: str, occurrence: int) -> None:
         key = f"{account_no}|{self.date}|{self.description}|{self.amount:.2f}|{self.balance:.2f}|{occurrence}"

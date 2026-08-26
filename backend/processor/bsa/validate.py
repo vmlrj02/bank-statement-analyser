@@ -45,10 +45,13 @@ def validate(txns: list[Txn]) -> ValidationReport:
         prev_date = None
         for i, t in items:
             if prev_balance is not None:
-                expected = round(prev_balance + t.amount, 2)
+                # A cash-credit/overdraft chain prints the balance as an amount
+                # owed, so it moves opposite to the money-flow sign: subtract.
+                delta = -t.amount if t.balance_inverted else t.amount
+                expected = round(prev_balance + delta, 2)
                 if abs(expected - t.balance) > TOL:
                     detail = (f"row {i}{where}: prev {prev_balance:.2f} + amount "
-                              f"{t.amount:+.2f} = {expected:.2f}, statement says "
+                              f"{delta:+.2f} = {expected:.2f}, statement says "
                               f"{t.balance:.2f} ({t.date} {t.description[:60]})")
                     gap = _days_between(prev_date, t.date) if prev_date else 0
                     if gap > GAP_DAYS:

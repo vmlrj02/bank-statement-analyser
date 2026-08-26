@@ -1,0 +1,44 @@
+# Layout descriptor: Axis Bank — Cash-Credit / OD "Statement" export. Columns:
+# Tran Date | Value Date | Transaction Particulars | Chq No | Amount(INR) |
+# DR/CR | Balance(INR) | Branch Name. A single Amount column whose sign comes
+# from the DR/CR flag, with the narration wrapping onto the line ABOVE its dated
+# anchor. This is a cash-credit account: the balance is the amount owed, so a
+# credit REDUCES it and a debit INCREASES it — invert_balance makes the running
+# chain reconcile while the money-flow sign of each amount (and therefore its
+# categorisation) is left untouched. Distinct from the Axis "Account Statement
+# Report" export (S.NO / Debit-Credit header), which prints a negative balance.
+id: axis_cc_statement
+bank: Axis Bank
+layout_name: Cash Credit Statement
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "Transaction Particulars"
+    - "DR/CR"
+  any_of: []
+header:
+  account_line: 'Statement of Axis Account No\s*:\s*(?P<account_no>\d+)\s*for the period\s*\(From\s*:\s*(?P<period_from>[\d-]+)\s*To\s*:\s*(?P<period_to>[\d-]+)\)'
+  period_date_format: "%d-%m-%Y"
+  account_name_line: 0
+parse:
+  table_header_words: ["Tran", "Particulars", "DR/CR"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: above
+  invert_balance: true          # cash-credit: balance is amount owed
+  columns:
+    date_x_max: 80              # Tran Date x0 ~43; Value Date (~84) is ignored
+    remarks_x_min: 118          # Transaction Particulars start ~121
+    remarks_x_max: 300          # before Chq No (~301) and Amount (~355)
+    cheque_x_min: 300
+    cheque_x_max: 345
+    amount_x1_max: 400          # single Amount column, right edge ~390
+    balance_x1_max: 480         # Balance right edge ~474
+    type_band: [410, 435]       # DR/CR flag at x0 ~419-427
+    tail_x_min: 485             # Branch Name (~477+) stays out of everything
+  footer_markers:
+    - "This is a computer generated"
+    - "Page "

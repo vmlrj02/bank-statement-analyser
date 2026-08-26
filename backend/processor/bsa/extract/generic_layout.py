@@ -35,8 +35,13 @@ from ..models import RawRow, StatementMeta, StatementExtract
 # bare integers (serial numbers, ref codes) out of the amount columns. Some SBI
 # exports glue a CR/DR flag onto the BALANCE ("2,47,946.81CR"), so allow an
 # optional trailing CR/DR — _parse_amount strips it and negates a DR balance.
-NUM_RE = re.compile(r"^-?\d{1,3}(,\d{2,3})*\.\d{1,2}(CR|DR)?$|^-?\d+\.\d{1,2}(CR|DR)?$",
-                    re.I)
+# The final alternative accepts a sub-rupee amount printed with no leading zero
+# ("GST @18% ... .90"), which Axis does — without it those rows are dropped and
+# the balance chain breaks by exactly that amount (seen on an Axis cash-credit
+# statement: 51 breaks, all 0.90 GST-on-charge rows).
+NUM_RE = re.compile(
+    r"^-?\d{1,3}(,\d{2,3})*\.\d{1,2}(CR|DR)?$|^-?\d+\.\d{1,2}(CR|DR)?$"
+    r"|^-?\.\d{1,2}(CR|DR)?$", re.I)
 
 
 def _parse_amount(tok: str) -> float:
@@ -113,7 +118,8 @@ def _complete_year(day_month: str, meta) -> str:
     return f"{day_month} {years[0]}" if years else day_month
 
 
-def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list) -> None:
+def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
+                   invert: bool = False) -> None:
     """Assign buffered narration lines to the vertically NEAREST anchor, then
     emit the anchors in reading order.
 
@@ -138,6 +144,7 @@ def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list) -> None:
             description=" ".join(desc).strip(),
             withdrawal=a["wd"], deposit=a["dep"],
             balance=a["bal"], page=a["page"],
+            balance_inverted=invert,
         ))
     anchors.clear()
     narrs.clear()
@@ -192,6 +199,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     continuation = p.get("continuation", "below")
     above = continuation == "above"
     nearest = continuation == "nearest"
+    invert = bool(p.get("invert_balance"))     # cash-credit / overdraft chain
     date_parts = int(p.get("date_parts", 1))   # tokens forming a multi-word date
     infer_year = bool(p.get("infer_year_from_period", False))
     # Some exports run the value date straight into the narration with no
@@ -220,6 +228,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             description=" ".join(current["desc"]).strip(),
             withdrawal=current["wd"], deposit=current["dep"],
             balance=current["bal"], page=current["page"],
+            balance_inverted=invert,
         ))
         current = None
 
@@ -269,7 +278,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     if rx.search(text):
                         finalize()
                         pending.clear()
-                        _flush_nearest(seg_anchors, seg_narrs, rows)
+                        _flush_nearest(seg_anchors, seg_narrs, rows, invert)
                         active = scols or cols
                         switched = True
                         break
@@ -391,7 +400,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
 
             # Blocks do not span pages in a centred layout, so a page is a
             # complete segment: assign its narration lines and emit its rows.
-            _flush_nearest(seg_anchors, seg_narrs, rows)
+            _flush_nearest(seg_anchors, seg_narrs, rows, invert)
 
         finalize()
 
