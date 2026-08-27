@@ -259,3 +259,25 @@ AUDIT_PARTY_5 = [
     ("VPS/FUELJUNCTI/202509232058/526615558686/GUR", -5000.0, "Regular debit", "FUELJUNCTI"),
 ]
 CASES += AUDIT_PARTY_5
+
+
+# From Gopi's 3-file ICICI production run: NTS bank-guarantee advices and
+# digit-leading CMS names were the last party-less shapes.
+AUDIT_PARTY_5B = [
+    ("NTS/0188NDLG00019426-SFMS/GAURISHANKER BIHANI", -5000.0, "Regular debit", "GAURISHANKER BIHANI"),
+    ("NTS/0188NDLG00004926-Commission/EXECUTIVE ENGINEER BCDICPWD", -5000.0, "Regular debit", "EXECUTIVE ENGINEER BCDICPWD"),
+    ("CMS/001913888897/3D INTERIOR 55958", -5000.0, "Regular debit", "3D INTERIOR"),
+]
+CASES += AUDIT_PARTY_5B
+
+
+# From the reviewer's screenshot (PNB xxx0051 in production): the payee NAME is
+# the LAST segment after the VPA — it must beat the VPA and the P2V stamp.
+AUDIT_PARTY_6 = [
+    ("UPI/547986055357/P2M/paytmqr1lmw9f4k04@paytm/LALJI", -200.0, "Regular debit", "LALJI"),
+    ("UPI/511559190961/P2V/6006442073@axl/Pananalal Kum", -10000.0, "Regular debit", "Pananalal Kum"),
+    ("UPI/548563644409/P2V/nohargitlahre6@oksbi/NOHAR KU", -200.0, "Regular debit", "NOHAR KU"),
+    ("UPI/548578361675/P2M/q452290018@ybl/SHIVANSH FOOD", -100.0, "Regular debit", "SHIVANSH FOOD"),
+    ("UPI/512056306772/P2V/nanducrbt-3@oksbi/NAND SAHU", -2000.0, "Regular debit", "NAND SAHU"),
+]
+CASES += AUDIT_PARTY_6

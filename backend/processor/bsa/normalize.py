@@ -67,7 +67,7 @@ def scrub_control(s):
 # Channel markers that appear where a name would: UPI prints the transfer TYPE
 # (P2A person-to-account, P2M person-to-merchant) as its first segment on some
 # banks, and the boss-facing report once showed "P2A" as a customer's party.
-_CHANNEL_TOKENS = {"P2A", "P2M", "UPI", "IMPS", "NEFT", "RTGS", "MMT", "DR", "CR"}
+_CHANNEL_TOKENS = {"P2A", "P2M", "P2V", "P2P", "UPI", "IMPS", "NEFT", "RTGS", "MMT", "DR", "CR"}
 _BANKISH = re.compile(r"\bBANKS?\b\s*$|\bBANK LTD\.?$", re.I)
 # NEFT/RTGS references: a short bank prefix glued to a long number
 # ("HDFCH00395013738") — never a party, however name-like the letters look.
@@ -163,7 +163,7 @@ def _clean_segment(seg: str) -> str:
     # since that number is then the only identifier there is.
     toks = seg.split()
     if any(re.search(r"[A-Za-z]", t) for t in toks):
-        toks = [t for t in toks if not re.fullmatch(r"\d{6,}", t)]
+        toks = [t for t in toks if not re.fullmatch(r"\d{5,}", t)]
     return " ".join(toks).strip()
 
 
@@ -179,6 +179,12 @@ def extract_counterparty(desc: str, mode: str) -> str:
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
     if mode == "upi":
+        # PNB prints "UPI/<ref>/P2M|P2V/<vpa>/<NAME>" — the payee NAME is the
+        # LAST segment, after the VPA. Prefer it over the VPA (which the
+        # fallback below would otherwise return, hiding the real name).
+        m = re.search(r"UPI/\d+/P2[AMVP]/\S*@\S*/([^/]+?)\s*$", d)
+        if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+            return _clean_segment(m.group(1))
         # UPI/<NAME>/… on some banks; Axis prints UPI/P2A/<ref>/<NAME>/<bank>/…
         # so the first PLAUSIBLE segment is the party, never blindly the first.
         m = re.search(r"UPI/(.+)$", d)
@@ -342,7 +348,14 @@ def extract_counterparty(desc: str, mode: str) -> str:
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
     # CMS/<ref>/<NAME> — cash-management collection (big on ICICI current a/cs).
-    m = re.search(r"\bCMS/\d+/([A-Za-z][^/]*)", d)
+    # The name may START with a digit ("3D INTERIOR"), so require letters in the
+    # segment rather than a letter first.
+    m = re.search(r"\bCMS/\d+/([^/]*[A-Za-z][^/]*)", d)
+    if m and not _REFNUM.match(m.group(1).strip()):
+        return _clean_segment(m.group(1))
+    # NTS/<ref>-SFMS/<NAME>, NTS/<ref>-Commission/<NAME> — ICICI bank-guarantee /
+    # commission advices name the beneficiary after the second slash.
+    m = re.search(r"\bNTS/[^/]+/([A-Za-z][^/]+)", d)
     if m:
         return _clean_segment(m.group(1))
     # Axis POS/merchant collections: "IPS/<MERCHANT>/<ref>/<ref>/<location>" and
