@@ -11,15 +11,21 @@ Routes (HTTP API v2 routeKey):
   GET  /jobs/{id}           : job record incl. summary
   GET  /jobs/{id}/download  : ?format=csv|xlsx|json|preview|issues&account=<slug>
   POST /jobs/{id}/review    : {note?} -> mark a needs_review job reviewed
+  POST /jobs/{id}/corrections : admin: record a reviewer's corrected
+                                category/party for one row (training data)
+  GET  /jobs/{id}/corrections : admin: list them; ?format=csv exports in the
+                                golden-set shape (Description,Amount,Category,Bank)
 """
+import csv
 import hashlib
 import hmac
+import io
 import json
 import os
 import secrets
 import time
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import boto3
 
@@ -147,6 +153,10 @@ def _session(event):
 
 MAX_FILES_PER_JOB = 20
 
+# Reviewer corrections live on the job item itself (like `review`), so they
+# must never be able to push it past DynamoDB's 400KB item limit.
+MAX_CORRECTIONS = 500
+
 FORMAT_KEYS = {
     "csv": ("statement_transactions.csv", "text/csv"),
     "xlsx": ("statement_analysis.xlsx",
@@ -171,6 +181,9 @@ def _scrub(item, is_admin=False):
             f.pop("password", None)
     if not is_admin:
         item.pop("owner", None)
+        # Corrections are an admin workflow (they carry the reviewer's email
+        # and feed the training set) — a customer never sees them.
+        item.pop("corrections", None)
         summary = item.get("summary")
         if isinstance(summary, dict):
             summary.pop("ai", None)
@@ -393,6 +406,82 @@ def lambda_handler(event, _ctx):
                 ":t": int(time.time())},
         )
         return _resp(200, {"ok": True, "status": "reviewed"})
+
+    # Reviewer corrections — captured training data. A correction is one row
+    # the reviewer relabelled (right category and/or party), appended to the
+    # job item the same way `review` is stored: one read, one write, no new
+    # table. Admin-only both ways: corrections feed the categorisation truth
+    # set (tests/data/golden_category_truth.csv), which is a domain-owner
+    # task, not a customer control — so a customer gets 403 on ANY job,
+    # their own included.
+    if route in ("POST /jobs/{id}/corrections",
+                 "GET /jobs/{id}/corrections") and path_id:
+        if not is_admin:
+            return _resp(403, {"error": "admin only"})
+        it = TABLE.get_item(Key={"job_id": path_id}).get("Item")
+        if not it:
+            return _resp(404, {"error": "not found"})
+        existing = list(it.get("corrections") or [])
+
+        if route.startswith("GET"):
+            if qs.get("format") == "csv":
+                # The EXACT shape of the golden set, so an export can be
+                # appended to it verbatim. A party-only correction teaches no
+                # category and is left out of the CSV (it stays in the JSON).
+                buf = io.StringIO()
+                w = csv.writer(buf, lineterminator="\n")
+                w.writerow(["Description", "Amount", "Category", "Bank"])
+                for c in existing:
+                    if not c.get("new_category"):
+                        continue
+                    w.writerow([c.get("description", ""),
+                                repr(float(c.get("amount", 0))),
+                                c.get("new_category", ""),
+                                c.get("bank", "")])
+                return {"statusCode": 200,
+                        "headers": {"content-type": "text/csv",
+                                    "access-control-allow-origin": "*",
+                                    "content-disposition":
+                                        f'attachment; filename="corrections_{path_id}.csv"'},
+                        "body": buf.getvalue()}
+            return _resp(200, {"corrections": existing})
+
+        body = json.loads(event.get("body") or "{}")
+        desc = str(body.get("description") or "").strip()
+        if not desc:
+            return _resp(400, {"error": "description required"})
+        try:
+            # Decimal, never float: the resource interface refuses floats.
+            amount = Decimal(str(body.get("amount") or 0).replace(",", ""))
+        except InvalidOperation:
+            return _resp(400, {"error": "amount must be a number"})
+        new_cat = str(body.get("new_category") or "").strip()[:80]
+        new_party = str(body.get("new_party") or "").strip()[:120]
+        if not new_cat and not new_party:
+            return _resp(400, {"error": "a corrected category or party is required"})
+        if len(existing) >= MAX_CORRECTIONS:
+            return _resp(409, {"error": f"correction limit reached "
+                                        f"({MAX_CORRECTIONS} per job)"})
+        correction = {
+            "uid": str(body.get("uid") or "")[:80],
+            "description": desc[:300],
+            "amount": amount,
+            "bank": str(body.get("bank") or "")[:80],
+            "account": str(body.get("account") or "")[:80],
+            "old_category": str(body.get("old_category") or "")[:80],
+            "new_category": new_cat,
+            "old_party": str(body.get("old_party") or "")[:120],
+            "new_party": new_party,
+            "corrected_by": user_sub,
+            "ts": int(time.time()),
+        }
+        TABLE.update_item(
+            Key={"job_id": path_id},
+            UpdateExpression="SET corrections = :c, updated_at = :t",
+            ExpressionAttributeValues={":c": existing + [correction],
+                                       ":t": int(time.time())},
+        )
+        return _resp(200, {"ok": True, "count": len(existing) + 1})
 
     # Categorisation playground (beta) — admin-only. Lets the domain owner type a
     # narration and see exactly how the engine reads it (mode, party, category),
