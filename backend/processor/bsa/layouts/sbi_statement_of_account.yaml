@@ -39,3 +39,6 @@ parse:
   footer_markers:
     - "This is a computer generated"
     - "Please do not share"
+    - "Page no"                  # the per-page "Page no. N" footer sits in the
+                                # narration band and was bleeding into the last
+                                # transaction on every page (54 rows)
