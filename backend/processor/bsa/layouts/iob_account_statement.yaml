@@ -35,4 +35,5 @@ parse:
     balance_x1_max: 560        # BALANCE — right edge ~543
   footer_markers:
     - "This is system generated"
+    - "computer generated"   # the footer the sample actually prints
     - "Page"

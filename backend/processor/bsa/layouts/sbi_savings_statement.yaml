@@ -42,5 +42,6 @@ parse:
     balance_x1_max: 570            # Balance, right edge ~557
     tail_x_min: 99999
   footer_markers:
+    - "CLOSING BALANCE"      # end-of-statement summary was bleeding into narration
     - "This is a computer generated"
     - "Please do not share"

@@ -463,6 +463,10 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     # balance — never on a guess, so a genuine extraction error still fails.
     _repair_swapped_pairs(txns)
 
+    # Reviewer-eye gate FIRST: clear junk parties ("NE", "DR", an IFSC, a glued
+    # ref tail) so the narration fill below gets a clean shot at those rows.
+    sanitise_parties(txns)
+
     # Structured-narration fallback: where none of the per-format rules named a
     # party, take the counterparty field the narration PARSER found (it
     # decomposes UPI/IMPS/NEFT/RTGS into channel/refs/name/bank/remark). The
@@ -526,6 +530,57 @@ def party_kind(counterparty: str, description: str) -> str:
     if letters < 2 or digits >= letters:
         return "handle"                       # an account / reference number
     return "named"
+
+
+# The reviewer-eye party gate: junk a human would instantly reject. A party
+# failing this is cleared to "" — which lets the narration-parser fill and the
+# identifier map take another, better shot at the row.
+_IFSC_SHAPE = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
+_REF_TAIL = re.compile(r"\s+(?:[A-Z]{2,6}[-/][A-Z0-9/*.-]*\d[\S]*|\d[\d/*.]{8,}\S*)(\s.*)?$")
+
+
+_PARTY_STOP = {"ATTN", "TPT", "CHG", "RETURN", "REVERSAL", "ACCOUNT CLOSED",
+               "UTR NO", "UTR", "CLG", "NEFT CR", "NEFT DR", "RTGS CR", "RTGS DR"}
+_BANK_PREFIX = re.compile(r"^(?:SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|IOBA|"
+                          r"UBIN|INDB|YESB|IDFB|FDRL|KVBL|MAHB|AUBL|ESFB|NTBL|BKID|"
+                          r"SIBL|AIRP|YBL|PTSB)$", re.I)
+
+
+def _sanitise_party(p: str) -> str:
+    p = re.sub(r"\s+", " ", p or "").strip(" -/*.:")
+    if not p:
+        return ""
+    # a glued reference tail after a real name ("SAHU CONSTRUCTION AND BORWELLS
+    # IMPS-OUT/5166.../BARB0...") — keep the name, drop the machinery
+    p = _REF_TAIL.sub("", p).strip(" -/*.:")
+    # slash-junk ("KKBK/chitrarama/UPI", "UTR NO: / TREE OF LIFE …"): recover the
+    # best inner segment — the letters-heavy one that is not a bank code, stamp,
+    # or stop word — instead of showing the whole machinery as the party.
+    if p.count("/") >= 2:
+        best = ""
+        for seg in p.split("/"):
+            seg = seg.strip(" -*.:")
+            su = seg.upper()
+            if (su in _PARTY_STOP or su in _CHANNEL_TOKENS or su in _REMARK_WORDS
+                    or _BANK_PREFIX.match(su) or _IFSC_SHAPE.fullmatch(su.replace(" ", ""))):
+                continue
+            if sum(c.isalpha() for c in seg) > sum(c.isalpha() for c in best):
+                best = seg
+        p = best.strip(" -*.:")
+    up = p.upper()
+    letters = sum(c.isalpha() for c in p)
+    if letters <= 2 and not p.isdigit() and "@" not in p:
+        return ""                                    # "NE", "DR", "S" — noise
+    if up in _CHANNEL_TOKENS or up in _REMARK_WORDS or up in _PARTY_STOP:
+        return ""                                    # a channel/stamp/stop word
+    if _IFSC_SHAPE.fullmatch(up.replace(" ", "")):
+        return ""                                    # an IFSC is a bank, not a party
+    return p
+
+
+def sanitise_parties(txns: list[Txn]) -> None:
+    for t in txns:
+        t.counterparty = _sanitise_party(t.counterparty)
 
 
 def _fill_party_from_narration(txns: list[Txn]) -> None:

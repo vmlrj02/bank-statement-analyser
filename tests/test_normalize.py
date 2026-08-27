@@ -253,3 +253,20 @@ def test_identifier_resolution_vpa():
             t("UPI-9963059528-9963059528@YBL-SBIN0-517620", "9963059528@ybl")]
     resolve_identifiers(rows)
     assert rows[1].counterparty == "ASHOK GARG"
+
+
+def test_party_sanitiser_kills_reviewer_visible_junk():
+    """The reviewer-eye gate: junk a human instantly rejects is cleared (which
+    lets the narration parser take a better shot), a glued ref-tail is trimmed,
+    and slash-junk recovers the real inner name."""
+    from bsa.normalize import _sanitise_party
+    assert _sanitise_party("NE") == ""
+    assert _sanitise_party("DR") == ""
+    assert _sanitise_party("ATTN") == ""
+    assert _sanitise_party("UBIN0900621") == ""                 # an IFSC
+    assert _sanitise_party(
+        "SAHU CONSTRUCTION AND BORWELLS IMPS-OUT/516610541142/BARB0VJKRUD/8733"
+    ) == "SAHU CONSTRUCTION AND BORWELLS"
+    assert _sanitise_party("KKBK/chitrarama/UPI") == "chitrarama"
+    assert _sanitise_party("RAMESH KUMAR") == "RAMESH KUMAR"    # real names pass
+    assert _sanitise_party("9963059528@ybl") == "9963059528@ybl"  # handles kept

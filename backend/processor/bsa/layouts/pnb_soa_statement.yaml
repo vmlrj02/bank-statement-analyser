@@ -24,7 +24,9 @@ parse:
   header_offset: 12
   row_anchor: '^\d{2}-\d{2}-\d{4}$'
   date_format: "%d-%m-%Y"
-  continuation: below
+  continuation: nearest   # wrapped narration prints ABOVE its anchor;
+                          # 'below' merged it into the previous txn and
+                          # left the owner's description empty
   amounts_left: true            # Withdrawal/Deposit/Balance sit LEFT of narration
   columns:
     date_x_max: 90              # Tran Date ~47-78

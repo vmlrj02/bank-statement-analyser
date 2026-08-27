@@ -39,6 +39,8 @@ parse:
     balance_x1_max: 480         # Balance right edge ~474
     type_band: [410, 435]       # DR/CR flag at x0 ~419-427
     tail_x_min: 485             # Branch Name (~477+) stays out of everything
+  skip_rows:
+    - "OPENING BALANCE"    # header row, was prefixing the first narration
   footer_markers:
     - "This is a computer generated"
     - "Page "

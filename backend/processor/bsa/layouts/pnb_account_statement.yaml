@@ -35,5 +35,6 @@ parse:
     balance_x1_max: 330         # Balance — right edge ~313
     tail_x_min: 99999
   footer_markers:
+    - "Generated through"    # "***Generated through PNB ONE***" page footer
     - "This is a system generated"
     - "Page No"

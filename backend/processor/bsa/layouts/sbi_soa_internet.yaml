@@ -36,5 +36,6 @@ parse:
     balance_x1_max: 560         # Balance right edge ~548
     tail_x_min: 99999
   footer_markers:
+    - "Page no"              # per-page footer was bleeding into narration
     - "This is a computer generated"
     - "Please do not share"

@@ -257,7 +257,7 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # A row that IS a fee ("CHG/<ref>/<bank>/CHOLAMXVFPKUD000" — the ₹11.80
         # IMPS charge printed beside the actual EMI) names the lender but is
         # not a payment to them.
-        if lender_name and re.match(r"CHG[/\s-]", d):
+        if lender_name and re.search(r"(?:^|[\s/-])CHG[/\s-]", d):
             lender_name = None
         lender = lender_name is not None
         # Name the party after the lender when the extracted one is a channel
@@ -343,7 +343,12 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                              # ("ACH DR 10INDUSIND BANK…") and UPI autopay
                              # mandates ("UPI/P2M/…/Mandate//P2V/") — both are
                              # mandate pulls, i.e. ECS in the taxonomy.
-                             or re.search(r"\bACH\s*DR\b|\bMANDATE", d, re.I)):
+                             or re.search(r"\bACH\s*DR\b|\bMANDATE", d, re.I)) \
+                and not re.search(_CHARGE_TOKEN, d, re.I):
+            # The charge guard keeps the FEE for a mandate out of this branch:
+            # a monthly "ECS Txn Chrgs Incl GST" of 30 was recurring at a fixed
+            # amount and getting tagged an EMI — it is a service charge, and
+            # falls through to the fee handling / Regular debit instead.
             # --- Tier 2: recurrence — monthly fixed-amount NACH = EMI ---
             tag = ("EMI transaction" if t.uid in recurring_nach else "ECS transaction")
             if t.uid in recurring_nach:

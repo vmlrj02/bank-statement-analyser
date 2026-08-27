@@ -38,5 +38,6 @@ parse:
                                 # (the joint-account variant prints it ~4px wider)
     tail_x_min: 99999
   footer_markers:
+    - "Generated through"    # "***Generated through PNB ONE***" page footer
     - "This is a system generated"
     - "Page No"
