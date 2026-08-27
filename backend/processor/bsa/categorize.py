@@ -210,11 +210,40 @@ def _find_recurring_nach(txns: list[Txn]) -> set[str]:
     return emis
 
 
+def _find_recurring_emi(txns: list[Txn]) -> set[str]:
+    """uids of debits — ANY channel — that recur at the same amount to the same
+    counterparty in >= 3 distinct months, at a monthly cadence: an EMI paid by
+    IMPS/NEFT/transfer instead of a NACH mandate (the reviewer's rule: "monthly
+    recurring txns of same amount = EMI"; seen with Mahindra Finance).
+
+    Deliberately conservative, because this reclassifies rows with no lender
+    keyword at all:
+      * a REAL counterparty is required — with no name, unrelated payments of
+        the same amount would collapse into one group;
+      * amount >= 500 — a recurring 5.90 SMS charge is not an EMI;
+      * count <= months + 1 — the same amount many times a month is trading
+        volume, not an instalment (the +1 allows one bounce-and-retry).
+    Only consulted for rows that would otherwise fall through to Regular debit,
+    so an explicit rule/dictionary/related-party tag always wins."""
+    groups: dict[tuple, list[Txn]] = defaultdict(list)
+    for t in txns:
+        party = t.counterparty.upper().replace(" ", "")
+        if t.amount <= -500 and len(party) >= 4 and party != "UNKNOWNPARTY":
+            groups[(party, round(-t.amount, 2))].append(t)
+    emis: set[str] = set()
+    for ts in groups.values():
+        months = {t.date[:7] for t in ts}
+        if len(months) >= 3 and len(ts) <= len(months) + 1:
+            emis.update(t.uid for t in ts)
+    return emis
+
+
 def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                use_llm: bool = False) -> list[Txn]:
     related = [re.sub(r"\s+", "", p).upper() for p in (related_parties or [])]
     dictionary = _load_dictionary()
     recurring_nach = _find_recurring_nach(txns)
+    recurring_emi = _find_recurring_emi(txns)
 
     for t in txns:
         d, credit = t.description, t.amount > 0
@@ -337,6 +366,17 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # In Phase 1 the unresolved merchants of a statement are classified in
         # ONE Bedrock call and written back into the dictionary. Locally: skip.
 
+        # --- Tier 2b: general recurrence — monthly fixed-amount debit to the
+        # same party = EMI, whatever the channel (IMPS/NEFT/transfer). Applied
+        # only where nothing above tagged the row, so it upgrades would-be
+        # Regular debits and never overrides an explicit signal.
+        if not tag and not credit and t.uid in recurring_emi:
+            # "recurrence-cadence" (not "recurrence"): a NACH-mandate recurrence
+            # is a definitive signal, but this one is purely behavioural — a
+            # fixed monthly payment to an individual can also be rent or wages —
+            # so it gets MEDIUM confidence below, keeping it visible for review.
+            tag, src = "EMI transaction", "recurrence-cadence"
+
         # --- Fallback: regular transfers ---
         if not tag:
             tag = "Regular credit" if credit else "Regular debit"
@@ -350,7 +390,9 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # is genuinely "we don't know what or who" (LOW), and those are what a
         # reviewer should eyeball rather than trust. The report never presents a
         # low row as certain.
-        if src != "fallback":
+        if src == "recurrence-cadence":
+            t.confidence = "medium"      # behavioural inference, not a keyword
+        elif src != "fallback":
             t.confidence = "high"
         elif t.counterparty and t.counterparty.strip().upper() not in _WEAK_PARTY:
             t.confidence = "medium"

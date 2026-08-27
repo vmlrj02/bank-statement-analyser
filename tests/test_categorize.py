@@ -135,3 +135,48 @@ def test_confidence_low_when_neither_category_nor_party_is_known():
     t = _one("UPISETTLEMENT-549564-07/05/25 000000000000000", 500.0)
     assert t.category == "Regular credit" and not (t.counterparty and t.counterparty != "unknown party")
     assert t.confidence == "low"
+
+
+def _rec(date, amount, party, desc="IMPS/123/x", uid=""):
+    t = Txn(date=date, cheque_no="", description=desc, amount=amount,
+            balance=0.0, mode="imps", counterparty=party)
+    t.uid = uid or f"{date}|{party}|{amount}"
+    return t
+
+
+def test_monthly_recurring_same_amount_is_emi():
+    """The reviewer's rule: a debit of the same amount to the same party in
+    three or more distinct months is an EMI, whatever the channel — seen with
+    Mahindra Finance paid by IMPS, no lender keyword in the narration."""
+    rows = [_rec(f"2026-0{m}-05", -21990.0, "MAHINDRA FIN SERVICES")
+            for m in (1, 2, 3)]
+    rows.append(_rec("2026-03-09", -777.0, "SOMEONE ELSE"))
+    categorize(rows)
+    assert [t.category for t in rows[:3]] == ["EMI transaction"] * 3
+    assert all(t.category_source == "recurrence-cadence" for t in rows[:3])
+    assert all(t.confidence == "medium" for t in rows[:3])
+    assert rows[3].category == "Regular debit"
+
+
+def test_recurrence_guards_hold():
+    # a tiny recurring charge is not an EMI
+    small = [_rec(f"2026-0{m}-01", -5.9, "SMS ALERTS") for m in (1, 2, 3)]
+    # the same amount MANY times a month is trading volume, not an instalment
+    busy = [_rec(f"2026-01-{d:02d}", -25000.0, "STEEL TRADER", uid=f"b{d}")
+            for d in range(1, 9)] + \
+           [_rec(f"2026-0{m}-01", -25000.0, "STEEL TRADER", uid=f"m{m}")
+            for m in (2, 3)]
+    # no counterparty -> unrelated debits must not collapse into one group
+    anon = [_rec(f"2026-0{m}-02", -9000.0, "") for m in (1, 2, 3)]
+    rows = small + busy + anon
+    categorize(rows)
+    assert all(t.category != "EMI transaction" for t in rows)
+
+
+def test_recurrence_never_overrides_an_explicit_rule():
+    rows = [_rec(f"2026-0{m}-04", -1500.0, "SOME SHOP",
+                 desc="BY CASH DEPOSIT MACHINE") for m in (1, 2, 3)]
+    for t in rows:
+        t.amount = 1500.0            # cash deposits, rule-tagged credits
+    categorize(rows)
+    assert all(t.category == "cash deposit" for t in rows)
