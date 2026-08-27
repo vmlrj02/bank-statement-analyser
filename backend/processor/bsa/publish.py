@@ -151,6 +151,18 @@ def _eod_balances(txns: list[Txn]) -> list[tuple[str, str, float]]:
 
 
 def write_workbook(result: JobResult, path: str) -> None:
+    # Belt-and-suspenders: normalize already scrubs control bytes at the source,
+    # but a single illegal character in ANY cell makes openpyxl reject the whole
+    # workbook ("cannot be used in worksheets"), failing the job at publish. So
+    # scrub the meta strings again here in case a merge path re-derived them —
+    # the txn fields are already clean from normalize.
+    from .normalize import scrub_control
+    m = result.meta
+    for fld in ("account_name", "account_no", "bank", "producer", "creator",
+                "pdf_created", "pdf_modified"):
+        if hasattr(m, fld):
+            setattr(m, fld, scrub_control(getattr(m, fld)))
+
     wb = Workbook()
     wb.remove(wb.active)
     bold = Font(bold=True)

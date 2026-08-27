@@ -53,6 +53,17 @@ MODE_RULES = [
 
 _IFSC = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
 _REFNUM = re.compile(r"^\d{6,}$")
+
+# Control/non-printable bytes that a font-encoding quirk can leave in extracted
+# text. Excel/openpyxl rejects these outright ("cannot be used in worksheets"),
+# and they are noise everywhere else (JSON, DynamoDB, the preview), so scrub them
+# at the source — the exact set openpyxl forbids, plus DEL. \t\n\r are left for
+# the normal whitespace collapse.
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def scrub_control(s):
+    return _CTRL.sub("", s) if isinstance(s, str) else s
 # Channel markers that appear where a name would: UPI prints the transfer TYPE
 # (P2A person-to-account, P2M person-to-merchant) as its first segment on some
 # banks, and the boss-facing report once showed "P2A" as a customer's party.
@@ -388,6 +399,13 @@ def extract_counterparty(desc: str, mode: str) -> str:
 
 
 def normalize(extract: StatementExtract) -> list[Txn]:
+    # Scrub control bytes out of the statement identity ONCE, at the single point
+    # every downstream stage (workbook, JSON, DynamoDB, preview) reads it from.
+    m = extract.meta
+    for fld in ("account_name", "account_no", "bank", "producer", "creator",
+                "pdf_created", "pdf_modified"):
+        setattr(m, fld, scrub_control(getattr(m, fld, "")))
+    m.account_name = re.sub(r"\s+", " ", m.account_name or "").strip()
     txns: list[Txn] = []
     for r in extract.rows:
         if r.is_opening:
@@ -413,7 +431,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
             amount = r.deposit
         else:
             continue  # balance-only row (B/F etc.) — not a transaction
-        desc = re.sub(r"\s+", " ", r.description).strip()
+        desc = re.sub(r"\s+", " ", scrub_control(r.description)).strip()
         mode = detect_mode(desc)
         try:
             iso_date = parse_date(r.date)
@@ -424,7 +442,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
                 f"{e} in {extract.meta.source_file or 'statement'} "
                 f"(page {r.page}): {desc[:60]}") from None
         txns.append(Txn(
-            date=iso_date, cheque_no=r.cheque_no, description=desc,
+            date=iso_date, cheque_no=scrub_control(r.cheque_no), description=desc,
             amount=round(amount, 2), balance=r.balance, mode=mode,
             counterparty=extract_counterparty(desc, mode),
             page=r.page, source_file=extract.meta.source_file,
