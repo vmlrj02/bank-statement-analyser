@@ -29,6 +29,7 @@ from collections import defaultdict
 import yaml
 
 from .models import Txn
+from .narration import parse_narration
 
 _RULES_PATH = os.path.join(os.path.dirname(__file__), "data", "category_rules.yaml")
 
@@ -169,7 +170,11 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         d, credit = t.description, t.amount > 0
         tag, src = "", "rule"
 
-        lender_name = _matched_lender(d)
+        # Match a lender against the STRUCTURED part of the narration, not the
+        # payer's free-text remark — so a customer who types "parimal finance
+        # amount" in the note of a credit from "happylaser" no longer flips it to
+        # a loan disbursal. The remark is separated by narration.parse_narration.
+        lender_name = _matched_lender(parse_narration(d).structured)
         lender = lender_name is not None
         # Name the party after the lender when the extracted one is a channel
         # marker or a generic tail (BBPS "BPAY", UPI "Bank Account").
