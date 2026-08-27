@@ -101,7 +101,10 @@ INVESTMENT_HINTS = [
     "MF REDEMPTION", "NSE ", "BSE ", "CDSL", "NSDL", "RD MATURITY", "FD CLOS",
 ]
 SALARY_HINTS = [r"\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL"]
-REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF", r"\bRET\b.*\bCR\b",
+# \bREFUND\b, not \bREF(UND)?\b: bare "REF" is a ubiquitous reference stamp in
+# NEFT/IMPS narrations ("…/INDIAN OVERSEAS BANK/REF/", "…-REF") — on real
+# statements nearly half the rows it tagged as refunds were ordinary credits.
+REFUND_HINTS = [r"\bREFUND\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF", r"\bRET\b.*\bCR\b",
                 # "RVSL IW CTR RTN CHQNO:…" — a returned instrument credited back
                 r"\bRVSL\b",
                 # "RTGS RETURN-<ref>-<name>-OPERATIONS SUSPENDED" — an outgoing

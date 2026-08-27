@@ -77,6 +77,11 @@ CASES = [
     ("RTGS RETURN-ICICR42026011900518516-S N S PRODUCTSPVT LTD-OPERATIONS SUSPENDED", 772905.0, "return / refund", None),
     ("RVSL IW CTR RTN CHQNO:011541", 2900000.0, "return / refund", None),
     ("Chq Rtrn Chrgs Incl GST", -590.0, "Outward Bounced Xns", None),
+    # ...but a bare "REF" is a reference stamp, not a refund: real NEFT/IMPS
+    # credits print it as a trailing token, and matching it tagged nearly half
+    # of the return-labelled rows on real statements as false refunds.
+    ("NEFT/IOBAN2025120366504036/BALASORE ALLOYS LIMITED/INDIAN OVERSEAS BANK/REF/ ////////", 250000.0, "Regular credit", None),
+    ("IMPS-530717227136-ATAK INDIASALES OPC PRIVATE-HDFC-XXXXXXXX6543-REF", 100000.0, "Regular credit", None),
 
     # --- ATM / cash withdrawal ---
     ("ATM-CASH/+SARJAPUR ROAD BR/BANGALORE-URB/010226", -10000.0, "cash withdrawal", None),
