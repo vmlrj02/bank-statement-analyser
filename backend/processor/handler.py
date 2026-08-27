@@ -463,6 +463,11 @@ def lambda_handler(event, _ctx):
                     worst = "failed"
 
                 txns = dedup_merge(lists) if len(lists) > 1 else list(lists[0])
+                # Cross-statement identifier resolution: with every statement of
+                # the account in one list, a party named in March fills the
+                # bare-account-number rows of January.
+                from bsa.normalize import resolve_identifiers
+                resolve_identifiers(txns)
                 categorize(txns, related_parties=related)
 
                 # Mask only after uid, dedup and validation have used the real

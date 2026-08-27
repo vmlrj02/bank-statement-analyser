@@ -213,3 +213,43 @@ def test_party_kind_splits_names_from_handles():
     assert party_kind("", "NEFT/..") == "none"
     assert party_kind("unknown party", "x") == "none"
     assert party_kind("", "BRN BY CASH self") == "na"                  # un-nameable
+
+
+def test_identifier_resolution_names_the_bare_rows():
+    """The same beneficiary account named in one row fills the rows where only
+    the number was printed — and never smears via the customer's own account."""
+    from bsa.normalize import resolve_identifiers
+    from bsa.models import Txn
+    def t(desc, cp, own="111000111000"):
+        x = Txn(date="2026-01-01", cheque_no="", description=desc, amount=-10.0,
+                balance=0.0, mode="other", counterparty=cp, account_no=own)
+        return x
+    rows = [
+        t("TRANSFER TO 4698150044305 SUKUMAR /", "SUKUMAR"),          # names it
+        t("TRANSFER TO 4698150044305 /", "4698150044305"),            # bare
+        t("TRANSFER TO 4698150044305", ""),                           # empty
+        # own account printed alongside a name must NOT map
+        t("FROM 111000111000 TO 9999888877 RAVI KUMAR", "RAVI KUMAR"),
+        t("TRANSFER 111000111000", ""),
+        # ambiguous id (two names) must not fill
+        t("PAY 5555666677 ALPHA TRADERS", "ALPHA TRADERS"),
+        t("PAY 5555666677 BETA STORES", "BETA STORES"),
+        t("PAY 5555666677", ""),
+    ]
+    resolve_identifiers(rows)
+    assert rows[1].counterparty == "SUKUMAR"
+    assert rows[2].counterparty == "SUKUMAR"
+    assert rows[4].counterparty == ""            # own account never maps
+    assert rows[7].counterparty == ""            # ambiguous stays empty
+
+
+def test_identifier_resolution_vpa():
+    from bsa.normalize import resolve_identifiers
+    from bsa.models import Txn
+    def t(desc, cp):
+        return Txn(date="2026-01-01", cheque_no="", description=desc, amount=-10.0,
+                   balance=0.0, mode="upi", counterparty=cp, account_no="1")
+    rows = [t("UPI-ASHOK GARG-9963059528@ybl-SBIN0-PAY", "ASHOK GARG"),
+            t("UPI-9963059528-9963059528@YBL-SBIN0-517620", "9963059528@ybl")]
+    resolve_identifiers(rows)
+    assert rows[1].counterparty == "ASHOK GARG"

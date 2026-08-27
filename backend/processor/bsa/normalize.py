@@ -475,6 +475,11 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     # fills the same name where another row's format hid it.
     _apply_gazetteer(txns)
 
+    # Identifier self-reference: an account number / VPA named in one row fills
+    # the rows where only the identifier was printed. Runs again on the merged
+    # account in the processor, where it sees every statement at once.
+    resolve_identifiers(txns)
+
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
     # across merged files is a duplicate)
@@ -542,6 +547,54 @@ def _fill_party_from_narration(txns: list[Txn]) -> None:
         if cand.upper() in _REMARK_WORDS or cand.upper() in _CHANNEL_TOKENS:
             continue
         t.counterparty = cand
+
+
+_ID_IN_TEXT = re.compile(r"\b\d{9,18}\b")           # account-number-shaped runs
+_VPA_IN_TEXT = re.compile(r"\b([A-Za-z0-9._-]{2,}@[A-Za-z]{2,})\b")
+
+
+def resolve_identifiers(txns: list[Txn]) -> None:
+    """Corpus self-reference: the same beneficiary account number or UPI VPA
+    appears across many rows — NAMED in some ("TRANSFER TO 4698150044305
+    SUKUMAR"), bare in others ("TRANSFER TO 4698150044305"). Harvest
+    identifier→name from the named rows, then fill the rows where only the
+    identifier was printed. Called per statement in normalize and again on the
+    merged account in the processor, where it sees every statement at once.
+
+    Correctness over coverage:
+      * the statement's OWN account number never enters the map (a narration
+        often prints both sides, and mapping our side to the other side's name
+        would smear one counterparty across everything);
+      * an identifier that different rows attribute to DIFFERENT names is
+        ambiguous and skipped (no majority guessing);
+      * a row is filled only when ALL its known identifiers agree on one name.
+    A transaction-unique reference (UTR) sails through harmlessly: it exists in
+    one row only, so it can never fill another."""
+    own = {t.account_no.strip() for t in txns if t.account_no} - {""}
+    id2names: dict[str, set] = {}
+    for t in txns:
+        if party_kind(t.counterparty, t.description) != "named":
+            continue
+        ids = set(_ID_IN_TEXT.findall(t.description)) - own
+        ids |= {v.lower() for v in _VPA_IN_TEXT.findall(t.description)}
+        for i in ids:
+            id2names.setdefault(i, set()).add(t.counterparty)
+    resolved = {i: next(iter(ns)) for i, ns in id2names.items() if len(ns) == 1}
+    if not resolved:
+        return
+    for t in txns:
+        kind = party_kind(t.counterparty, t.description)
+        if kind in ("named", "na"):
+            continue
+        ids = set(_ID_IN_TEXT.findall(t.description)) - own
+        ids |= {v.lower() for v in _VPA_IN_TEXT.findall(t.description)}
+        if t.counterparty:
+            ids |= set(_ID_IN_TEXT.findall(t.counterparty))
+            if "@" in t.counterparty:
+                ids.add(t.counterparty.lower())
+        names = {resolved[i] for i in ids if i in resolved}
+        if len(names) == 1:
+            t.counterparty = names.pop()
 
 
 def _apply_gazetteer(txns: list[Txn]) -> None:
