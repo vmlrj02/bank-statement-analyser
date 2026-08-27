@@ -26,6 +26,11 @@ parse:
   row_anchor: '^\d{2}-\d{2}-\d{4}$'
   date_format: "%d-%m-%Y"
   continuation: below
+  wrapped_balance: true         # a 7-figure balance no longer fits its column:
+                                # the number wraps onto the narration line above
+                                # the anchor and the CR/DR suffix onto the line
+                                # below — without this every such row is dropped
+                                # (335 rows on a 71-page passbook)
   columns:
     date_x_max: 78              # Txn date ends ~68; Value date starts ~85
     remarks_x_min: 128          # description after the Value Date column
@@ -42,3 +47,6 @@ parse:
     - "Page no"                  # the per-page "Page no. N" footer sits in the
                                 # narration band and was bleeding into the last
                                 # transaction on every page (54 rows)
+    - "CLOSING BALANCE"         # end-of-statement summary block (printed once,
+                                # right below the final row) was bleeding whole
+                                # into the last transaction's description
