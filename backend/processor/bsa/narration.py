@@ -34,8 +34,12 @@ _STAMP = {"UPI", "IMPS", "NEFT", "RTGS", "MMT", "P2A", "P2M", "P2P", "DR", "CR",
           # IMPS/…", "NEFT CR-…") — a segment made only of these names no party
           "WDL", "TFR", "DEP", "TRF", "CHQ", "CLG", "INT", "SELF", "RET",
           "RETURN", "TO", "FROM", "BY"}
-# A segment that names the counterparty's BANK, not the counterparty.
-_BANKISH = re.compile(r"BANK|\bLTD\b|SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
+# A segment that names the counterparty's BANK, not the counterparty. "LTD" is
+# deliberately NOT bankish: lenders and companies print as "ADITYA BIRLA
+# FINANCE LTD" / "Bajaj Finance Ltd", and treating LTD as a bank marker made
+# every limited-company counterparty invisible to the parser (a real bank
+# segment says BANK or carries a bank code, which still matches below).
+_BANKISH = re.compile(r"BANK|SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
                       r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|\bMAHB\b|\bAUBL\b|"
                       r"\bESFB\b|\bNTBL\b|\bBKID\b|\bSIBL\b|@[a-z]", re.I)
 
@@ -75,6 +79,12 @@ def _seg_kind(seg: str) -> str:
     # "WDL TFR IMPS") — without this the channel prefix reads as a name.
     toks = s.replace(".", "").split()
     if toks and all(t.upper() in _STAMP for t in toks):
+        return "stamp"
+    # A one/two-letter segment is a channel letter ("N/" = NEFT, "R/" = RTGS)
+    # or a truncation stub — never the counterparty. Without this, "N" was
+    # read as the name and the real company after the bank code became a
+    # "remark", hiding a lender from classification.
+    if len(s) <= 2 and s.isalpha():
         return "stamp"
     if _REF.match(s):
         return "ref"
