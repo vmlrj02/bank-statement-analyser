@@ -111,7 +111,8 @@ def test_an_expired_session_row_is_not_accepted(api, auth_table, signed_in):
 
 @pytest.mark.parametrize("route", [
     "GET /jobs", "POST /jobs", "GET /jobs/{id}", "GET /jobs/{id}/download",
-    "POST /jobs/{id}/review", "POST /auth/logout", "POST /auth/password",
+    "POST /jobs/{id}/review", "POST /jobs/{id}/corrections",
+    "GET /jobs/{id}/corrections", "POST /auth/logout", "POST /auth/password",
 ])
 def test_every_route_but_login_requires_a_session(api, route):
     r = api.lambda_handler(_ev(route, body={}, path_id="j1"), None)
@@ -285,6 +286,144 @@ def test_a_job_that_is_not_awaiting_review_cannot_be_reviewed(api, jobs_table,
     r = api.lambda_handler(_ev("POST /jobs/{id}/review", token, path_id="j",
                                body={}), None)
     assert r["statusCode"] == 409
+
+
+# ------------------------------------------------------------ corrections --
+
+def _correction(**kw):
+    body = {"description": "ECS/UTIBDE111/Bajaj Finance Ltd_SMS OT",
+            "amount": -128182.5, "bank": "Axis Bank", "account": "axis-1234",
+            "old_category": "Regular debit", "new_category": "EMI transaction",
+            "old_party": "", "new_party": "Bajaj Finance Ltd"}
+    body.update(kw)
+    return body
+
+
+def test_corrections_post_and_get_roundtrip(api, jobs_table, signed_in):
+    """A reviewer's relabelled row comes back exactly as stored — who, when,
+    old and new values — and the amount survives as a JSON number."""
+    token, admin = signed_in(role="admin", email="admin@x.com")
+    jobs_table.put_item(Item={"job_id": "j", "owner": "cust@x.com",
+                              "status": "done"})
+    r = api.lambda_handler(_ev("POST /jobs/{id}/corrections", token,
+                               body=_correction(), path_id="j"), None)
+    assert r["statusCode"] == 200 and _body(r)["count"] == 1
+    r = api.lambda_handler(_ev("POST /jobs/{id}/corrections", token,
+                               body=_correction(description="CASH DEP-SELF",
+                                                amount=500000,
+                                                old_category="Regular credit",
+                                                new_category="cash deposit",
+                                                new_party=""), path_id="j"), None)
+    assert r["statusCode"] == 200 and _body(r)["count"] == 2
+
+    got = _body(api.lambda_handler(_ev("GET /jobs/{id}/corrections", token,
+                                       path_id="j"), None))["corrections"]
+    assert len(got) == 2
+    first = got[0]
+    assert first["description"] == "ECS/UTIBDE111/Bajaj Finance Ltd_SMS OT"
+    assert first["amount"] == -128182.5          # a number, not a string
+    assert first["old_category"] == "Regular debit"
+    assert first["new_category"] == "EMI transaction"
+    assert first["new_party"] == "Bajaj Finance Ltd"
+    assert first["corrected_by"] == admin
+    assert first["ts"] > 0
+
+
+def test_corrections_are_admin_only_even_on_your_own_job(api, jobs_table,
+                                                         signed_in):
+    """Corrections feed the categorisation truth set — a domain-owner task. A
+    customer gets 403 on any job, including one they own."""
+    token, email = signed_in(role="customer")
+    jobs_table.put_item(Item={"job_id": "j", "owner": email, "status": "done"})
+    for route in ("POST /jobs/{id}/corrections", "GET /jobs/{id}/corrections"):
+        r = api.lambda_handler(_ev(route, token, body=_correction(),
+                                   path_id="j"), None)
+        assert r["statusCode"] == 403, route
+
+
+def test_a_customer_cannot_post_corrections_to_another_owners_job(api, jobs_table,
+                                                                  signed_in):
+    token, _ = signed_in(role="customer")
+    jobs_table.put_item(Item={"job_id": "theirs", "owner": "other@x.com",
+                              "status": "done"})
+    r = api.lambda_handler(_ev("POST /jobs/{id}/corrections", token,
+                               body=_correction(), path_id="theirs"), None)
+    assert r["statusCode"] == 403
+    assert "corrections" not in jobs_table.items["theirs"]
+
+
+def test_corrections_on_a_missing_job_are_404(api, signed_in):
+    token, _ = signed_in(role="admin", email="admin@x.com")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/corrections", token,
+                               body=_correction(), path_id="ghost"), None)
+    assert r["statusCode"] == 404
+
+
+@pytest.mark.parametrize("bad", [
+    {"description": "   "},                          # nothing to label
+    {"amount": "not-a-number"},
+    {"new_category": "", "new_party": ""},           # no corrected value at all
+])
+def test_corrections_reject_incomplete_input(api, jobs_table, signed_in, bad):
+    token, _ = signed_in(role="admin", email="admin@x.com")
+    jobs_table.put_item(Item={"job_id": "j", "owner": "cust@x.com",
+                              "status": "done"})
+    r = api.lambda_handler(_ev("POST /jobs/{id}/corrections", token,
+                               body=_correction(**bad), path_id="j"), None)
+    assert r["statusCode"] == 400
+    assert "corrections" not in jobs_table.items["j"]
+
+
+def test_corrections_csv_export_matches_the_golden_set_shape(api, jobs_table,
+                                                             signed_in):
+    """The export appends verbatim to tests/data/golden_category_truth.csv, so
+    the header and column order must match it exactly. A party-only correction
+    teaches no category and stays out of the CSV."""
+    import csv as _csv
+    import io as _io
+    token, _ = signed_in(role="admin", email="admin@x.com")
+    jobs_table.put_item(Item={"job_id": "j", "owner": "cust@x.com",
+                              "status": "done"})
+    for body in (_correction(),
+                 _correction(description="CASH DEP-TP-VIKAS", amount=334000,
+                             new_category="cash deposit",
+                             bank="AU Small Finance Bank", new_party=""),
+                 _correction(description="party only", new_category="",
+                             new_party="Somebody")):
+        r = api.lambda_handler(_ev("POST /jobs/{id}/corrections", token,
+                                   body=body, path_id="j"), None)
+        assert r["statusCode"] == 200
+    r = api.lambda_handler(_ev("GET /jobs/{id}/corrections", token,
+                               path_id="j", qs={"format": "csv"}), None)
+    assert r["statusCode"] == 200
+    assert r["headers"]["content-type"] == "text/csv"
+    lines = r["body"].strip().split("\n")
+    assert lines[0] == "Description,Amount,Category,Bank"
+    rows = list(_csv.DictReader(_io.StringIO(r["body"])))
+    assert len(rows) == 2                       # party-only correction excluded
+    assert rows[0]["Description"] == "ECS/UTIBDE111/Bajaj Finance Ltd_SMS OT"
+    assert float(rows[0]["Amount"]) == -128182.5
+    assert rows[0]["Category"] == "EMI transaction"
+    assert rows[0]["Bank"] == "Axis Bank"
+    assert rows[1]["Amount"] == "334000.0"      # golden-set float style
+
+
+def test_corrections_are_scrubbed_from_a_customers_job_view(api, jobs_table,
+                                                            signed_in):
+    """The job record carries the corrections list, but it is an admin
+    workflow (it names the reviewer) — a customer's own job view omits it."""
+    token, email = signed_in(role="customer")
+    jobs_table.put_item(Item={"job_id": "j", "owner": email, "status": "done",
+                              "corrections": [{"description": "x",
+                                               "new_category": "cash deposit",
+                                               "corrected_by": "admin@x.com"}]})
+    got = _body(api.lambda_handler(_ev("GET /jobs/{id}", token, path_id="j"), None))
+    assert "corrections" not in got
+
+    admin_token, _ = signed_in(role="admin", email="admin@x.com")
+    got = _body(api.lambda_handler(_ev("GET /jobs/{id}", admin_token,
+                                       path_id="j"), None))
+    assert got["corrections"][0]["corrected_by"] == "admin@x.com"
 
 
 # ------------------------------------------------ categoriser playground (beta) --

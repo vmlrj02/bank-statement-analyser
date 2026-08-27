@@ -110,6 +110,10 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .conf b{color:var(--fg)}
 .rvw{font-size:10px;border:1px solid var(--fg);border-radius:4px;padding:0 5px;margin-left:5px;
   text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
+/* Admin-only correction affordance in the preview: a dotted underline, no
+   colour. Clicking asks for the corrected value and records it. */
+.fixable{cursor:pointer;border-bottom:1px dotted var(--line2)}
+.fixable:hover{border-bottom:1px solid var(--fg)}
 .lowrow{background:var(--sunk)}
 .lowbanner{border:1px solid var(--fg);border-left-width:4px;border-radius:6px;padding:9px 12px;
   margin-bottom:12px;font-size:12.5px}
@@ -575,6 +579,17 @@ function confLine(c){
     <span class="cbar"><i style="width:${100*(c.high||0)/tot}%"></i><i class="m" style="width:${100*(c.medium||0)/tot}%"></i></span>
     <span>${conf}% confident${low?` · <b>${nfmt(low)}</b> flagged for review`:' · none flagged'}</span></div>`;
 }
+/* Party quality: how many rows name a real counterparty, vs a machine handle
+   (account number / VPA), vs none at all. Same bar as confidence: solid fill
+   = named, grey = handle, empty = none. Old jobs lack the key — hide. */
+function partyLine(pq){
+  if(!pq) return '';
+  const tot=(pq.named||0)+(pq.handle||0)+(pq.none||0); if(!tot) return '';
+  const pc=k=>Math.round(100*(pq[k]||0)/tot);
+  return `<div class="conf"><span class="clabel">Party quality</span>
+    <span class="cbar"><i style="width:${100*(pq.named||0)/tot}%"></i><i class="m" style="width:${100*(pq.handle||0)/tot}%"></i></span>
+    <span>names: ${pc('named')}% named · ${pc('handle')}% handle · ${pc('none')}% none</span></div>`;
+}
 function accountCard(j, a){
   const cats = Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,8)
       .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
@@ -602,12 +617,13 @@ function accountCard(j, a){
         + a.integrity.flags.map(f=>`<li>${esc(f)}</li>`).join('') + `</ul></div>` : ''}
     ${creditBlock(a.credit_summary)}
     ${confLine(a.confidence)}
+    ${partyLine(a.party_quality)}
     ${cats?`<div class="cats">${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
         ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
         : ''}
-      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Preview</button>
+      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}')">Preview</button>
       <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
       <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','xlsx')">Excel</button>
       <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>
@@ -663,6 +679,10 @@ function uploadView(j){
         ? `<div class="meta">Reviewed by <b>${esc(j.review.by||'')}</b> on
              ${esc(new Date((j.review.at||0)*1000).toLocaleString())}${
              j.review.note?` — ${esc(j.review.note)}`:''}</div>`
+        : ''}
+      ${IS_ADMIN && (j.corrections||[]).length
+        ? `<div class="acts"><button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>
+           <span class="hint" style="width:auto">reviewer corrections, in the golden-set shape</span></div>`
         : ''}
       ${aiPanel}
     </div>`;
@@ -758,20 +778,69 @@ async function markReviewed(id){
   }catch(e){ alert('Could not mark reviewed: '+e.message); }
 }
 
-async function preview(id, acct, name){
+/* Correction capture: an admin clicks a row's category or party in the
+   preview, types the right value, and it is POSTed to the job — training
+   data for the golden set, never a rewrite of the report itself. */
+let PV = null;                               // {id, acct, bank, rows}
+function pvCatCell(r, i){
+  const flag = r.confidence==='low' ? ' <span class="rvw">review</span>' : '';
+  if(!IS_ADMIN)
+    return `${esc(r.category)}${r.detail?`<span class="dtl"> · ${esc(r.detail)}</span>`:''}${flag}`;
+  const party = r.detail
+    ? `<span class="dtl"> · <span class="fixable" title="Record the correct party" onclick="fixRow(${i},'party')">${esc(r.detail)}</span></span>`
+    : ` <span class="dtl"><span class="fixable" title="Record the correct party" onclick="fixRow(${i},'party')">+ party</span></span>`;
+  return `<span class="fixable" title="Record the correct category" onclick="fixRow(${i},'category')">${esc(r.category)}</span>`
+       + party + flag + `<span id="pvfix${i}"></span>`;
+}
+function fixRow(i, field){
+  const r = ((PV||{}).rows||[])[i]; if(!r) return;
+  const body = {description:r.description, amount:r.amount, bank:PV.bank,
+                account:PV.acct, old_category:r.category||'',
+                old_party:r.detail||'', new_category:'', new_party:''};
+  if(field==='category'){
+    const v = (prompt('Corrected category for:\n'+r.description, r.category||'')||'').trim();
+    if(!v || v===r.category) return;
+    body.new_category = v;
+  }else{
+    const v = (prompt('Corrected party for:\n'+r.description, '')||'').trim();
+    if(!v) return;
+    body.new_party = v;
+  }
+  api(`/jobs/${PV.id}/corrections`, {method:'POST',
+    headers:{'content-type':'application/json'}, body:JSON.stringify(body)})
+    .then(()=>{ const el=$('pvfix'+i); if(el) el.innerHTML=' <span class="rvw">corrected</span>'; refresh(); })
+    .catch(e=>alert('Could not save the correction: '+e.message));
+}
+async function dlCorrections(id){
+  // The export is CSV, not JSON, so it bypasses api()'s json parse.
+  try{
+    const r = await fetch(`${API}/jobs/${id}/corrections?format=csv`,
+      {headers:{authorization:'Bearer '+(token()||'')}});
+    if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+    const u = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = u; a.download = `corrections_${id}.csv`; a.click();
+    URL.revokeObjectURL(u);
+  }catch(e){ alert('Could not export corrections: '+e.message); }
+}
+async function preview(id, acct, name, bank){
   const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
   const data = await (await fetch(url)).json();
+  PV = {id, acct, bank: bank||'', rows: data.rows};
   $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
   const lowN = data.rows.filter(r=>r.confidence==='low').length;
   const banner = lowN
     ? `<div class="lowbanner"><b>${lowN} row${lowN>1?'s':''} flagged for review</b> — a
        category we could not tie to a rule or a named party (marked <span class="rvw">review</span>).
        Everything else is either a definite category or a known-party transfer.</div>` : '';
-  $('pvBody').innerHTML = banner + `<table><thead><tr><th>Date</th><th>Description</th>
+  const corrHint = IS_ADMIN
+    ? `<div class="rv-note">Click a row's category or party to record a correction —
+       it is captured as training data and never rewrites this report.</div>` : '';
+  $('pvBody').innerHTML = banner + corrHint + `<table><thead><tr><th>Date</th><th>Description</th>
       <th class="num">Amount</th><th>Category · party</th><th class="num">Balance</th></tr></thead><tbody>`+
-    data.rows.map(r=>`<tr class="${r.confidence==='low'?'lowrow':''}"><td style="white-space:nowrap">${esc(r.date)}</td>
+    data.rows.map((r,i)=>`<tr class="${r.confidence==='low'?'lowrow':''}"><td style="white-space:nowrap">${esc(r.date)}</td>
       <td>${esc(r.description)}</td><td class="num">${fmtAmt(r.amount)}</td>
-      <td>${esc(r.category)}${r.detail?`<span class="dtl"> · ${esc(r.detail)}</span>`:''}${r.confidence==='low'?' <span class="rvw">review</span>':''}</td>
+      <td>${pvCatCell(r,i)}</td>
       <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')+
     '</tbody></table>';
   $('pv').showModal();
