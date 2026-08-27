@@ -109,11 +109,18 @@ def _run_truth_file(path):
     return out
 
 
+_GOLDEN = os.path.join(os.path.dirname(__file__), "data", "golden_category_truth.csv")
+
+
 def _all_cases():
     cases = list(CASES)
-    truth = os.environ.get("BSA_CATEGORY_TRUTH")
+    # The committed golden set always gates the build; BSA_CATEGORY_TRUTH adds
+    # (or points at) an external labelled CSV of real statements on top.
+    truth = os.environ.get("BSA_CATEGORY_TRUTH", _GOLDEN)
     if truth and os.path.exists(truth):
         cases += _run_truth_file(truth)
+        if os.path.abspath(truth) != os.path.abspath(_GOLDEN) and os.path.exists(_GOLDEN):
+            cases += _run_truth_file(_GOLDEN)
     return cases
 
 

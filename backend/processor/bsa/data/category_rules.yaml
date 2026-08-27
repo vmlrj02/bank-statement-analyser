@@ -39,7 +39,18 @@ lenders:
   - Lendingkart
   - Flexiloans
   - Ambit Fin
-  - IIFL
+  # IIFL: the bare fragment matched IIFL CAPITAL / IIFL SECURITIES (a broker —
+  # "IIFLCAPITALSERVICE", "IIFLEQ…INDIAINFOLINE.COM"), turning brokerage
+  # settlements into loan disbursals. Only the lending entities belong here.
+  - IIFL Fin
+  - IIFL Home
+  - IIFL Samasta
+  - Axis Finance
+  # As printed (sic) in an IndusInd IMPS row: "N/INDBH…/UTIB/AXIS FINANACE LTD".
+  - Axis Finanace
+  # Cholamandalam's IMPS beneficiary handle ("CHOLAMXVFPKUD000") — the full name
+  # does not appear in the OUT/ transfer form.
+  - Cholamx
 
 # Penal charges — a charge levied for a violation or threshold breach. The master
 # names "pos threshold, MAB, etc." MAB / minimum-balance / average-balance charges
@@ -98,3 +109,37 @@ cash_deposit_keywords:
   - ATM-CASH
   - ATM CASH
   - ATMCASH
+
+# Cash withdrawn over the counter rather than at a machine. AU prints a bearer /
+# self cheque as "CHQ PAID-SELF-SELF" and a counter payout as "CHQ PAID-TP-CASH
+# PAID TO <name>" — both are cash leaving the account, not transfers. Matched on
+# DEBITS only, ignoring spaces and punctuation (so "CHQ PAID-SELF" and
+# "CHQPAID SELF" are the same key).
+cash_withdrawal_keywords:
+  - CHQ PAID SELF
+  - SELF CHQ PAID
+  - CASH PAID
+
+# A payment that came back — the golden set's biggest gap (0/17 before this
+# list existed). Matched on BOTH signs, ignoring spaces and punctuation, so
+# "NEFT_RETURN", "CHQDEP RET -" and "CHQ DEP RET-" are the same key. A row that
+# also carries a charge token (CHG/CHRG/CHARGE/FEE) is NOT a return — it is the
+# bank's fee FOR the return, and stays with the bounce/penal tiers ("CHEQUE
+# RETURN CHARGES" is penal; "I/W CHEQUE RETURN-<name>" is the returned amount).
+return_keywords:
+  - CHQ DEP RET
+  - I/W CHEQUE RETURN
+  - RETURN IMPS
+  - IMPS RETURN
+  - RETURN NEFT
+  - NEFT RETURN
+  - RETURN RTGS
+  - RTGS RETURN
+
+# Companies whose NACH credits are dividends on shares the customer holds —
+# "ACH-CR-JSW STEEL LIMITED-NACH-…" carries no DIV marker, so the payer name is
+# the only signal. Extend as customers' portfolios surface new names; a NACH
+# credit not listed here and without a DIV/INT marker stays "ECS transaction".
+dividend_payers:
+  - JSW Steel
+  - Narayana Hrudayalaya

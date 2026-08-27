@@ -47,16 +47,34 @@ def _load_rules() -> dict:
     d.setdefault("penal_keywords", ["MAB", "MIN BAL", "POS", "PENAL"])
     d.setdefault("non_penal_charge_keywords", [])
     d.setdefault("cash_deposit_keywords", ["BY CASH", "CASH DEP", "CDM"])
+    d.setdefault("cash_withdrawal_keywords", ["CHQ PAID SELF", "CASH PAID"])
+    d.setdefault("return_keywords", ["CHQ DEP RET", "NEFT RETURN", "RTGS RETURN"])
+    d.setdefault("dividend_payers", [])
     return d
 
 
 _RULES = _load_rules()
-# Normalised lender fragments for substring matching. Strip ALL non-alphanumeric
-# (not just spaces) so the key matches the description, which is normalised the
-# same way in _matched_lender — otherwise a lender with punctuation ("L&T
-# Finance") could never match its glued narration form ("L&TFINANCELIMITED").
-_LENDER_KEYS = [re.sub(r"[^A-Za-z0-9]", "", x).upper() for x in _RULES["lenders"]]
+
+
+def _norm(s: str) -> str:
+    """Strip ALL non-alphanumeric and uppercase — the narration form used for
+    substring matching. Strip everything (not just spaces) so a key matches the
+    glued/punctuated print forms too ("L&T Finance" -> "L&TFINANCELIMITED",
+    "NEFT RETURN" -> "NEFT_RETURN", "CHQ DEP RET" -> "CHQDEP RET -")."""
+    return re.sub(r"[^A-Za-z0-9]", "", s).upper()
+
+
+# Normalised lender fragments for substring matching.
+_LENDER_KEYS = [_norm(x) for x in _RULES["lenders"]]
 LENDERS = _RULES["lenders"]                       # kept for callers/tests
+_CASH_WD_KEYS = [_norm(x) for x in _RULES["cash_withdrawal_keywords"]]
+_RETURN_KEYS = [_norm(x) for x in _RULES["return_keywords"]]
+_DIV_PAYER_KEYS = [_norm(x) for x in _RULES["dividend_payers"]]
+
+
+def _matched_norm(desc: str, keys: list[str]) -> bool:
+    k = _norm(desc)
+    return any(x in k for x in keys)
 
 
 def _matched_lender(desc: str):
@@ -64,7 +82,7 @@ def _matched_lender(desc: str):
     both to classify and to name the party — a BBPS/UPI lender payment prints a
     channel marker ("BPAY") or a generic tail ("Bank Account") where the party
     should be, so when we recognise the lender we say so."""
-    key = re.sub(r"[^A-Za-z0-9]", "", desc).upper()
+    key = _norm(desc)
     for display, lkey in zip(_RULES["lenders"], _LENDER_KEYS):
         if lkey in key:
             return display
@@ -88,7 +106,20 @@ REFUND_HINTS = [r"\bREF(UND)?\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF",
                 r"\bRVSL\b",
                 # "RTGS RETURN-<ref>-<name>-OPERATIONS SUSPENDED" — an outgoing
                 # payment bounced back by the beneficiary's bank
-                r"(RTGS|NEFT|IMPS) RETURN"]
+                r"(RTGS|NEFT|IMPS) RETURN",
+                # "TOD PENALTY CHARGEREVERSAL" — glued, so \bREV never fires
+                r"REVERSAL",
+                # A CREDIT stamped insufficient-funds is a failed debit pull
+                # coming back ("ACH DR …:INSUFFICIENTFUNDS" at +amount)
+                r"INSUFFICIENT\s*FUNDS"]
+# CHG / CHRG / CHRGS / CHGS / CHARGE / FEE — the row is a fee, not the amount
+# it relates to. Used to keep a bank's charge FOR a returned payment out of the
+# "return / refund" tag (the fee is penal; the return is the full amount).
+_CHARGE_TOKEN = r"\bCHR?GS?\b|CHARGE|\bFEE\b"
+# Dividend markers on a NACH credit ("ACH-CR-TML DIV 30062026", "LICHSG
+# FNLDIV"). Only consulted inside the ACH-CR/NACH credit branch, so a person
+# named Divya can never trip it.
+_DIVIDEND_HINTS = [r"\bDIV\b", r"DIVIDEND", r"FNLDIV", r"INTDIV"]
 # Penal detection is now DATA-driven (data/category_rules.yaml). The master
 # defines penal as a threshold/violation charge ("pos threshold, MAB, etc."),
 # NOT an ordinary service fee — the reviewer was explicit that card and
@@ -105,10 +136,26 @@ _CASH_DEP_KEYS = [re.escape(k) for k in _RULES["cash_deposit_keywords"]]
 def _is_penal(desc: str) -> bool:
     if _NON_PENAL_KEYS and _any(desc, _NON_PENAL_KEYS):
         return False
-    return _any(desc, _PENAL_KEYS)
+    for p in _PENAL_KEYS:
+        for m in re.finditer(p, desc, re.I):
+            # A keyword glued to an account/VPA fragment is a handle, not a
+            # charge phrase: "UPI-…-MAB.03732201893" is a payment to a
+            # merchant, and the ".0373…" tail is what says so.
+            if re.match(r"\.?\d", desc[m.end():]):
+                continue
+            return True
+    return False
 
 
-BOUNCE_INWARD = [r"ECSRTN", r"I/?W.*(RTN|RETURN|BOUNCE)", r"INWARD.*(RTN|RET)", r"CHQ RETURN.*DEP"]
+BOUNCE_INWARD = [r"ECSRTN", r"I/?W.*(RTN|RETURN|BOUNCE)", r"INWARD.*(RTN|RET)", r"CHQ RETURN.*DEP",
+                 # The fee for a returned deposit/pull, spelled out: "CHEQUE
+                 # RETURN CHARGES", "RETURN HANDLING CHARGES", "ECS Return
+                 # Chrgs Incl GST". Word RETURN only — the abbreviated "Chq
+                 # Rtrn Chrgs" form is an OUTWARD bounce fee (see below) and
+                 # must not land here.
+                 r"\bRETURN\b.*(CHR?GS?\b|CHARGE)",
+                 # "ECS/NACHRET INSFND CHARGEFOR12-OCT-25" — glued NACH-return
+                 r"NACH\s*RET\w*.*(CHR?G|CHARGE)"]
 # A bank's "inward clearing" is a cheque drawn ON the account — so the charge
 # for its return is the customer's own payment bouncing, an OUTWARD bounce in
 # the taxonomy's terms ("Chq Rtrn Chrgs Incl GST" followed cheque 011541's
@@ -175,6 +222,11 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # amount" in the note of a credit from "happylaser" no longer flips it to
         # a loan disbursal. The remark is separated by narration.parse_narration.
         lender_name = _matched_lender(parse_narration(d).structured)
+        # A row that IS a fee ("CHG/<ref>/<bank>/CHOLAMXVFPKUD000" — the ₹11.80
+        # IMPS charge printed beside the actual EMI) names the lender but is
+        # not a payment to them.
+        if lender_name and re.match(r"CHG[/\s-]", d):
+            lender_name = None
         lender = lender_name is not None
         # Name the party after the lender when the extracted one is a channel
         # marker or a generic tail (BBPS "BPAY", UPI "Bank Account").
@@ -183,6 +235,15 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # --- Tier 1: deterministic rules ---
         if not credit and re.search(r"BIL/.*(Loan|EMI)", d, re.I):
             tag = "EMI transaction"
+        # A returned payment, either direction — the credit that comes back
+        # when an outgoing transfer bounces, or the debit that reverses a
+        # deposited cheque. Resolved BEFORE the bounce tiers because "I/W
+        # CHEQUE RETURN-<name>" is the returned AMOUNT; only a row that also
+        # carries a charge token is the bank's fee for it, and that one falls
+        # through to the bounce/penal tiers instead.
+        elif (_matched_norm(d, _RETURN_KEYS)
+              and not (not credit and re.search(_CHARGE_TOKEN, d, re.I))):
+            tag = "return / refund"
         elif not credit and _any(d, BOUNCE_INWARD):
             tag = "inward bounce penal charges"
         elif not credit and _any(d, BOUNCE_OUTWARD):
@@ -195,25 +256,35 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # Interest, split by SIGN (ID6/ID8): a credit is interest RECEIVED, a
         # debit is an "Interest payments" (OD interest, or a non-EMI payment to
         # an NBFC). The old rule tagged every "Int.Pd" as received, so interest
-        # DEBITS were mislabelled as a credit category.
+        # DEBITS were mislabelled as a credit category. \s* between INTEREST
+        # and its verb because HDFC glues them ("INTERESTPAIDTILL30-JUN-2025",
+        # "MONTHLYINTERESTCREDIT…").
         elif t.mode == "interest" or re.search(
                 r"\bINT\.?\s?PD\b|DEBIT INTEREST|CREDIT INTEREST"
-                r"|INTEREST (PAID|CREDIT|DEBIT|DEBITED|CHARGED|COLLECTED)"
-                r"|\bINT\.?\s*(DR|DEBIT|COLL)", d, re.I):
+                r"|INTEREST\s*(PAID|CREDIT|DEBIT|DEBITED|CHARGED|COLLECTED)"
+                r"|\bINT\.?\s*(DR|DEBIT|COLL)"
+                # FD/sweep interest paid out ("FD REDEEM INTEREST", "INT AUTO
+                # REDEEM") and OD shortfall interest recovered ("RCVRY
+                # TOD OLSHORTFALL INT" — glued, hence \s*).
+                r"|REDEEM\s*INTEREST|INT\s*AUTO\s*REDEEM|SHORTFALL\s*INT\b",
+                d, re.I):
             tag = "Interest received" if credit else "Interest payments"
-        elif t.mode == "atm-cash" and not credit:
+        elif not credit and (t.mode == "atm-cash" or _matched_norm(d, _CASH_WD_KEYS)):
             tag = "cash withdrawal"
         elif credit and (t.mode == "cash-deposit" or _any(d, _CASH_DEP_KEYS)):
             tag = "cash deposit"
-        # A known NBFC / lender name decides both directions: a credit is a loan
-        # disbursal; a debit is an EMI if it recurs, otherwise an "Interest
-        # payments" (a non-EMI servicing payment). Data-driven lender list.
+        # A known NBFC / lender name decides both directions: a credit is a
+        # loan disbursal; a debit is an EMI — however it was paid. A one-off
+        # UPI/IMPS debit to a lender is overwhelmingly an EMI paid by hand
+        # (typically right after the NACH pull bounced), so recurrence is not
+        # required. The exception, per the reviewer (ID8), is a BBPS bill-pay
+        # to a lender, which stays a non-EMI servicing payment. Rows whose
+        # narration says interest were already resolved above.
         elif credit and lender:
             tag = "Loan amount disbursal"
         elif not credit and lender:
-            tag = ("EMI transaction"
-                   if (t.uid in recurring_nach or t.mode == "nach")
-                   else "Interest payments")
+            tag = ("Interest payments" if re.search(r"BPAY|BBPS", d, re.I)
+                   else "EMI transaction")
         elif credit and _any(d, [re.escape(x) for x in INVESTMENT_HINTS]):
             tag = "Investment return credited"
         elif credit and _any(d, SALARY_HINTS):
@@ -222,9 +293,25 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             tag = "Salary paid"
         elif credit and _any(d, REFUND_HINTS):
             tag = "return / refund"
+        # A NACH credit ("ACH-CR-<payer>-NACH-<mandate>") is a company paying
+        # the account holder under mandate: a dividend if the narration or the
+        # payer says so, interest on a company deposit if it says INT,
+        # otherwise a generic ECS receipt.
+        elif credit and re.search(r"ACH.?CR|\bNACH\b", d, re.I):
+            if _any(d, _DIVIDEND_HINTS) or _matched_norm(d, _DIV_PAYER_KEYS):
+                tag = "Investment return credited"
+            elif re.search(r"\bINT\b", d, re.I):
+                tag = "Interest received"
+            else:
+                tag = "ECS transaction"
         elif not credit and t.mode in ("ecs-return",):
             tag = "inward bounce penal charges"
-        elif not credit and t.mode == "nach":
+        elif not credit and (t.mode == "nach"
+                             # Glued ACH-debit prints the mode detector misses
+                             # ("ACH DR 10INDUSIND BANK…") and UPI autopay
+                             # mandates ("UPI/P2M/…/Mandate//P2V/") — both are
+                             # mandate pulls, i.e. ECS in the taxonomy.
+                             or re.search(r"\bACH\s*DR\b|\bMANDATE", d, re.I)):
             # --- Tier 2: recurrence — monthly fixed-amount NACH = EMI ---
             tag = ("EMI transaction" if t.uid in recurring_nach else "ECS transaction")
             if t.uid in recurring_nach:
