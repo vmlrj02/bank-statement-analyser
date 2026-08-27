@@ -158,6 +158,54 @@ def test_monthly_recurring_same_amount_is_emi():
     assert rows[3].category == "Regular debit"
 
 
+def test_cadence_guards_from_the_precision_review():
+    """A review of 30 real recurrence-cadence hit-groups found ~1 plausible EMI
+    among wages, rent, supplier payments and personal transfers, so the
+    heuristic now also demands a mandate-shaped pattern: a NON-ROUND amount,
+    CONSECUTIVE months, a STABLE day of month, and no wages/rent wording."""
+    # round monthly 20,000 to an individual — rent-shaped, not an EMI
+    rent = [_rec(f"2026-0{m}-05", -20000.0, "UMA THIA") for m in (1, 2, 3)]
+    # EMI-shaped amount but a skipped month — no mandate pulls like that
+    gappy = [_rec(d, -21990.0, "SOME TRADER")
+             for d in ("2026-01-05", "2026-02-05", "2026-04-05")]
+    # consecutive months but a wandering day — ad-hoc transfers
+    wander = [_rec(d, -14322.0, "WHOEVER")
+              for d in ("2026-01-03", "2026-02-18", "2026-03-27")]
+    # perfect cadence at an odd amount, but the narration says rent
+    rentw = [_rec(f"2026-0{m}-05", -20999.0, "UMA THIA",
+                  desc="IMPS/609210958047/Uma Thia/Rent 0098292162098")
+             for m in (1, 2, 3)]
+    # perfect cadence but the "party" is a bank name — extraction junk
+    banky = [_rec(f"2026-0{m}-04", -10999.0, "KOTAK MAHINDRA BANK LIMITED")
+             for m in (1, 2, 3)]
+    rows = rent + gappy + wander + rentw + banky
+    categorize(rows)
+    assert all(t.category != "EMI transaction" for t in rows)
+
+
+def test_underscore_glued_emi_word_is_an_emi():
+    """An underscore is a \\w character, so \\bEMI\\b never fired on the
+    collection print "UCR…_EMI_05/11/2025"."""
+    t = categorize([txn("UCR013913427589_EMI_05/11/2025_PI RAMAL PETROLEUM P",
+                        -106235.0)])[0]
+    assert t.category == "EMI transaction"
+
+
+def test_piramal_petroleum_is_not_the_lender():
+    """The bare "Piramal" lender key turned a fuel trader's whole statement
+    into EMIs and disbursals; only the lending entities may match."""
+    t = categorize([txn("INB/IFT/PIRAMAL PETROLEUM P LTD/TPARTY TRANSFER",
+                        -2500000.0)])[0]
+    assert t.category == "Regular debit"
+    t2 = categorize([txn("TRF/PIRAMAL PETROLEUM PRIVATE LIMITED/TRANSFER",
+                         2000000.0)])[0]
+    assert t2.category == "Regular credit"
+    # ...while the genuine NACH pull still reads as the lender's EMI.
+    t3 = categorize([txn("ACHD-PIRAMALFINANCELIMI-HLSA000CEA16 0000003788749791",
+                         -47670.0)])[0]
+    assert t3.category == "EMI transaction"
+
+
 def test_recurrence_guards_hold():
     # a tiny recurring charge is not an EMI
     small = [_rec(f"2026-0{m}-01", -5.9, "SMS ALERTS") for m in (1, 2, 3)]

@@ -24,7 +24,17 @@ lenders:
   - Muthoot
   - Manappuram
   - L&T Finance
-  - Piramal
+  # Piramal: the bare fragment matched PIRAMAL PETROLEUM PVT LTD — a fuel
+  # trader whose statements hold hundreds of ordinary transfers, every one of
+  # them flipped to EMI/disbursal. Only the lending entities belong here
+  # ("ACHD-PIRAMALFINANCELIMI", "ACHD-PIRAMALCAPITALAND", "PIRAMALFINR…").
+  - Piramal Fin
+  # "Piramal Cap", not "Piramal Capital": Razorpay's collection handle
+  # truncates it ("ACHD-…CTRAZORPAY-PIRAMALCAPQF6HK7HS2K2M").
+  - Piramal Cap
+  - Piramal Housing
+  # Vastu Housing Finance, as printed in the NACH pull ("ACHD-BD-VASTUHFC-EMI").
+  - VastuHFC
   - Poonawalla
   - Indiabulls
   - LIC Housing
@@ -109,6 +119,10 @@ cash_deposit_keywords:
   - ATM-CASH
   - ATM CASH
   - ATMCASH
+  # Axis bunch-note-acceptor deposit stamp ("BNA/DERH554601/3049/040825/
+  # LUCKNOW"). The slash keeps it off the "BNA Txn Chrgs" fee phrase, which is
+  # a debit anyway (this list is credit-only).
+  - BNA/
 
 # Cash withdrawn over the counter rather than at a machine. AU prints a bearer /
 # self cheque as "CHQ PAID-SELF-SELF" and a counter payout as "CHQ PAID-TP-CASH
@@ -119,6 +133,13 @@ cash_withdrawal_keywords:
   - CHQ PAID SELF
   - SELF CHQ PAID
   - CASH PAID
+  # Axis counter/kiosk payout ("SAK/CASH WDL/SAK444684919/…/SELF"), spelled-out
+  # branch withdrawals ("Cash Withdrawal At Br : KURUD", "CASH WITHDRAWAL
+  # BRANCH"), and SBI's encashed cheque ("CHEQUE-CASH 320196 BY CHQ-"). The
+  # TDS-on-withdrawal debit is excluded in code — it is tax, not cash.
+  - CASH WDL
+  - CASH WITHDRAWAL
+  - CHEQUE CASH
 
 # A payment that came back — the golden set's biggest gap (0/17 before this
 # list existed). Matched on BOTH signs, ignoring spaces and punctuation, so
@@ -135,6 +156,9 @@ return_keywords:
   - NEFT RETURN
   - RETURN RTGS
   - RTGS RETURN
+  # SBI internet-banking pair: "TO TRANSFER-INB return- <ref>" going out and
+  # "BY TRANSFER-INB return- <ref>" coming back — both legs are the return.
+  - INB RETURN
 
 # Companies whose NACH credits are dividends on shares the customer holds —
 # "ACH-CR-JSW STEEL LIMITED-NACH-…" carries no DIV marker, so the payer name is

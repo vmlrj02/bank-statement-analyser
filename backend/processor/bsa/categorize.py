@@ -99,14 +99,27 @@ _WEAK_PARTY = {"", "BPAY", "P2A", "P2M", "BANK ACCOUNT", "UNKNOWN PARTY",
 INVESTMENT_HINTS = [
     "SHAREKHAN", "ZERODHA", "GROWW", "UPSTOX", "ANGEL", "ICCLR", "MUTUAL FUND",
     "MF REDEMPTION", "NSE ", "BSE ", "CDSL", "NSDL", "RD MATURITY", "FD CLOS",
+    # A credit from a broker's client account ("HDFCSECURITIESLTD-CLIENTA/C",
+    # "ZERODHA BROKING LTD-DSCNB A/C") is a payout of the customer's own
+    # invested funds. Credit-only, like every hint in this list.
+    "SECURITIES", "BROKING",
+    # The word itself — a co-operative bank prints "Dividend Credit to A-…
+    # for the year 2024-25" with no NACH/DIV marker anywhere near it.
+    "DIVIDEND",
 ]
-SALARY_HINTS = [r"\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL"]
+# (?<!DIRECT ) on the bare SAL: oil-company beneficiaries print truncated
+# "direct sal(es)" ("INB/RTGS/…/h pcl direct sal/HDFC BANK") — a ₹24-lakh fuel
+# purchase, not payroll. "HPCL DIRECT SALES" never matched (\b fails on SALES);
+# only the cut-off form did.
+SALARY_HINTS = [r"(?<!DIRECT )\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL"]
 # \bREFUND\b, not \bREF(UND)?\b: bare "REF" is a ubiquitous reference stamp in
 # NEFT/IMPS narrations ("…/INDIAN OVERSEAS BANK/REF/", "…-REF") — on real
 # statements nearly half the rows it tagged as refunds were ordinary credits.
 REFUND_HINTS = [r"\bREFUND\b", r"\bREV(ERSAL)?\b", r"\bRFND\b", r"RETURN OF", r"\bRET\b.*\bCR\b",
-                # "RVSL IW CTR RTN CHQNO:…" — a returned instrument credited back
-                r"\bRVSL\b",
+                # "RVSL IW CTR RTN CHQNO:…" — a returned instrument credited
+                # back. Prefix match (no trailing \b): HDFC glues it to what
+                # was reversed ("RVSLEDCRENTALAPR25", "UPI/RVSL5079…").
+                r"\bRVSL",
                 # "RTGS RETURN-<ref>-<name>-OPERATIONS SUSPENDED" — an outgoing
                 # payment bounced back by the beneficiary's bank
                 r"(RTGS|NEFT|IMPS) RETURN",
@@ -133,7 +146,12 @@ _DIVIDEND_HINTS = [r"\bDIV\b", r"DIVIDEND", r"FNLDIV", r"INTDIV"]
 # ("AMB CHG" hits "AMB CHGS"). A full \b...\b would miss the plural.
 _PENAL_KEYS = [r"\b" + re.escape(k) for k in _RULES["penal_keywords"]]
 _NON_PENAL_KEYS = [r"\b" + re.escape(k) for k in _RULES["non_penal_charge_keywords"]]
-_CASH_DEP_KEYS = [re.escape(k) for k in _RULES["cash_deposit_keywords"]]
+# Leading non-alphanumeric boundary on every deposit key: without it "BNA/"
+# fires inside a truncated bank name ("…/CARBONAN/PUNJABNA/PiramalP" — Punjab
+# National), turning an ordinary IMPS credit into a cash deposit. A glued form
+# still matches ("CAM/…/CASHDEP-Other" — the "/" is non-alphanumeric).
+_CASH_DEP_KEYS = [r"(?<![A-Za-z0-9])" + re.escape(k)
+                  for k in _RULES["cash_deposit_keywords"]]
 
 
 def _is_penal(desc: str) -> bool:
@@ -143,8 +161,12 @@ def _is_penal(desc: str) -> bool:
         for m in re.finditer(p, desc, re.I):
             # A keyword glued to an account/VPA fragment is a handle, not a
             # charge phrase: "UPI-…-MAB.03732201893" is a payment to a
-            # merchant, and the ".0373…" tail is what says so.
-            if re.match(r"\.?\d", desc[m.end():]):
+            # merchant, and the ".0373…" tail is what says so. Likewise a
+            # keyword sitting inside a VPA ("…0219389.mab@pnb") — flagged by
+            # the "@" right after it or the "."/"@" right before it.
+            if re.match(r"\.?\d|@", desc[m.end():]):
+                continue
+            if m.start() > 0 and desc[m.start() - 1] in ".@":
                 continue
             return True
     return False
@@ -158,7 +180,12 @@ BOUNCE_INWARD = [r"ECSRTN", r"I/?W.*(RTN|RETURN|BOUNCE)", r"INWARD.*(RTN|RET)", 
                  # must not land here.
                  r"\bRETURN\b.*(CHR?GS?\b|CHARGE)",
                  # "ECS/NACHRET INSFND CHARGEFOR12-OCT-25" — glued NACH-return
-                 r"NACH\s*RET\w*.*(CHR?G|CHARGE)"]
+                 r"NACH\s*RET\w*.*(CHR?G|CHARGE)",
+                 # PNB's bare "ACH RTN--28-01-2026": the fixed ₹295 charge for
+                 # a NACH pull returned on the mandate date, printed with no
+                 # charge token at all. \bACH keeps "NACH RTN CHG" (outward,
+                 # below) out — its A is glued to the N.
+                 r"\bACH\s*RTN\b"]
 # A bank's "inward clearing" is a cheque drawn ON the account — so the charge
 # for its return is the customer's own payment bouncing, an OUTWARD bounce in
 # the taxonomy's terms ("Chq Rtrn Chrgs Incl GST" followed cheque 011541's
@@ -210,6 +237,13 @@ def _find_recurring_nach(txns: list[Txn]) -> set[str]:
     return emis
 
 
+# Words that say the recurring payment is wages, rent or an advance, not a
+# loan instalment — seen verbatim in the cadence-precision review ("house",
+# "DRIVERADVANCEROH", "Rent 0098292162098").
+_NOT_EMI_HINTS = re.compile(r"\bRENT\b|ADVANCE|DRIVER|SALARY|\bWAGES?\b"
+                            r"|\bHOUSE\b|MAINTEN", re.I)
+
+
 def _find_recurring_emi(txns: list[Txn]) -> set[str]:
     """uids of debits — ANY channel — that recur at the same amount to the same
     counterparty in >= 3 distinct months, at a monthly cadence: an EMI paid by
@@ -223,6 +257,19 @@ def _find_recurring_emi(txns: list[Txn]) -> set[str]:
       * amount >= 500 — a recurring 5.90 SMS charge is not an EMI;
       * count <= months + 1 — the same amount many times a month is trading
         volume, not an instalment (the +1 allows one bounce-and-retry).
+
+    A precision review of 30 real hit-groups across 8 banks found the original
+    guards let through wages, rent, supplier payments and personal transfers
+    (~1/30 was plausibly an EMI), so a hit must now also look like a mandate:
+      * a NON-ROUND amount — an EMI is interest-arithmetic (21,990 / 74,322 /
+        41,005.90); wages, rent and trade payments are round thousands. Any
+        multiple of 500 with no paise is treated as round;
+      * CONSECUTIVE months — an instalment does not skip a month;
+      * a STABLE day of month (span <= 7 across the group) — the mandate date,
+        with room for weekends and one late retry;
+      * no wages/rent/advance wording, and not a bare bank-name counterparty
+        (a group keyed on "KOTAK MAHINDRA BANK LIMITED" is a party-extraction
+        failure, not a lender).
     Only consulted for rows that would otherwise fall through to Regular debit,
     so an explicit rule/dictionary/related-party tag always wins."""
     groups: dict[tuple, list[Txn]] = defaultdict(list)
@@ -231,10 +278,22 @@ def _find_recurring_emi(txns: list[Txn]) -> set[str]:
         if t.amount <= -500 and len(party) >= 4 and party != "UNKNOWNPARTY":
             groups[(party, round(-t.amount, 2))].append(t)
     emis: set[str] = set()
-    for ts in groups.values():
-        months = {t.date[:7] for t in ts}
-        if len(months) >= 3 and len(ts) <= len(months) + 1:
-            emis.update(t.uid for t in ts)
+    for (_, amt), ts in groups.items():
+        months = sorted({t.date[:7] for t in ts})
+        if len(months) < 3 or len(ts) > len(months) + 1:
+            continue
+        if amt % 500 == 0:
+            continue                              # round amount: wages/rent/trade
+        idx = [12 * int(m[:4]) + int(m[5:7]) for m in months]
+        if idx[-1] - idx[0] != len(idx) - 1:
+            continue                              # skipped a month: no mandate
+        days = sorted(int(t.date[8:10]) for t in ts)
+        if days[-1] - days[0] > 7:
+            continue                              # wandering date: ad-hoc transfers
+        if any(_NOT_EMI_HINTS.search(t.description) for t in ts) \
+                or re.search(r"\bBANK\b", ts[0].counterparty, re.I):
+            continue
+        emis.update(t.uid for t in ts)
     return emis
 
 
@@ -253,7 +312,15 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # payer's free-text remark — so a customer who types "parimal finance
         # amount" in the note of a credit from "happylaser" no longer flips it to
         # a loan disbursal. The remark is separated by narration.parse_narration.
-        lender_name = _matched_lender(parse_narration(d).structured)
+        narr = parse_narration(d)
+        lender_name = _matched_lender(narr.structured)
+        # …but an ALL-CAPS "remark" is usually a bank-printed field the splitter
+        # misread, not a typed note: IndusInd puts the sender's name in the
+        # remark slot ("N/<ref>/<ifsc>/CHOLAMANDALAM INVES/T AND FINANC…"), and
+        # dropping it hid a ₹91-lakh disbursal. A payer-typed note ("parimal
+        # finance amount") is lower/mixed case, so the guard above still holds.
+        if lender_name is None and narr.remark and not re.search(r"[a-z]", narr.remark):
+            lender_name = _matched_lender(narr.remark)
         # A row that IS a fee ("CHG/<ref>/<bank>/CHOLAMXVFPKUD000" — the ₹11.80
         # IMPS charge printed beside the actual EMI) names the lender but is
         # not a payment to them.
@@ -298,13 +365,34 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                 # FD/sweep interest paid out ("FD REDEEM INTEREST", "INT AUTO
                 # REDEEM") and OD shortfall interest recovered ("RCVRY
                 # TOD OLSHORTFALL INT" — glued, hence \s*).
-                r"|REDEEM\s*INTEREST|INT\s*AUTO\s*REDEEM|SHORTFALL\s*INT\b",
+                r"|REDEEM\s*INTEREST|INT\s*AUTO\s*REDEEM|SHORTFALL\s*INT\b"
+                # Co-operative "By-Interest Normal Cr. Int." (verb-first), and
+                # SBI's OD interest swept to the loan account ("TO TRANSFER-
+                # INTEREST TRANSFER TO 43256012084"). \bINT\b in CR INT keeps
+                # "CR INTERIORS"-style names out.
+                r"|\bCR\.?\s*INT\b|INTEREST\s*TRANSFER",
                 d, re.I):
             tag = "Interest received" if credit else "Interest payments"
-        elif not credit and (t.mode == "atm-cash" or _matched_norm(d, _CASH_WD_KEYS)):
+        # The TDS guard: "TDS Debit against Cash withdrawal on 16022026" is the
+        # tax ON a withdrawal (sec 194N), not cash leaving — a Regular debit.
+        elif not credit and (t.mode == "atm-cash" or _matched_norm(d, _CASH_WD_KEYS)) \
+                and not re.search(r"\bTDS\b", d, re.I):
             tag = "cash withdrawal"
         elif credit and (t.mode == "cash-deposit" or _any(d, _CASH_DEP_KEYS)):
             tag = "cash deposit"
+        # The narration SAYS instalment: a bare word EMI ("To-Transfer SI No:
+        # 950860 ML 218/EMI", "ACHD-BD-VASTUHFC-EMI-…", "camera emi" typed in a
+        # UPI remark) or a loan-repayment remark ("…/Mr. Vigh/Loan Rep",
+        # "LoanRepayment"). Debit-only — an EMI-marked CREDIT is someone
+        # repaying money the customer lent out, which stays a Regular credit.
+        # Sits after the charge/bounce/interest tiers so "EMI bounce chgs"
+        # narrations keep their charge reading.
+        # (?<![A-Z0-9])EMI(?![A-Z0-9]) rather than \bEMI\b: an underscore is a
+        # \w character, so \b never fires in "UCR013913427589_EMI_05/11/2025".
+        elif not credit and re.search(
+                r"(?<![A-Z0-9])EMI(?![A-Z0-9])|\bLOAN\s*REPAY|\bLOAN\s*REP\b",
+                d, re.I):
+            tag = "EMI transaction"
         # A known NBFC / lender name decides both directions: a credit is a
         # loan disbursal; a debit is an EMI — however it was paid. A one-off
         # UPI/IMPS debit to a lender is overwhelmingly an EMI paid by hand
@@ -329,7 +417,10 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # the account holder under mandate: a dividend if the narration or the
         # payer says so, interest on a company deposit if it says INT,
         # otherwise a generic ECS receipt.
-        elif credit and re.search(r"ACH.?CR|\bNACH\b", d, re.I):
+        # mode == "nach" too: ICICI prints "ACH/TCS2ndIntDiv04112025/…" — the
+        # detector reads the mode but the text never says ACH-CR or NACH.
+        elif credit and (t.mode == "nach"
+                         or re.search(r"ACH.?CR|\bNACH\b", d, re.I)):
             if _any(d, _DIVIDEND_HINTS) or _matched_norm(d, _DIV_PAYER_KEYS):
                 tag = "Investment return credited"
             elif re.search(r"\bINT\b", d, re.I):
