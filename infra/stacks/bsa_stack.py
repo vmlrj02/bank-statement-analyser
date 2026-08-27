@@ -295,6 +295,8 @@ class BsaStack(Stack):
             ("/jobs/{id}", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/download", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/review", [apigw.HttpMethod.POST]),
+            ("/jobs/{id}/corrections",
+             [apigw.HttpMethod.POST, apigw.HttpMethod.GET]),  # admin training data
             ("/admin/try-categorize", [apigw.HttpMethod.POST]),  # admin beta
         ]:
             api.add_routes(path=route, methods=methods, integration=integ)
