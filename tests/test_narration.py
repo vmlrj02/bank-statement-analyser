@@ -34,3 +34,22 @@ def test_parimal_finance_no_longer_tags_loan(tmp_path):
     # lender as the actual counterparty -> still recognised
     assert _categorize_one("NBSM/141757229/L&T FINANCE LTD/", -80513.90).category \
         in ("EMI transaction", "Interest payments")
+
+
+def test_channel_prefix_and_bank_codes_are_not_names():
+    n = parse_narration("NEFT CR-SBINN52025070153048367 -KAMLAINDUSTRIES -SBIN0009566 - /ATTN/TRF")
+    assert n.counterparty == "KAMLAINDUSTRIES"      # not "NEFT CR", not "ATTN"
+    n2 = parse_narration("WDL TFR IMPS/609616554865/MAHB- xx872-Mr. Vigh/trf")
+    assert n2.counterparty == "Mr. Vigh"            # not "WDL TFR IMPS", not "MAHB"
+
+
+def test_fill_from_narration_only_fills_blanks():
+    from bsa.models import RawRow, StatementMeta, StatementExtract
+    from bsa.normalize import normalize
+    meta = StatementMeta(bank="B", layout="x", account_no="1", account_name="",
+                         period_from="", period_to="", source_file="f.pdf")
+    rows = [RawRow(sl_no=None, date="2026-01-01", cheque_no="",
+                   description="NEFT CR-SBINN52025070153048367 -KAMLAINDUSTRIES -SBIN0009566",
+                   withdrawal=None, deposit=100.0, balance=100.0, page=1)]
+    tx = normalize(StatementExtract(meta=meta, rows=rows))
+    assert tx[0].counterparty == "KAMLAINDUSTRIES"

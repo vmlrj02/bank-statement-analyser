@@ -463,6 +463,14 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     # balance — never on a guess, so a genuine extraction error still fails.
     _repair_swapped_pairs(txns)
 
+    # Structured-narration fallback: where none of the per-format rules named a
+    # party, take the counterparty field the narration PARSER found (it
+    # decomposes UPI/IMPS/NEFT/RTGS into channel/refs/name/bank/remark). The
+    # per-format rules stay primary — they carry years of pinned cases — so this
+    # only ever fills a blank, never overwrites. Runs BEFORE the gazetteer so a
+    # name recovered here propagates to sibling rows too.
+    _fill_party_from_narration(txns)
+
     # Self-learning within the statement: a counterparty read cleanly in one row
     # fills the same name where another row's format hid it.
     _apply_gazetteer(txns)
@@ -513,6 +521,27 @@ def party_kind(counterparty: str, description: str) -> str:
     if letters < 2 or digits >= letters:
         return "handle"                       # an account / reference number
     return "named"
+
+
+def _fill_party_from_narration(txns: list[Txn]) -> None:
+    """Fill an EMPTY counterparty from the structured narration parser.
+
+    Guards, because a wrong name is worse than none: the candidate must carry at
+    least three letters, must not be mostly digits (a reference the parser
+    misread as a name), must not be a channel/remark word, and must not be
+    un-nameable by nature (cash/ATM/settlement rows)."""
+    from .narration import parse_narration
+    for t in txns:
+        if t.counterparty or _UNNAMEABLE.search(t.description):
+            continue
+        cand = _clean_segment(parse_narration(t.description).counterparty)
+        letters = sum(c.isalpha() for c in cand)
+        digits = sum(c.isdigit() for c in cand)
+        if letters < 3 or digits > letters:
+            continue
+        if cand.upper() in _REMARK_WORDS or cand.upper() in _CHANNEL_TOKENS:
+            continue
+        t.counterparty = cand
 
 
 def _apply_gazetteer(txns: list[Txn]) -> None:

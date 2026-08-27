@@ -25,14 +25,19 @@ from dataclasses import dataclass, field
 
 # A segment that is a pure reference: all digits, or a bank+digits UTR/IFSC code
 # (SBIN0001234, HDFCR520250101...), or an XXXX-masked account.
-_REF = re.compile(r"^(?:\d[\d ]*\d|\d|[A-Z]{3,5}\d[A-Z0-9]*|X{2,}\d+|\*{2,}\d+)$")
+_REF = re.compile(r"^(?:\d[\d ]*\d|\d|[A-Z]{3,5}\d[A-Z0-9]*|[Xx]{2,}\d+|\*{2,}\d+)$")
 # A channel/type stamp segment that names no party.
 _STAMP = {"UPI", "IMPS", "NEFT", "RTGS", "MMT", "P2A", "P2M", "P2P", "DR", "CR",
           "ACH", "TPT", "INB", "INF", "BIL", "ONL", "NA", "UPIINTENT", "PAYMENT",
-          "TRANSFER", "URGENT", "REVSWEEP", "OUT", "IN"}
+          "TRANSFER", "URGENT", "REVSWEEP", "OUT", "IN",
+          # transfer-type words SBI/AU print ahead of the channel ("WDL TFR
+          # IMPS/…", "NEFT CR-…") — a segment made only of these names no party
+          "WDL", "TFR", "DEP", "TRF", "CHQ", "CLG", "INT", "SELF", "RET",
+          "RETURN", "TO", "FROM", "BY"}
 # A segment that names the counterparty's BANK, not the counterparty.
 _BANKISH = re.compile(r"BANK|\bLTD\b|SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
-                      r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|@[a-z]", re.I)
+                      r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|\bMAHB\b|\bAUBL\b|"
+                      r"\bESFB\b|\bNTBL\b|\bBKID\b|\bSIBL\b|@[a-z]", re.I)
 
 
 @dataclass
@@ -66,7 +71,10 @@ def _seg_kind(seg: str) -> str:
     s = seg.strip()
     if not s:
         return "empty"
-    if s.upper() in _STAMP:
+    # A segment made ENTIRELY of stamp words is a stamp too ("NEFT CR",
+    # "WDL TFR IMPS") — without this the channel prefix reads as a name.
+    toks = s.replace(".", "").split()
+    if toks and all(t.upper() in _STAMP for t in toks):
         return "stamp"
     if _REF.match(s):
         return "ref"
@@ -85,7 +93,9 @@ def parse_narration(desc: str, mode: str = "") -> Narration:
     if n.channel not in ("upi", "imps", "neft", "rtgs"):
         n.structured = d
         return n
-    parts = re.split(r"\s*/\s*|\s+-\s+|(?<=\w)-(?=[A-Za-z])", d)
+    # Split on "/" and on dashes with whitespace on EITHER side (" -KAMLA…",
+    # "MAHB- xx872") as well as the glued word-dash-letter form ("CR-SBINN…").
+    parts = re.split(r"\s*/\s*|\s+-\s*|\s*-\s+|(?<=\w)-(?=[A-Za-z])", d)
     parts = [p for p in (s.strip() for s in parts) if p]
     if len(parts) < 3:
         n.structured = d
