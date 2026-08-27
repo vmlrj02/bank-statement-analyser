@@ -5,3 +5,4 @@ config.js
 .venv-test/
 .pytest_cache/
 .DS_Store
+.claude/worktrees/
