@@ -94,6 +94,17 @@ def _name_segments(raw: str) -> list[str]:
 _REMARK_WORDS = {"PAY", "PAYME", "PAYMENT", "PAYMENTS", "TRANSFER", "TRF", "FUND",
                  "FUNDS", "TXN", "BILL", "PYMT", "TRF.", "SALARY", "RENT", "GST"}
 
+# Banking vocabulary that disqualifies a free-standing narration from being read
+# as a bare party name ("G R SPONGE AND /" is a name; "DEBIT INTEREST
+# CAPITALIZED" and "NEFT CMS SALARY" are not). Used only by the two most
+# generic rules at the end of extract_counterparty, where nothing structural
+# anchors the name.
+_BARE_NAME_STOP = _REMARK_WORDS | _CHANNEL_TOKENS | {
+    "INTEREST", "CHARGE", "CHARGES", "CHRG", "CHRGS", "DEBIT", "CREDIT", "CASH",
+    "RETURN", "POSTING", "RECOVERY", "WDL", "DEP", "TFR", "INT", "BULK", "CMS",
+    "CHEQUE", "CHQ", "SELF", "BANK", "RET", "REVERSAL", "CLOSED", "BALANCE",
+    "ACH", "NACH", "INW", "INB", "ATM", "POS", "EMI", "LIMIT", "SETTLEMENT"}
+
 
 def _name_score(s: str) -> float:
     """How much a narration segment looks like a counterparty NAME rather than a
@@ -156,6 +167,10 @@ def detect_mode(desc: str) -> str:
 
 def _clean_segment(seg: str) -> str:
     seg = re.sub(r"\s+", " ", seg).strip()
+    # A direction stamp glued onto the party ("From:9891346233@ptyes",
+    # "To:merchant@ybl") — YES Bank prints every UPI leg this way, and the
+    # stamp is machinery, not part of the identifier.
+    seg = re.sub(r"^(?:From|To)\s*:\s*", "", seg, flags=re.I)
     # A beneficiary account number often rides along with the name ("CHOLAMANDALAM
     # 0000003023864727", "MANISH 000..29 SHADCOLO"), which drops an otherwise
     # good name to a machine "handle". Strip standalone 6+ digit runs WHEN a name
@@ -174,8 +189,10 @@ def extract_counterparty(desc: str, mode: str) -> str:
     # slash splits "M/S.VINAY" into "M" and the wrong half wins (ID9).
     d = re.sub(r"\bM/S[./ ]*", "", d, flags=re.I)
     # "TRF/<NAME>/…" names the party in the prefix even when a later "IMPS/"
-    # token makes the mode look like imps (ID9: TRF/GEETA/… → GEETA).
-    m = re.match(r"TRF/([^/]+)", d)
+    # token makes the mode look like imps (ID9: TRF/GEETA/… → GEETA). A leading
+    # branch/sequence number is skipped ("TRF/139/PIRAMAL PETROLEUM PR" — the
+    # party is Piramal, and "139" was reaching reports as the counterparty).
+    m = re.match(r"TRF/(?:\d+/)?([^/]*[A-Za-z][^/]*)", d)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
     if mode == "upi":
@@ -185,6 +202,13 @@ def extract_counterparty(desc: str, mode: str) -> str:
         m = re.search(r"UPI/\d+/P2[AMVP]/\S*@\S*/([^/]+?)\s*$", d)
         if m and sum(c.isalpha() for c in m.group(1)) >= 3:
             return _clean_segment(m.group(1))
+        # SBI "TO TRANSFER- UPI/DR/7327406342": only the payee's mobile is
+        # printed. It is a real identifier (resolve_identifiers can name it
+        # from a sibling row), so surface it rather than nothing. Must run
+        # before the generic segment scan, which returns "" on all-ref tails.
+        m = re.search(r"UPI/(?:DR|CR)/(\d{9,12})\s*$", d)
+        if m:
+            return m.group(1)
         # UPI/<NAME>/… on some banks; Axis prints UPI/P2A/<ref>/<NAME>/<bank>/…
         # so the first PLAUSIBLE segment is the party, never blindly the first.
         m = re.search(r"UPI/(.+)$", d)
@@ -232,7 +256,10 @@ def extract_counterparty(desc: str, mode: str) -> str:
         if m:
             return _best_name(_name_segments(re.sub(r":", "/", m.group(1))))
     if mode == "nach":
-        m = re.search(r"ACH/([^/]+)/", d)
+        # The mandate holder may sit after a CR/DR flag ("ACH/DR/HDFC BANK
+        # LIMITED/…"), and the first segment can be a bare sequence number
+        # ("NACH/10/…") — take the first segment that carries letters.
+        m = re.search(r"ACH/(?:(?:CR|DR)/)?([^/]*[A-Za-z][^/]*)/", d)
         if m and not _REFNUM.match(m.group(1).split("-")[0]):
             return _clean_segment(m.group(1))
         # SBI/Axis dash form: ACH-CR-<NAME>-NACH-<mandate>… / ACH-DR-<NAME>-…
@@ -251,14 +278,16 @@ def extract_counterparty(desc: str, mode: str) -> str:
         if m:
             return _clean_segment(m.group(1))
     if mode == "billpay":
-        m = re.search(r"BIL/(?:ONL/\d+/)?(.+?)(?:/|$)", d)
+        # A leading all-digit reference is not the biller ("Bil Payment
+        # BIL/000995828480/ICICI BANK CRED…" → the bank, not the number).
+        m = re.search(r"BIL/(?:ONL/\d+/)?(?:\d{6,}/)?([^/]*[A-Za-z][^/]*?)(?:/|$)", d)
         if m:
             return _clean_segment(m.group(1))
     if mode == "transfer":
         m = re.search(r"TRFR (?:TO|FROM):?\s*(.+)$", d, re.I)
         if m:
             return _clean_segment(m.group(1))
-        m = re.search(r"\bTRF/([^/]+)", d)               # TRF/<NAME>/ICI
+        m = re.search(r"\bTRF/(?:\d+/)?([^/]*[A-Za-z][^/]*)", d)   # TRF/<NAME>/ICI
         if m and not _REFNUM.match(m.group(1).strip()):
             return _clean_segment(m.group(1))
     if mode == "netbanking":
@@ -293,13 +322,27 @@ def extract_counterparty(desc: str, mode: str) -> str:
         if m:
             name = re.sub(r"\b(?:FRM|PENAL)\b|\b\d{5,}\b", " ", m.group(1))
             name = _clean_segment(name)
-            if name and not _REFNUM.match(name):
+            # A truncation remnant ("/ of-", "/ 6077-") is not a name: with
+            # fewer than three letters, fall through so the account-number
+            # rule below returns the real identifier instead.
+            if name and not _REFNUM.match(name) \
+                    and sum(c.isalpha() for c in name) >= 3:
                 return name
+        # SBI bulk salary/pension postings: "BULK POSTING- / EPAO" — the paying
+        # office code is the only party printed.
+        m = re.search(r"BULK POSTING-\s*/?\s*([A-Za-z]{3,})\s*$", d)
+        if m:
+            return m.group(1)
         # SBI's "TRANSFER- TRANSFER <acct> [<x>/<BANK>/<merchant>/UPI-]" form
         # (ID7). Prefer the merchant/VPA that sits after a 4-letter bank code
         # (L/UTIB/swiggyinst/UPI-, /HDFC/grofersind/, I/RATN/amazon@rap/ →
         # swiggyinst / grofersind / amazon); otherwise fall back to the
         # counterparty ACCOUNT NUMBER, which consolidates the name-less ones.
+        # Vasavi co-op "By-Transfer <acct> <NAME> …" prints the name right after
+        # the account — read it BEFORE the account-number fallback below.
+        m = re.search(r"By-Transfer\s+\d{9,}\s+([A-Za-z][A-Za-z .]+)", d)
+        if m:
+            return _clean_segment(m.group(1))
         if re.search(r"\bTRANSFER\b", d, re.I):
             mm = re.search(r"/[A-Z]{4}/([^/@\s]+)", d)
             if mm and not _REFNUM.match(mm.group(1)):
@@ -335,10 +378,16 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"\bTPT-.+-([A-Za-z][A-Za-z0-9& .]+)$", d)
     if m:
         return _clean_segment(m.group(1))
-    # HDFC internet-banking transfer: "IBFUNDSTRANSFERDR-<acct> -<NAME>"
-    m = re.search(r"IBFUNDSTRANSFER(?:DR|CR)-\d+\s*-\s*(.+)", d, re.I)
+    # HDFC internet-banking transfer: "IBFUNDSTRANSFERDR-<acct> -<NAME>". Some
+    # exports truncate the name to two letters ("-QU"); the beneficiary ACCOUNT
+    # is then the only identifier, so return it (resolve_identifiers can still
+    # name it from a sibling row) rather than a stub the sanitiser rejects.
+    m = re.search(r"IBFUNDSTRANSFER(?:DR|CR)-(\d+)\s*-\s*(.+)", d, re.I)
     if m:
-        return _clean_segment(m.group(1))
+        name = _clean_segment(m.group(2))
+        if sum(c.isalpha() for c in name) >= 3:
+            return name
+        return m.group(1)
     # IMPS/P2A|P2M/<ref>/<NAME>/<bank>  and  IMPS-<ref>-<NAME>-<bank>. The /+
     # skips an empty segment ("…/501323167432//TIMEZONE").
     m = re.search(r"IMPS/P2[AM]/\d+/+([A-Za-z][^/]*)", d, re.I)
@@ -391,20 +440,138 @@ def extract_counterparty(desc: str, mode: str) -> str:
     if m:
         return _clean_segment(m.group(1))
     # IndusInd "R/<ref>/<bank>/<NAME>", "N/<ref>/<bank>/<NAME>" — the counterparty
-    # is the segment after the bank code.
-    m = re.search(r"\b[RN]/[A-Z0-9]+/[A-Za-z]+/([A-Za-z][^/]+)", d)
+    # is the segment after the bank code, which may be a bare prefix ("ICIC"), a
+    # full IFSC ("JAKA0GHAZIA", "HDFC0000240"), or carry a space ("ICIC0007 055").
+    m = re.search(r"\b[RN]/[A-Z0-9]+/[A-Za-z][A-Za-z0-9 ]*/([A-Za-z][^/]+)", d)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
     # SBI "<ref> OF Mr./Mrs. <NAME>".
     m = re.search(r"\bOF Mr?s?\.?\s+([A-Za-z][A-Za-z .]+)", d)
     if m:
         return _clean_segment(m.group(1))
+    # --- Second corpus audit (Aug 2026): nameable shapes the rules above still
+    # missed, found by digit-masking every unresolved narration and reading the
+    # top shapes per bank. Each rule below is anchored to a real printed form. ---
+    # Axis internet banking. "INB/IFT/<NAME>/TPARTY TRANSFER" (the name may have
+    # a glued leading ref: "INB/IFT/47586937Shree mansa traders/…"),
+    # "INB/RTGS/<UTR> <name>/<bank>/", and "INB/<ref>/<NAME>/NA".
+    m = re.search(r"\bINB/IFT/\d*([A-Za-z][^/]*)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bINB/RTGS/[A-Z]{5}\d+\s+([A-Za-z][^/]*)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bINB/\d{6,}/([^/]*[A-Za-z][^/]*)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # YES Bank collection credits: "YESF<ref> <acct>/Bl<ref>/<NAME>/" — the
+    # beneficiary rides after the Bl reference.
+    m = re.search(r"/Bl\w*\d/([A-Za-z][^/]{2,})", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # PNB "NEFT IN::<UTR>/<NAME> <ref>" / "NEFT OUT:<UTR>:<NAME>" — strip the
+    # ride-along references ("ONE 97 YESAP51891729831" → "ONE 97").
+    m = re.search(r"NEFT (?:IN|OUT)::?[A-Z0-9]{10,}[/:](.+)$", d)
+    if m:
+        name = _clean_segment(re.sub(r"\b[A-Z]{2,6}\d{6,}\b", " ", m.group(1)))
+        if sum(c.isalpha() for c in name) >= 3:
+            return name
+    # IndusInd inward NACH: "ACH DR INW PAY/<ref>/<NAME>"; AU's glued form
+    # "ACH DR 10AXIS BANK1074249321" (the lender between the sequence and ref).
+    m = re.search(r"\bACH (?:DR|CR) INW PAY/\d+/([A-Za-z].+?)\s*$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bACH (?:DR|CR) \d+([A-Za-z][A-Za-z ]+?)\d{6,}", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # Equitas comma-form NACH: "ACH DR:<mandate>,<code>,<NAME>~<date> CLG".
+    m = re.search(r"\bACH (?:DR|CR):[^,]+,(?:[A-Z]{4}\d+,)?\s*([A-Za-z][^,~]*)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # Cheques name their payee: Equitas "CHQ PAID-IC <no>-<NAME>-<bank>" /
+    # "CHQ PAID-INWARD CLEA-<NAME> - <bank>", the return's "FOR PAYEE -<NAME>",
+    # and AU's "I/W CHEQUE RETURN-<NAME>-<reason>" (who bounced matters).
+    m = re.search(r"CHQ PAID-(?:IC \w+-(?:ICI-)?|INWARD CLEA-)([A-Za-z][^-]{2,})", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"FOR PAYEE -\s*([A-Za-z][^-]{2,})", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"I/W CHEQUE RETURN-([A-Za-z][^-]{2,})", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # Equitas transfer tails: "…TRANSFER DR - SHREERENUKA STEELS",
+    # "FT - DR - <acct> -KMP STEEL TRADERS", and its long-form UPI
+    # "UPI REF NO <ref>P2A-<NAME>-…".
+    m = re.search(r"TRANSFER (?:DR|CR) -\s*([A-Za-z][A-Za-z .&/]{2,})\s*$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bFT - (?:DR|CR) - \d+ -\s*([A-Za-z].+?)\s*$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"UPI REF NO \d+P2[AMVP]-([A-Za-z][^-]{2,})", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # City Union: "BY NEFT TRF:<NAME> <UTR>:" and "TO ONL <NAME>:: SB <acct>".
+    m = re.search(r"BY NEFT TRF:([A-Za-z][A-Za-z .]*?)\s+[A-Z]{2}\d{8,}", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"\bTO ONL ([A-Za-z]{3,})::", d)
+    if m:
+        return m.group(1)
+    # Union Bank suffix-name forms: "UPIAB/<ref> <ref> - /CR/PRABHU",
+    # "IMPSAB/<ref> <ref> - 7/ARUNKUMAR" — the party is the trailing segment.
+    m = re.search(r"\b(?:UPI|IMPS|NEFT|RTGS)AB/.*/([A-Za-z][A-Za-z .]{2,})\s*$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # Vasavi co-operative prose: "NEFT Sender : <NAME>, UTR : …",
+    # "Dividend Credit to A -<no>-<NAME> <phone>", "By-Transfer <acct> <NAME> …".
+    m = re.search(r"NEFT Sender\s*:\s*([A-Za-z][A-Za-z .]+?)\s*(?:,|$)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"Dividend Credit to A\s*-\d+-([A-Za-z][A-Za-z .]+)", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # Tax remittances: the tax head is the only party there is (same reasoning
+    # as GIB/GST above): Axis "TAX/<ref>/<acct>/<date>/…", ICICI "SGST<ref>".
+    if re.match(r"TAX/\d{5,}/\d+/", d):
+        return "TAX"
+    m = re.match(r"([SCI]GST)\d{8,}", d)
+    if m:
+        return m.group(1)
+    # HDFC one-off shapes: "<ref>/SBIEPYEGRASRAJASTHAN" (a government e-pay
+    # merchant) and the "…-STP-BPCL" standing-transfer tail.
+    m = re.search(r"^\d{9,}/([A-Za-z][A-Za-z ]{3,})$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"-STP-([A-Za-z]{3,})\s*$", d)
+    if m:
+        return m.group(1)
+    # AU drawdown: "<longref>-PANDEY ANDSONS (DRAWDOWN FROM CASA)".
+    m = re.search(r"^\d{10,}[- ]+([A-Za-z][A-Za-z &.]{3,})", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # A narration that LEADS with the party: "ARIHANT CAPITAL/159690058",
+    # "NIPPON INDIA LA/134367660/EARG". Guarded by the stop list so a channel
+    # prefix never reads as a name.
+    m = re.match(r"([A-Za-z][A-Za-z .&']{3,})/\d{6,}\b", d)
+    if m and not set(m.group(1).upper().split()) & _BARE_NAME_STOP:
+        return _clean_segment(m.group(1))
+    # A narration that IS the party and nothing else: "G R SPONGE AND /".
+    # Only when the whole text is digit-free and no token is banking vocabulary.
+    if not re.search(r"\d", d):
+        m = re.match(r"([A-Za-z][A-Za-z .&']+?)\s*/?\s*$", d)
+        if m and sum(c.isalpha() for c in m.group(1)) >= 4 \
+                and not set(m.group(1).upper().split()) & _BARE_NAME_STOP:
+            return _clean_segment(m.group(1))
     # Last resort: a UPI VPA handle. HDFC (and others) print many UPI rows with
     # NO name, only "UPI-<ref>-<mobile>@<psp>-…" — the name is not in the
     # statement to extract. The VPA that IS there is the real payee identifier a
     # lender can act on, so surface it rather than leaving the row anonymous.
     # Prefer a human-readable handle (name@bank) over a bare mobile number.
-    vpas = re.findall(r"(?:^|[\s\-/])([A-Za-z0-9._]{2,}@[A-Za-z]{2,})", d)
+    # "(?:-\d)?" admits the numbered-VPA variant ("9950720425-2@AXL") that a
+    # plain token class missed, leaving ~100 HDFC rows anonymous.
+    vpas = re.findall(r"(?:^|[\s\-/])([A-Za-z0-9._]{2,}(?:-\d)?@[A-Za-z]{2,})", d)
     if vpas:
         named = [v for v in vpas if not v.split("@")[0].isdigit()]
         return (named[0] if named else vpas[0]).lower()
@@ -516,7 +683,16 @@ def account_key(t: Txn) -> str:
 
 # Narrations that carry no personal/company name, so the gazetteer must not try
 # to force one onto them (they are un-nameable merchant/settlement refs).
-_UNNAMEABLE = re.compile(r"UPISETTLEMENT|\bPOS\b|ATW-|CHRGS|/GST/|CASH\s*DEP|BY CASH", re.I)
+# Corpus-audited additions: QR/ECS settlement refs, cash withdrawals, bank
+# charges ("RETURN HANDLING CHARGES", "GST @18% on Chq Book Issuance Chrg"),
+# the bank's own interest postings (Int.Pd / Int.Coll / INTEREST CAPITALIZED),
+# and a card autopay to one's own credit card — none of these has an external
+# party for a report to name.
+_UNNAMEABLE = re.compile(
+    r"UPISETTLEMENT|QRSETTLEM|ECSRTN|\bPOS\b|ATW-|CHRGS|\bCHRG\b|\bCHARGES?\b|"
+    r"/GST/|CASH\s*DEP|BY CASH|CASH\s*W(?:DL|ITHDRAWAL)|ATM WDR|"
+    r"Int\.Pd|Int\.Coll|INTEREST\s*CAPITALIZED|DEBIT INTEREST|"
+    r"MONTHLY SAVINGS INTEREST|AUTOPAYSI", re.I)
 
 
 def party_kind(counterparty: str, description: str) -> str:
@@ -549,7 +725,9 @@ def party_kind(counterparty: str, description: str) -> str:
 # failing this is cleared to "" — which lets the narration-parser fill and the
 # identifier map take another, better shot at the row.
 _IFSC_SHAPE = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
-_REF_TAIL = re.compile(r"\s+(?:[A-Z]{2,6}[-/][A-Z0-9/*.-]*\d[\S]*|\d[\d/*.]{8,}\S*)(\s.*)?$")
+# The third alternative is a GLUED UTR ("Ms Madhuri IDFBN52025041101368719") —
+# a bank prefix run straight into 8+ digits is always machinery, never a name.
+_REF_TAIL = re.compile(r"\s+(?:[A-Z]{2,6}[-/][A-Z0-9/*.-]*\d[\S]*|[A-Z]{2,6}\d{8,}\S*|\d[\d/*.]{8,}\S*)(\s.*)?$")
 
 
 _PARTY_STOP = {"ATTN", "TPT", "CHG", "RETURN", "REVERSAL", "ACCOUNT CLOSED",
@@ -584,6 +762,9 @@ def _sanitise_party(p: str) -> str:
     letters = sum(c.isalpha() for c in p)
     if letters <= 2 and not p.isdigit() and "@" not in p:
         return ""                                    # "NE", "DR", "S" — noise
+    if p.isdigit() and len(p) < 6:
+        return ""                                    # "10", "139" — a sequence
+                                                     # counter, not an account
     if up in _CHANNEL_TOKENS or up in _REMARK_WORDS or up in _PARTY_STOP:
         return ""                                    # a channel/stamp/stop word
     if _IFSC_SHAPE.fullmatch(up.replace(" ", "")):

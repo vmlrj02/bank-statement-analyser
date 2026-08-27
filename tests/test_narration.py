@@ -43,6 +43,23 @@ def test_channel_prefix_and_bank_codes_are_not_names():
     assert n2.counterparty == "Mr. Vigh"            # not "WDL TFR IMPS", not "MAHB"
 
 
+def test_ltd_company_is_a_counterparty_not_a_bank():
+    """'ADITYA BIRLA FINANCE LTD' was classed as a bank segment because of the
+    LTD token, so the row had no counterparty at all. A limited company is the
+    party; a real bank segment says BANK or carries a bank code."""
+    n = parse_narration("NEFT DR-AUBLN62025071622798999 -ADITYA BIRLA FINANCE LTD -HDFC0000060 -6")
+    assert n.counterparty == "ADITYA BIRLA FINANCE LTD"
+
+
+def test_single_channel_letter_is_not_a_name():
+    """IndusInd prints 'N/<ref>/<bank>/<NAME>' — the leading N (NEFT) must not
+    be read as the counterparty, and the real company after the bank code must
+    stay in the structured part (it is the party, not a remark)."""
+    n = parse_narration("N/INDBH19110369425/UTIB/AXIS FINANACE LTD")
+    assert n.counterparty == "AXIS FINANACE LTD"
+    assert "AXIS FINANACE" in n.structured
+
+
 def test_fill_from_narration_only_fills_blanks():
     from bsa.models import RawRow, StatementMeta, StatementExtract
     from bsa.normalize import normalize

@@ -116,6 +116,161 @@ def test_counterparty_from_real_statement_descriptors(desc, mode, party):
     assert extract_counterparty(desc, mode) == party
 
 
+@pytest.mark.parametrize("desc,mode,party", [
+    # Axis internet banking: the party is printed inside INB/IFT (sometimes
+    # with a glued leading ref) and INB/RTGS glues the name onto the UTR.
+    ("INB/IFT/PIRAMAL PETROLEUM P LTD/TPARTY TRANSFER",
+     "other", "PIRAMAL PETROLEUM P LTD"),
+    ("INB/IFT/47586937Shree mansa traders/TPARTY TRANSF",
+     "other", "Shree mansa traders"),
+    ("INB/RTGS/UTIBR62025052905920002 adhur iron and/RBL BANK LIMITED/",
+     "rtgs", "adhur iron and"),
+    ("INB/942446069/TIN 2.0 CBDT TAX PAYMENT/NA",
+     "other", "TIN 2.0 CBDT TAX PAYMENT"),
+    # YES Bank collection credits: beneficiary after the Bl reference.
+    ("YESF26182604791600 108361100000014/Bl0041166/TIMEZONE REAL E/",
+     "other", "TIMEZONE REAL E"),
+    # PNB NEFT: the name rides between the UTR and a trailing reference.
+    ("NEFT IN::YESBN12025070802302561/ONE 97 YESAP51891729831",
+     "other", "ONE 97"),
+    ("NEFT OUT:PUNBN62025082559509721:CHOLAMANDALAM",
+     "other", "CHOLAMANDALAM"),
+    # NACH forms that hid the mandate holder: slash-with-flag (Axis), IndusInd
+    # inward, AU glued, Equitas comma-form.
+    ("ACH/DR/HDFC BANK LIMITED/0000145372021/UTIB000000",
+     "nach", "HDFC BANK LIMITED"),
+    ("ACH DR INW PAY/0000151188104/HDFC BANK LIMITED",
+     "other", "HDFC BANK LIMITED"),
+    ("ACH DR 10AXIS BANK1074249321", "other", "AXIS BANK"),
+    ("ACH DR:P5R6PPS18127558,ESFB0000000000590375,BAJAJ FINANCELIMITE~20250702 CLG",
+     "other", "BAJAJ FINANCELIMITE"),
+    # Cheques name their payee — and who bounced matters for lending.
+    ("CHQ PAID-IC 1100-ADITYABIRLA CAPITAL LIM-ICICIBANKING CORPORATIONLTD-RPC",
+     "other", "ADITYABIRLA CAPITAL LIM"),
+    ("CHQ PAID-INWARD CLEA-LIFE INSURANCECORPORATION OF INDIA -A",
+     "other", "LIFE INSURANCECORPORATION OF INDIA"),
+    ("I/W CHEQUE RETURN-SANMUKHLEASING FINA-000092-02-EXCEEDS ARRANGEMENT",
+     "other", "SANMUKHLEASING FINA"),
+    ("I/W CHQ RETURN-DRAWER S SIGNATUREDIFFERS- FOR PAYEE -KODACHADRI CHITSPRIVATE LTD-AXIS BANK-SER",
+     "other", "KODACHADRI CHITSPRIVATE LTD"),
+    # Equitas transfer tails and long-form UPI.
+    ("KMPSTEELS/PAYMENTTRANSFER CR - OM SAISTEELS", "other", "OM SAISTEELS"),
+    ("FT - DR - 200001233035 -KMP STEEL TRADERS", "other", "KMP STEEL TRADERS"),
+    ("UPI REF NO 549165481787P2A-GVSCONSTRUCTIONS-PAYMENT FROM-KARB0000182- HEADOFFICE",
+     "other", "GVSCONSTRUCTIONS"),
+    # City Union prose.
+    ("BY NEFT TRF:SIGNET FOUNDATIO IN42609851322653:", "other", "SIGNET FOUNDATIO"),
+    ("TO ONL VELU:: SB 500101010581506:00067", "other", "VELU"),
+    # Union Bank prints the party as the trailing segment.
+    ("UPIAB/549306583166 W83727662 - /CR/PRABHU", "other", "PRABHU"),
+    ("IMPSAB/60031656120 T67128624 - 7/ARUNKUMAR", "other", "ARUNKUMAR"),
+    # Vasavi co-operative prose forms.
+    ("By-Transfer NEFT Sender : SAROJA CHANDRASHEKARAN, UTR : IN12533812066569",
+     "other", "SAROJA CHANDRASHEKARAN"),
+    ("By-Transfer 1001056000199 SAROJA CHANDRA SHEKARAN 1 % REBATE FOR 2025",
+     "other", "SAROJA CHANDRA SHEKARAN"),
+    ("By-Transfer Dividend Credit to A -4458-SAROJA CHANDRA SHEKARAN 9880241000 .",
+     "other", "SAROJA CHANDRA SHEKARAN"),
+    # Tax remittances: the tax head is the only party there is (GIB/GST
+    # precedent).
+    ("TAX/21862550/139010640001/290526/1 :16", "other", "TAX"),
+    ("SGST202602246815177075", "other", "SGST"),
+    # HDFC one-offs: government e-pay merchant, STP tail.
+    ("9255666396235/SBIEPYEGRASRAJASTHAN", "other", "SBIEPYEGRASRAJASTHAN"),
+    ("3017FA2000165280-STP-BPCL", "other", "BPCL"),
+    # AU drawdown glues the name to a long reference.
+    ("9001220341328885-PANDEY ANDSONS (DRAWDOWN FROM CASA)",
+     "other", "PANDEY ANDSONS"),
+    # A narration that leads with — or simply is — the party.
+    ("ARIHANT CAPITAL/159690058", "other", "ARIHANT CAPITAL"),
+    ("NIPPON INDIA LA/134367660/EARG", "other", "NIPPON INDIA LA"),
+    ("G R SPONGE AND /", "other", "G R SPONGE AND"),
+    # A leading branch number is not the party (was reported as "139").
+    ("TRF/139/PIRAMAL PETROLEUM PR/TRANSFER", "transfer", "PIRAMAL PETROLEUM PR"),
+    # A leading all-digit reference is not the biller.
+    ("Bil Payment BIL/000995828480/ICICI BANK CREDIT CA/431581363320",
+     "billpay", "ICICI BANK CREDIT CA"),
+    # IndusInd R/N with a full/spaced IFSC in the bank slot.
+    ("R/JAKA202602165000072098/JAKA0GHAZIA/PARATUS REAL/URGENT//",
+     "other", "PARATUS REAL"),
+    ("N/HDFCH01042304319/HDFC0000240/CHOLAMANDALAM INVES/T AND FINANC1470/",
+     "other", "CHOLAMANDALAM INVES"),
+    # SBI: bulk-posting office code; a phone-only UPI leg keeps its identifier.
+    ("BULK POSTING- / EPAO", "other", "EPAO"),
+    ("TO TRANSFER- UPI/DR/7327406342", "upi", "7327406342"),
+    # A truncation remnant ("/ of-") must fall through to the ACCOUNT number,
+    # not return the remnant (which the sanitiser would junk into "none").
+    ("TO TRANSFER- TRANSFER TO 4698290162099 / of-", "other", "4698290162099"),
+    # HDFC IBFUNDSTRANSFER with the name truncated to two letters: the account
+    # is the only identifier — surface it.
+    ("IBFUNDSTRANSFERDR-50200010007644 -QU", "other", "50200010007644"),
+    # YES From:/To: stamps are machinery, not part of the handle.
+    ("YBS6005301632717 UPI/696839383522/From:9891346233@ptyes/",
+     "upi", "9891346233@ptyes"),
+])
+def test_counterparty_shapes_from_corpus_audit(desc, mode, party):
+    """Second corpus audit (Aug 2026): nameable narration shapes that were
+    resolving to none/junk across the sample corpus. Each case is a real
+    printed form (identifying digits scrambled)."""
+    assert detect_mode(desc) == mode
+    assert extract_counterparty(desc, mode) == party
+
+
+def test_junk_sequence_number_is_not_a_party():
+    """'NACH/10/…' returned '10' as the counterparty; a short pure-digit party
+    is a sequence counter, never an account."""
+    from bsa.normalize import _sanitise_party
+    assert extract_counterparty("NACH/10/9183080211 S77493130 - /TP ACH ICIC",
+                                "nach") == ""
+    assert _sanitise_party("10") == ""
+    assert _sanitise_party("6077") == ""
+    assert _sanitise_party("4698290162099") == "4698290162099"   # real account
+
+
+def test_glued_utr_is_stripped_from_a_name():
+    """'Ms Madhuri IDFBN52025041101368719' — a bank prefix glued straight into
+    8+ digits is machinery; the name must survive as a NAME, not a handle."""
+    from bsa.normalize import _sanitise_party, party_kind
+    assert _sanitise_party("Ms Madhuri IDFBN52025041101368719") == "Ms Madhuri"
+    assert party_kind("Ms Madhuri", "x NEFT Cr-IDFB0010201-Ms Madhuri") == "named"
+
+
+def test_hyphenated_vpa_variant_is_still_a_handle():
+    """HDFC prints numbered VPAs ('9950720425-2@AXL'); the plain token class
+    missed them and left the rows anonymous."""
+    d = "UPI-43150100017943-9950720425-2@AXL-5419 50373653-PAYMENTFROMPHONEPE"
+    assert extract_counterparty(d, detect_mode(d)) == "9950720425-2@axl"
+
+
+def test_unnameable_covers_settlements_charges_and_interest():
+    """QR settlements, bank charges and the bank's own interest postings have
+    no external party — party_kind must class them 'na', and the gazetteer must
+    not force a name onto them."""
+    from bsa.normalize import party_kind
+    for desc in [
+        "RTS2502 642219001289 1531044CR - 2402201158745230 - AUSMALL FINANCE "
+        "BANK LIMITED QRSETTLEM - AU BANK",
+        "ECSRTN1_0606250000000016310674",
+        "RETURN HANDLING CHARGES 08-07-25_099908",
+        "GST @18% on Chq Book Issuance Chrg",
+        "921030006813067:Int.Coll:06/05/2026 to 05/06/2026",
+        "DEBIT INTEREST CAPITALIZED",
+        "NFS/CASHWDL/502818002845/CN144401/CHENNAI /28-01-251843",
+        "Cash Withdrawal At Br : KURUD",
+        "CC000457262XXXXXX6456AUTOPAYSI-TAD",
+    ]:
+        assert party_kind("", desc) == "na", desc
+    # …but a plain narration is still nameable.
+    assert party_kind("", "NEFT/x") == "none"
+
+
+def test_bare_name_rule_never_reads_banking_vocabulary_as_a_party():
+    """The whole-narration-is-a-name rule must refuse channel words."""
+    for desc in ["TRANSFER", "NEFT CMS SALARY XYZ LTD", "ACH DR INW LIMITED",
+                 "CHQDEP RET - FUNDSINSUFFICIENT", "BY TRANSFER- TRANSFER FROM"]:
+        assert extract_counterparty(desc, detect_mode(desc)) == "", desc
+
+
 def test_latest_first_statements_are_flipped():
     ex = StatementExtract(meta=meta(), rows=[
         raw("03-01-2026", 10.0, None, 80.0), raw("02-01-2026", 10.0, None, 90.0),
