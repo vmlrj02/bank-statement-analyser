@@ -35,3 +35,7 @@ parse:
   footer_markers:
     - "This is a computer generated"
     - "No more records available"
+    - "Page No"                    # per-page "Page No1" footer: at 8 chars it
+                                   # slips under the repeated-furniture length
+                                   # cut and was gluing itself onto the last
+                                   # row of every page

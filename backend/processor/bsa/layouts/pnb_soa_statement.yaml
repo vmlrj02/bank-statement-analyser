@@ -27,6 +27,11 @@ parse:
   continuation: nearest   # wrapped narration prints ABOVE its anchor;
                           # 'below' merged it into the previous txn and
                           # left the owner's description empty
+  nearest_max_gap: 10     # intra-block spacing is 3.5-7pt; when a page's LAST
+                          # row spills its narration to the TOP of the next
+                          # page, that line sits ~16pt above the next anchor —
+                          # over this cap it returns to the row that owns it
+                          # instead of merging two UPI refs into one txn
   amounts_left: true            # Withdrawal/Deposit/Balance sit LEFT of narration
   columns:
     date_x_max: 90              # Tran Date ~47-78

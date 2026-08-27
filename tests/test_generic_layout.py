@@ -75,3 +75,114 @@ def test_num_re_accepts_leading_dot_amount():
     assert NUM_RE.match("-.05")
     assert not NUM_RE.match(".")        # a bare dot is not an amount
     assert NUM_RE.match("1,14,95,250.00")   # wide crore amount still matches
+
+
+# ---- wrapped balance (SBI Statement of Account, balance >= 10 lakh) --------
+
+SBI_COLS = {"date_x_max": 78, "remarks_x_min": 128, "remarks_x_max": 300,
+            "cheque_x_min": 300, "cheque_x_max": 375,
+            "withdrawal_x1_max": 430, "deposit_x1_max": 510,
+            "balance_x1_max": 580}
+
+
+def w(text, x0, x1, top):
+    return {"text": text, "x0": x0, "x1": x1, "top": top}
+
+
+def line(top, *words):
+    return {"top": top, "words": list(words)}
+
+
+def test_wrapped_balance_recovered_from_neighbour_lines():
+    """Real geometry from a 71-page SBI passbook: once the balance crosses
+    ten lakh, "13,57,623.70CR" no longer fits the balance column — the number
+    prints on the narration line ABOVE the dated anchor and the bare CR on the
+    line BELOW. The anchor line then has no balance token, and every such row
+    was silently dropped (335 of 1538 rows; two whole weeks above 10 lakh
+    vanished, surfacing as 9 balance breaks where the drops resumed)."""
+    from bsa.extract.generic_layout import _wrapped_balance
+    body = [
+        line(596.77, w("DEP", 143.0, 159.5, 596.77), w("TFR", 161.7, 177.2, 596.77),
+             w("13,57,623.70", 512.15, 558.85, 596.77)),
+        line(601.43, w("04-09-2025", 27.0, 68.0, 601.43),
+             w("04-09-2025", 84.5, 125.5, 601.43),
+             w("11,25,000.00", 439.7, 486.4, 601.43)),
+        line(606.09, w("RTGS", 143.0, 165.2, 606.09), w("UTR", 167.5, 183.9, 606.09),
+             w("NO:", 186.1, 200.3, 606.09), w("CR", 529.7, 541.3, 606.09)),
+    ]
+    bal, dr = _wrapped_balance(body, 1, SBI_COLS, 601.43)
+    assert bal == 1357623.70
+    assert dr is False
+
+
+def test_wrapped_balance_dr_suffix_marks_overdrawn():
+    from bsa.extract.generic_layout import _wrapped_balance
+    body = [
+        line(96.8, w("WDL", 143.0, 160.8, 96.8),
+             w("12,00,000.00", 512.2, 558.9, 96.8)),
+        line(101.4, w("04-09-2025", 27.0, 68.0, 101.4),
+             w("500.00", 380.0, 404.2, 101.4)),
+        line(106.1, w("NARR", 143.0, 165.2, 106.1), w("DR", 529.7, 541.3, 106.1)),
+    ]
+    bal, dr = _wrapped_balance(body, 1, SBI_COLS, 101.4)
+    assert bal == 1200000.00
+    assert dr is True
+
+
+def test_wrapped_balance_ignores_lines_beyond_the_block():
+    """The next block's wrapped number sits ~25pt away; only the row's own
+    narration lines (~5pt) may donate a balance."""
+    from bsa.extract.generic_layout import _wrapped_balance
+    body = [
+        line(576.0, w("OTHER", 143.0, 165.0, 576.0),
+             w("99,99,999.99", 512.2, 558.9, 576.0)),
+        line(601.43, w("04-09-2025", 27.0, 68.0, 601.43),
+             w("100.00", 380.0, 404.2, 601.43)),
+    ]
+    bal, dr = _wrapped_balance(body, 1, SBI_COLS, 601.43)
+    assert bal is None
+
+
+def test_wrapped_balance_ignores_narration_numbers():
+    """A number inside the narration band (a cheque ref, a UTR) must never be
+    read as the balance — only the balance band's right edge qualifies."""
+    from bsa.extract.generic_layout import _wrapped_balance
+    body = [
+        line(96.8, w("CHQ", 143.0, 160.0, 96.8), w("12,345.00", 200.0, 240.0, 96.8)),
+        line(101.4, w("04-09-2025", 27.0, 68.0, 101.4),
+             w("500.00", 380.0, 404.2, 101.4)),
+    ]
+    bal, dr = _wrapped_balance(body, 1, SBI_COLS, 101.4)
+    assert bal is None
+
+
+# ---- nearest mode: page-break narration spill (PNB Statement of Account) ---
+
+def test_nearest_max_gap_returns_page_spill_to_previous_row():
+    """PNB prints a row's narration ABOVE its anchor; when the anchor is the
+    LAST line of a page the narration lands at the TOP of the next page —
+    vertically nearest to that page's first anchor. Pure-nearest merged two
+    UPI refs into one transaction and left the real owner empty. Over
+    max_gap, and above every anchor of the segment, the line belongs to the
+    previously emitted row."""
+    rows = []
+    # page 1: last row's anchor; nothing above it spilled yet
+    _flush_nearest([anchor(700.0, "29-06-2025", 3392.50, own=["WDL"])], [], rows)
+    assert rows[-1].description == "WDL"
+    # page 2: spilled narration at top (16.5pt above the first anchor), then
+    # that anchor's own narration 3.5pt above it
+    anchors = [anchor(63.82, "01-07-2025", 3192.50)]
+    narrs = [(47.32, ["UPI/DR/554641847252/DURGESH"]),
+             (60.32, ["UPI/DR/518220883533/Amar"])]
+    _flush_nearest(anchors, narrs, rows, max_gap=10.0)
+    assert rows[0].description == "WDL UPI/DR/554641847252/DURGESH"
+    assert rows[1].description == "UPI/DR/518220883533/Amar"
+
+
+def test_nearest_without_max_gap_keeps_pure_nearest():
+    rows = []
+    _flush_nearest([anchor(700.0, "29-06-2025", 1.0, own=["WDL"])], [], rows)
+    anchors = [anchor(63.82, "01-07-2025", 2.0)]
+    narrs = [(47.32, ["SPILL"]), (60.32, ["OWN"])]
+    _flush_nearest(anchors, narrs, rows)
+    assert rows[1].description == "SPILL OWN"      # the old behaviour, unchanged

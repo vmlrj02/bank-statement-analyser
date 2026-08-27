@@ -96,6 +96,42 @@ def _amount_role(x1: float, cols: dict) -> str | None:
     return None
 
 
+def _wrapped_balance(body: list[dict], li: int, cols: dict,
+                     anchor_top: float, tol: float = 9.0):
+    """Recover a balance whose cell WRAPPED off the anchor line.
+
+    SBI's "STATEMENT OF ACCOUNT" export fits "9,99,935.00CR" in the balance
+    column, but once the account crosses ten lakh the value no longer fits and
+    the cell wraps: the NUMBER prints on the narration line above the dated
+    anchor and the bare CR/DR suffix on the line below. The anchor line then
+    carries no balance token at all, and every such row used to be dropped
+    silently — 335 of 1538 rows on a 71-page passbook, every stretch where the
+    balance stayed above 10,00,000 (the running-balance chain broke only where
+    the drops resumed, so 9 issues hid two whole missing weeks).
+
+    Look one visual line either side of the anchor (same row block: narration
+    sits ~5pt away, the next block ~25pt) for a numeric token whose RIGHT edge
+    lands in the balance band, and a bare CR/DR token in that band for the
+    sign. Returns (balance | None, is_dr).
+    """
+    num, dr = None, False
+    for j in (li - 1, li + 1):
+        if not (0 <= j < len(body)) or abs(body[j]["top"] - anchor_top) > tol:
+            continue
+        for w in body[j]["words"]:
+            if _amount_role(w["x1"], cols) != "balance":
+                continue
+            t = w["text"]
+            if NUM_RE.match(t):
+                if num is None:
+                    num = _parse_amount(t)
+                    if re.search(r"(?i)DR$", t):
+                        dr = True
+            elif t.rstrip(".").upper() in ("CR", "DR"):
+                dr = dr or t.rstrip(".").upper() == "DR"
+    return num, dr
+
+
 def _complete_year(day_month: str, meta) -> str:
     """Append the year to a "17 Aug" date whose year wrapped to the next line.
 
@@ -119,7 +155,7 @@ def _complete_year(day_month: str, meta) -> str:
 
 
 def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
-                   invert: bool = False) -> None:
+                   invert: bool = False, max_gap: float | None = None) -> None:
     """Assign buffered narration lines to the vertically NEAREST anchor, then
     emit the anchors in reading order.
 
@@ -130,11 +166,24 @@ def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
     which shifted every description one row off (seen on ICICI's combined
     statement, 995 rows all mislabelled). Distance to the anchor line is the
     only signal that is right for both halves.
+
+    `max_gap` (from the layout's nearest_max_gap) handles the page-break spill:
+    when a block's anchor is the LAST line of a page, PNB prints its narration
+    at the TOP of the next page — nearer to that page's first anchor than to
+    its own, which both merged two UPI refs into one row and left the real
+    owner with an empty description. A narration line sitting ABOVE every
+    anchor of its segment and farther than max_gap from the nearest one
+    belongs to the previously emitted row.
     """
     for ntop, zone in narrs:
         if not anchors:
             continue
         a = min(anchors, key=lambda a: abs(a["top"] - ntop))
+        if (max_gap is not None and abs(a["top"] - ntop) > max_gap
+                and rows and all(ntop < x["top"] for x in anchors)):
+            rows[-1].description = \
+                f"{rows[-1].description} {' '.join(zone)}".strip()
+            continue
         a["parts"].append((ntop, zone))
     for a in sorted(anchors, key=lambda a: a["top"]):
         desc = [w for _, zone in sorted(a["parts"], key=lambda x: x[0])
@@ -213,6 +262,15 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     # Some exports run the value date straight into the narration with no
     # separator ("01-07-2025BIL/Auto"), so it arrives as one token.
     strip_date = re.compile(p["strip_leading_date"]) if p.get("strip_leading_date") else None
+    # Opt-in: the balance cell can WRAP off the anchor line once the value
+    # outgrows its column (see _wrapped_balance). Only a layout that declares
+    # it pays the neighbour-line scan.
+    wrap_bal = bool(p.get("wrapped_balance"))
+    # nearest mode: a narration line farther than this from every anchor of its
+    # segment, and above them all, is a page-break spill belonging to the
+    # previous emitted row (see _flush_nearest). None keeps pure-nearest.
+    nearest_gap = p.get("nearest_max_gap")
+    nearest_gap = float(nearest_gap) if nearest_gap is not None else None
     # A single PDF can concatenate two different exports of the same account —
     # customers download a range, the bank changes its format, and the parts are
     # merged. Each section declares a header regex and its own column geometry.
@@ -251,6 +309,29 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
         pages_words, page1_text = [], ""
         head_texts: list[str] = []
         line_pages: dict[str, set] = {}
+        # A dated anchor line is NEVER furniture, even when its exact text
+        # repeats on another page: two genuine transactions can print
+        # identically (same date, same amount, and a running balance that
+        # returns to the same value — seen on a real SBI passbook, where two
+        # 20,000 debits five rows apart matched byte for byte and both were
+        # dropped as a "repeated footer"). Test against the widest date column
+        # any section declares, so a section profile can't hide an anchor.
+        date_x_lim = max([cols.get("date_x_max", 0)] +
+                         [sec.get("columns", {}).get("date_x_max", 0)
+                          for sec in p.get("sections", [])])
+
+        def _anchorish(ln) -> bool:
+            ws = ln["words"]
+            if not ws or ws[0]["x0"] >= date_x_lim:
+                return False
+            if anchor_re.match(ws[0]["text"]):
+                return True
+            if date_parts > 1:
+                toks = [w["text"] for w in ws[:date_parts]
+                        if w["x0"] < date_x_lim]
+                return bool(anchor_re.match(" ".join(toks)))
+            return False
+
         for pageno, page in enumerate(pdf.pages, start=1):
             ws = page.extract_words()
             pages_words.append(ws)
@@ -260,7 +341,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 head_texts.append(page.extract_text() or "")
             for ln in _lines(ws):
                 t = " ".join(w["text"] for w in ln["words"])
-                if len(t) > 8:
+                if len(t) > 8 and not _anchorish(ln):
                     line_pages.setdefault(t, set()).add(pageno)
         furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
         # Most statements carry the account line on page 1, but some print the
@@ -298,19 +379,28 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     body_top = ln["top"] + header_offset
                     break
 
-            for ln in _lines([w for w in words if w["top"] > body_top]):
+            body_lines = _lines([w for w in words if w["top"] > body_top])
+            # Narration HUGS its anchor (a few pt), while real page furniture
+            # sits well clear of the table rows — so a furniture match is only
+            # honoured away from every anchor line. Without this, a recurring
+            # transaction's narration ("ACHDr HDFC02165..." on a monthly ACH
+            # debit, printed identically month after month) matched the
+            # repeated-line rule and left the row with an EMPTY description.
+            anchor_tops = [l["top"] for l in body_lines if _anchorish(l)]
+            for li, ln in enumerate(body_lines):
                 ws = ln["words"]
                 text = " ".join(w["text"] for w in ws)
                 if any(m in text for m in footers):
                     break
-                if text in furniture:
+                if text in furniture and not any(
+                        abs(ln["top"] - t) <= 10.0 for t in anchor_tops):
                     continue                 # repeated footer/header — not a row
                 switched = False
                 for rx, scols in sections:
                     if rx.search(text):
                         finalize()
                         pending.clear()
-                        _flush_nearest(seg_anchors, seg_narrs, rows, invert)
+                        _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap)
                         active = scols or cols
                         switched = True
                         break
@@ -413,6 +503,13 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                         desc[0] = strip_date.sub("", desc[0], count=1)
                         if not desc[0]:
                             desc.pop(0)
+                    if bal is None and wrap_bal and (
+                            wd is not None or dep is not None
+                            or amount_val is not None):
+                        bal, wrapped_dr = _wrapped_balance(
+                            body_lines, li, active, ln["top"])
+                        if bal is not None and wrapped_dr:
+                            bal_dr = True
                     if bal is None:
                         current = None       # not a transaction row
                         continue
@@ -446,7 +543,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
 
             # Blocks do not span pages in a centred layout, so a page is a
             # complete segment: assign its narration lines and emit its rows.
-            _flush_nearest(seg_anchors, seg_narrs, rows, invert)
+            _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap)
 
         finalize()
 
