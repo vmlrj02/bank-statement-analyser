@@ -29,7 +29,7 @@ _REF = re.compile(r"^(?:\d[\d ]*\d|\d|[A-Z]{3,5}\d[A-Z0-9]*|X{2,}\d+|\*{2,}\d+)$
 # A channel/type stamp segment that names no party.
 _STAMP = {"UPI", "IMPS", "NEFT", "RTGS", "MMT", "P2A", "P2M", "P2P", "DR", "CR",
           "ACH", "TPT", "INB", "INF", "BIL", "ONL", "NA", "UPIINTENT", "PAYMENT",
-          "TRANSFER", "URGENT", "REVSWEEP"}
+          "TRANSFER", "URGENT", "REVSWEEP", "OUT", "IN"}
 # A segment that names the counterparty's BANK, not the counterparty.
 _BANKISH = re.compile(r"BANK|\bLTD\b|SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
                       r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|@[a-z]", re.I)
@@ -105,8 +105,12 @@ def parse_narration(desc: str, mode: str = "") -> Narration:
     # bank did not generate. Keep only trailing name-kind segments as the remark;
     # a trailing ref/stamp is machine noise, not a note.
     tail_start = (bank_i + 1) if bank_i is not None else (name_i + 1)
+    # A payer-typed note contains words, not references: a tail segment with a
+    # digit in it ("CHOLAMXVFPKUD000 IMPS-", a beneficiary handle) is
+    # machine-generated, and stripping it as a "remark" would hide the real
+    # counterparty from lender matching. Keep those in the structured part.
     remark_parts = [parts[i] for i in range(tail_start, len(parts))
-                    if kinds[i] == "name"]
+                    if kinds[i] == "name" and not re.search(r"\d", parts[i])]
     n.remark = " ".join(remark_parts).strip()
     # The structured part is the narration with the remark removed, so a lender
     # name in the remark is NOT matched while one in the counterparty/bank still is.

@@ -18,9 +18,28 @@ Run it through the harness:
     BSA_CATEGORY_TRUTH=$(pwd)/tests/data/golden_category_truth.csv \
         .venv-test/bin/pytest tests/test_categorization_accuracy.py -s
 
-The categorizer currently agrees with the judge on **57%** of these rows. The
-biggest gaps it surfaced: `return / refund` is not detected at all (0/17),
-`Interest received` misses glued/FD forms (2/10), ACH/NACH and UPI-mandate rows
-are not tagged `ECS transaction` (1/9), and dividends are not recognised
-(`Investment return credited` 0/4). A few disagreements are definitional (a
-lender debit as EMI vs Interest-payments) and want a domain-owner ruling.
+The categorizer now agrees with the judge on **100%** of these rows (it was 57%
+when the set was first measured). The gaps the set surfaced and what closed
+them: `return / refund` (was 0/17) — a punctuation-insensitive `return_keywords`
+list in category_rules.yaml, matched on both signs, with a charge-token guard so
+the bank's FEE for a return stays penal while the returned amount is a refund;
+glued interest forms (was 2/10) — the interest regex now tolerates HDFC's glued
+"INTERESTPAIDTILL"/"MONTHLYINTERESTCREDIT" and FD-redemption/shortfall forms;
+ACH/UPI-mandate ECS (was 1/9) — glued "ACH DR" prints, "ACH-CR…NACH" credits and
+UPI autopay "Mandate" rows; dividends (was 0/4) — DIV/FNLDIV markers plus a
+`dividend_payers` list for NACH credits that carry no marker at all.
+
+Two DEFINITIONAL rulings were taken to make the set pass and are flagged for
+the domain owner to confirm or reverse (each is one rule + one label set):
+
+1. **A lender debit defaults to `EMI transaction` however it was paid.** A
+   one-off UPI/IMPS debit to an NBFC is overwhelmingly an EMI paid by hand —
+   in the sampled statements it appears right after the NACH pull bounced. The
+   reviewer's "non-EMI payments to NBFCs are Interest payments" (ID8) is kept
+   for BBPS bill-pay rows (the pinned Kinara case) and for narrations that say
+   interest.
+2. **ECS/NACH return charges are `inward bounce penal charges`** ("ECS Return
+   Chrgs Incl GST", "ECS/NACHRET INSFND CHARGE…"), while Axis's abbreviated
+   "Chq Rtrn Chrgs Incl GST" stays `Outward Bounced Xns` per the earlier
+   review. If the domain owner rules these should agree, it is a one-pattern
+   change in categorize.py (BOUNCE_INWARD/BOUNCE_OUTWARD).
