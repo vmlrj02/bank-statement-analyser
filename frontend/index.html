@@ -874,10 +874,19 @@ function uploadNotices(){
             <div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
             <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code></div>`:''}</div>`:''}
       ${j.status==='needs_review'
-        ? `<div class="rv-foot" style="padding-left:0;padding-right:0">
+        ? ((s.accounts||[]).filter(a=>a.validation && a.validation!=='passed').map(a=>
+            `<div class="meta" style="margin-top:7px">${bankBadge(a.bank)}<b>${esc(a.holder||a.bank||'Account')}</b>
+               ${esc(acctNo(a.account_no))} — balance ${esc(String(a.validation).replace(/_/g,' '))}${
+               a.unreadable_pages?`, ${nfmt(a.unreadable_pages)} unreadable page${a.unreadable_pages===1?'':'s'}`:''},
+               <b>${nfmt(a.issues||0)}</b> row${(a.issues||0)===1?'':'s'} to check
+               <button class="ghost" style="font-size:11px;padding:1px 9px;margin-left:5px"
+                 onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review rows</button>
+               <button class="ghost" style="font-size:11px;padding:1px 9px"
+                 onclick="selectAcct('${j.job_id}/${a.slug}')">Open account</button></div>`).join('')
+          + `<div class="rv-foot" style="padding-left:0;padding-right:0">
              <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
              <button class="go" onclick="markReviewed('${j.job_id}')">Mark reviewed</button>
-           </div>`
+           </div>`)
         : ''}
       ${aiPanel}
     </div>`);

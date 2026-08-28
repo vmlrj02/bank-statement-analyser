@@ -17,6 +17,7 @@ from dataclasses import asdict
 from datetime import date, timedelta
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font
 
 from .categorize import category_detail
@@ -47,6 +48,16 @@ _CS_LABELS = [
     ("servicing_coverage", "Debt-service coverage (× EMI)", "num"),
 ]
 
+
+
+def _xl(v):
+    """Strip characters openpyxl refuses (control chars a doctored or badly
+    encoded narration can carry) — one bad cell must not kill the merge."""
+    return ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v
+
+
+def _append(ws, row):
+    ws.append([_xl(c) for c in row])
 
 def party_key(name: str) -> str:
     """A fuzzy key that groups truncated variants of one party — the bank
@@ -173,11 +184,11 @@ def write_workbook(result: JobResult, path: str) -> None:
     # --- Credit Assessment (the lender-facing lead sheet) ---
     cs = credit_summary(txns, integ, result.validation.status)
     ws = wb.create_sheet("Credit Assessment")
-    ws.append(["Credit Assessment"])
+    _append(ws, ["Credit Assessment"])
     ws["A1"].font = big
-    ws.append([result.meta.account_name or "", result.meta.bank or "",
+    _append(ws, [result.meta.account_name or "", result.meta.bank or "",
                result.meta.account_no or ""])
-    ws.append(["Balance reconciliation", result.validation.status,
+    _append(ws, ["Balance reconciliation", result.validation.status,
                "Integrity", integ["assessment"]])
     from .completeness import check_completeness
     nd = sum(1 for t in txns if t.amount < 0)
@@ -187,12 +198,12 @@ def write_workbook(result: JobResult, path: str) -> None:
     comp = check_completeness(len(txns), nd, nc,
                               getattr(result.meta, "declared_totals", None) or {}, sd, sc)
     if comp.get("checked"):
-        ws.append(["Completeness",
+        _append(ws, ["Completeness",
                    "complete" if comp["complete"] else "INCOMPLETE",
                    "; ".join(comp.get("notes", [])) or
                    f"{len(txns)} of {comp['declared']} declared"])
-    ws.append([])
-    ws.append(["Metric", "Value"])
+    _append(ws, [])
+    _append(ws, ["Metric", "Value"])
     for c in ws[ws.max_row]:
         c.font = bold
     m = cs["metrics"]
@@ -202,12 +213,12 @@ def write_workbook(result: JobResult, path: str) -> None:
             v = f"{v}%"
         elif kind == "money" and isinstance(v, (int, float)):
             v = _fmt_amount(v)
-        ws.append([label, v])
-    ws.append([])
-    ws.append(["Underwriting reads"])
+        _append(ws, [label, v])
+    _append(ws, [])
+    _append(ws, ["Underwriting reads"])
     ws[ws.max_row][0].font = bold
     for r in cs["reads"]:
-        ws.append(["", r])
+        _append(ws, ["", r])
 
     # --- Summary ---
     ws = wb.create_sheet("Summary")
@@ -229,52 +240,52 @@ def write_workbook(result: JobResult, path: str) -> None:
         a[2] = min(a[2], t.date)
         a[3] = max(a[3], t.date)
         a[4] += 1
-    ws.append(["Bank", "Account", "From", "To", "Transactions"])
+    _append(ws, ["Bank", "Account", "From", "To", "Transactions"])
     for c in ws[1]:
         c.font = bold
     for a in accounts.values():
-        ws.append(a)
-    ws.append([])
-    ws.append(["Validation", result.validation.status,
+        _append(ws, a)
+    _append(ws, [])
+    _append(ws, ["Validation", result.validation.status,
                f"{result.validation.checked_rows} rows checked",
                f"{len(result.validation.issues)} issues"])
     # --- Integrity (statement authenticity signals) ---
     integ = account_integrity([result.meta], result.validation.status)
-    ws.append([])
-    ws.append(["Integrity", integ["assessment"].upper()])
+    _append(ws, [])
+    _append(ws, ["Integrity", integ["assessment"].upper()])
     ws[ws.max_row][0].font = bold
-    ws.append(["PDF producer", result.meta.producer or "—",
+    _append(ws, ["PDF producer", result.meta.producer or "—",
                "Created", result.meta.pdf_created or "—",
                "Modified", result.meta.pdf_modified or "—"])
     for flag in integ["flags"]:
-        ws.append(["", flag])
-    ws.append([])
+        _append(ws, ["", flag])
+    _append(ws, [])
     hdr_row = ws.max_row + 1
-    ws.append(["Category", "Count", "Net Amount"])
+    _append(ws, ["Category", "Count", "Net Amount"])
     for c in ws[hdr_row]:
         c.font = bold
     for tag in sorted(agg, key=lambda k: -abs(agg[k][1])):
-        ws.append([tag, agg[tag][0], round(agg[tag][1], 2)])
-    ws.append([])
-    ws.append(["Month", "Total Credits", "Total Debits", "Net"])
+        _append(ws, [tag, agg[tag][0], round(agg[tag][1], 2)])
+    _append(ws, [])
+    _append(ws, ["Month", "Total Credits", "Total Debits", "Net"])
     for c in ws[ws.max_row]:
         c.font = bold
     for mk in sorted(monthly):
         cr, dr = monthly[mk]
-        ws.append([mk, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
+        _append(ws, [mk, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
 
     # --- EOD Balances ---
     ws = wb.create_sheet("EOD Balances")
-    ws.append(["Account", "Date", "EOD Balance"])
+    _append(ws, ["Account", "Date", "EOD Balance"])
     for c in ws[1]:
         c.font = bold
     for acct, d, b in _eod_balances(txns):
-        ws.append([acct, d, b])
+        _append(ws, [acct, d, b])
 
     # --- category sheets (some carry a leading party Group column) ---
     sheets = {name: wb.create_sheet(name) for name in SHEET_ORDER}
     for name, ws2 in sheets.items():
-        ws2.append((["Group"] if name in GROUPED_SHEETS else []) + HEADERS)
+        _append(ws2, (["Group"] if name in GROUPED_SHEETS else []) + HEADERS)
         for c in ws2[1]:
             c.font = bold
     # Group rows in the grouped sheets by fuzzy party, keeping the fullest
@@ -290,18 +301,18 @@ def write_workbook(result: JobResult, path: str) -> None:
         if dest in GROUPED_SHEETS:
             row = [group_label.get(party_key(t.counterparty), t.counterparty
                                    or "unknown party")] + row
-        sheets[dest].append(row)
+        _append(sheets[dest], row)
 
     # --- all transactions, and the Sunday subset ---
     for name, keep in (("Xns", lambda t: True),
                        ("SundayXns", lambda t: date.fromisoformat(t.date).weekday() == 6)):
         ws = wb.create_sheet(name)
-        ws.append(HEADERS)
+        _append(ws, HEADERS)
         for c in ws[1]:
             c.font = bold
         for i, t in enumerate(txns, start=1):
             if keep(t):
-                ws.append(_row(i, t))
+                _append(ws, _row(i, t))
 
     # --- Top 10 parties, by direction, aggregated with the fuzzy key ---
     for name, want_credit in (("Top 10 Party Credits", True),
@@ -312,7 +323,7 @@ def write_workbook(result: JobResult, path: str) -> None:
                 by_party[group_label.get(party_key(t.counterparty),
                                          t.counterparty)] += abs(t.amount)
         ws = wb.create_sheet(name)
-        ws.append(["Party", "Total Amount", "Count"])
+        _append(ws, ["Party", "Total Amount", "Count"])
         for c in ws[1]:
             c.font = bold
         counts: dict[str, int] = defaultdict(int)
@@ -321,13 +332,13 @@ def write_workbook(result: JobResult, path: str) -> None:
                 counts[group_label.get(party_key(t.counterparty),
                                        t.counterparty)] += 1
         for party in sorted(by_party, key=lambda p: -by_party[p])[:10]:
-            ws.append([party, round(by_party[party], 2), counts[party]])
+            _append(ws, [party, round(by_party[party], 2), counts[party]])
 
     # --- Top 10 parties PER MONTH, by direction (same fuzzy grouping) ---
     for name, want_credit in (("Top 10 Credits MoM", True),
                               ("Top 10 Debits MoM", False)):
         ws = wb.create_sheet(name)
-        ws.append(["Month", "Rank", "Party", "Amount", "Count",
+        _append(ws, ["Month", "Rank", "Party", "Amount", "Count",
                    "% of Month " + ("Credits" if want_credit else "Debits")])
         for c in ws[1]:
             c.font = bold
@@ -348,25 +359,25 @@ def write_workbook(result: JobResult, path: str) -> None:
             ranked = sorted(per_month[mk].items(), key=lambda kv: -kv[1][0])[:10]
             for rank, (party, (amt, n)) in enumerate(ranked, start=1):
                 base = month_total[mk]
-                ws.append([mk, rank, party, round(amt, 2), n,
+                _append(ws, [mk, rank, party, round(amt, 2), n,
                            round(100 * amt / base, 1) if base else 0.0])
 
     # --- Top 10 single transactions, by direction ---
     for name, want_credit in (("Top 10 Credits(Consolidated)", True),
                               ("Top 10 Debits(Consolidated)", False)):
         ws = wb.create_sheet(name)
-        ws.append(["Date", "Description", "Party", "Amount"])
+        _append(ws, ["Date", "Description", "Party", "Amount"])
         for c in ws[1]:
             c.font = bold
         ranked = sorted((t for t in txns if (t.amount > 0) == want_credit),
                         key=lambda t: -abs(t.amount))[:10]
         for t in ranked:
-            ws.append([_fmt_date(t.date), t.description,
+            _append(ws, [_fmt_date(t.date), t.description,
                        t.counterparty or "unknown party", _fmt_amount(t.amount)])
 
     # --- Average balances + monthly flow ---
     ws = wb.create_sheet("Avg Balances")
-    ws.append(["Month", "Average Balance", "Inflow", "Outflow", "Net Flow"])
+    _append(ws, ["Month", "Average Balance", "Inflow", "Outflow", "Net Flow"])
     for c in ws[1]:
         c.font = bold
     eod = _eod_balances(txns)
@@ -378,7 +389,7 @@ def write_workbook(result: JobResult, path: str) -> None:
         bals = bal_by_month.get(mk, [])
         avg = round(sum(bals) / len(bals), 2) if bals else ""
         cr, dr = monthly[mk]
-        ws.append([mk, avg, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
+        _append(ws, [mk, avg, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
 
     wb.save(path)
 
