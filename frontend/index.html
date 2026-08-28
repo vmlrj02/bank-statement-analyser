@@ -186,8 +186,13 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 /* sidebar — one CARD per ACCOUNT, across every upload. Most users care about
    an account, not a batch: holder, bank, last-4 and the period at a glance,
    with the report download right there. Clicking scrolls to the account card. */
-aside{position:sticky;top:22px}
-.hist{border:1px solid var(--line2);border-radius:var(--radius);overflow:hidden}
+/* Sticky sidebar capped to the viewport, with the account list scrolling
+   inside it — otherwise cards past the fold were simply unreachable. */
+aside{position:sticky;top:22px;max-height:calc(100vh - 40px);
+  display:flex;flex-direction:column}
+aside h2,aside .go{flex:none}
+.hist{border:1px solid var(--line2);border-radius:var(--radius);
+  overflow-y:auto;flex:1;min-height:0}
 .h-group{display:flex;align-items:center;gap:8px;width:100%;
   background:var(--sunk);border-bottom:1px solid var(--line);padding:7px 13px;
   font-size:10.5px;font-weight:700;text-transform:uppercase;
@@ -250,7 +255,8 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .shr{font-size:10px;color:var(--faint);font-weight:400}
 .mt-wrap tr.hl td{background:var(--goldpale)}
 @media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}
-  main,aside{grid-column:auto;grid-row:auto}aside{position:static}}
+  main,aside{grid-column:auto;grid-row:auto}
+  aside{position:static;max-height:none;display:block}}
 </style>
 </head>
 <body>
@@ -845,7 +851,7 @@ function render(){
           <div class="h-hold">${esc(a.holder||a.bank||'Account')}</div>
           <div class="h-bank">${bankBadge(a.bank)}${esc(a.bank||'')}${a.account_no?` · ${esc(acctNo(a.account_no))}`:''}</div>
           ${(a.periods||[]).length?`<div class="h-per">${esc(fmtPeriods(a.periods))}</div>`:''}
-          <div class="h-per">${nfmt(e.statements)} statement${e.statements===1?'':'s'} · ${nfmt(e.pages)} pages</div>
+          <div class="h-per">${esc(jobLabel(e.latest.j))} · ${nfmt(e.statements)} stmt${e.statements===1?'':'s'} · ${nfmt(e.pages)} pg</div>
           <button class="ghost h-dl" title="Download Excel report"
             onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${e.slug}','xlsx')">Download</button>
         </div>`;}).join('')
