@@ -57,7 +57,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;
 .f .info{min-width:0;flex:1}
 .f .nm{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .f .sz{color:var(--mut);font-size:12px}
-.lockmsg{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.lockmsg{font-size:12px;color:var(--mut)}   /* guidance, not a warning */
 input[type=password],input[type=text],input[type=email]{padding:9px 12px;font-size:14px;
   font-family:inherit;border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--fg)}
 input:focus{outline:2px solid var(--fg);outline-offset:-1px;border-color:transparent}
@@ -91,13 +91,6 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .dash{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
 .dash .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
   font-weight:700;margin-bottom:9px}
-.dash-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.lchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;
-  padding:3px 11px;font-size:11.5px;cursor:pointer;color:var(--mut);background:var(--bg);font-family:inherit}
-.lchip input{accent-color:var(--navy);margin:0;cursor:pointer}
-.lchip .sw{width:9px;height:9px;border-radius:50%;flex:none}
-.lchip.off{opacity:.4}
-.lchip:hover{border-color:var(--line2)}
 .dash-body{position:relative}
 .dash-tip{position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--line2);
   border-radius:6px;padding:7px 10px;font-size:11.5px;line-height:1.6;display:none;z-index:5;
@@ -109,22 +102,22 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .dash svg text{font-family:inherit}
 .chip{font-size:11px;padding:3px 10px;border-radius:999px;font-weight:700;white-space:nowrap;
   text-transform:uppercase;letter-spacing:.07em}
-.chip.done{background:var(--fg);color:var(--bg);border:2px solid var(--fg)}
+/* "Done" is the NORMAL state — it should never be the darkest object on the
+   card. Solid navy fill is reserved for nothing, so nothing shouts. */
+.chip.done{background:var(--sunk);color:var(--navy);border:2px solid var(--navy)}
 .chip.warn{background:var(--goldpale);color:var(--golddark);border:2px solid var(--gold)}
-.chip.fail{background:var(--bg);color:var(--fg);border:2px solid var(--fg);
-  text-decoration:underline;text-underline-offset:2px}
+/* Weight and border carry the failure — an underline reads as a link. */
+.chip.fail{background:var(--bg);color:var(--fg);border:2px solid var(--fg);font-weight:800}
 .chip.busy{background:var(--bg);color:var(--mut);border:1px dashed var(--line2);
   font-style:italic;text-transform:none;letter-spacing:0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));
-  gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;
-  overflow:hidden;margin-top:13px}
-.stat{background:var(--bg);padding:9px 12px}
-.stat b{display:block;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
-.stat span{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
 .meta{color:var(--mut);font-size:12.5px;margin-top:9px}
 .meta b{color:var(--fg)}
-.cats{display:flex;flex-wrap:wrap;gap:5px;margin-top:11px}
-.cats span{border:1px solid var(--line);color:var(--mut);font-size:11.5px;padding:2px 9px;border-radius:999px}
+/* Verification strip: the attestation a credit desk reads first. Always
+   present on a settled account — silence is never evidence of a check. */
+.verif{display:flex;gap:8px 16px;flex-wrap:wrap;align-items:center;margin-top:12px;
+  font-size:12.5px;color:var(--mut)}
+.verif .vseg{display:inline-flex;align-items:center;gap:7px}
+.verif .flags{width:100%;font-size:11.5px;color:var(--mut);margin:0}
 .conf{display:flex;align-items:center;gap:9px;margin-top:11px;font-size:12px;color:var(--mut);flex-wrap:wrap}
 .conf .clabel{font-weight:600;color:var(--fg)}
 .conf .cbar{width:120px;height:8px;border:1px solid var(--line2);border-radius:99px;overflow:hidden;display:flex;background:var(--sunk)}
@@ -143,21 +136,19 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .dtl{color:var(--mut);font-size:11px}
 .err{border:1px solid var(--fg);border-left-width:4px;font-size:12.5px;padding:9px 11px;
   border-radius:6px;margin-top:11px;word-break:break-word}
-.credit{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
-.credit .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
-  font-weight:700;margin-bottom:9px}
-.cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
-  border:1px solid var(--line)}
-.cx{background:var(--bg);padding:8px 10px}
-.cx b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
-.cx.sm b{font-size:12px;line-height:1.5}
-.cx span{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
-.creads{margin:10px 0 0;padding-left:17px;font-size:12.5px;color:var(--mut)}
-.creads li{margin:3px 0}
-@media (max-width:560px){.cgrid{grid-template-columns:repeat(2,1fr)}}
+/* Observations: the memo's findings, not a footnote — full ink, gold accent. */
+.creads{margin:6px 0 0;padding:11px 14px;list-style:none;border:1px solid var(--line);
+  border-left:3px solid var(--gold);border-radius:8px;font-size:12.5px;color:var(--fg)}
+.creads li{margin:4px 0;padding-left:15px;text-indent:-15px}
+.creads li::before{content:"— ";color:var(--golddark)}
+.obsnote{font-size:11px;color:var(--faint);margin-top:5px}
 .acts{display:flex;gap:7px;margin-top:13px;flex-wrap:wrap}
-.empty{color:var(--mut);text-align:center;padding:32px 0;font-size:14px;
-  border:1px dashed var(--line2);border-radius:var(--radius)}
+/* The empty state IS the action: click it to start an upload. */
+.empty{color:var(--mut);text-align:center;padding:38px 22px;font-size:14px;
+  border:2px dashed var(--line2);border-radius:var(--radius);cursor:pointer;
+  transition:border-color .15s,background .15s}
+.empty:hover{border-color:var(--gold);background:var(--sunk)}
+.empty b{color:var(--fg)}
 
 /* Upload status notices — processing / failed / needs-review batches. The
    account cards are the content; these are operational notes above them. */
@@ -165,12 +156,6 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   padding:10px 14px;margin-bottom:10px;font-size:13px}
 .upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .upnote .nm{font-weight:700;margin-right:auto}
-/* Per-upload history rows inside an account card */
-.uprow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px dotted var(--line);
-  font-size:12.5px;flex-wrap:wrap}
-.uprow .d{font-weight:600}
-.uprow .m{color:var(--mut)}
-.uprow .ghost{margin-left:auto;font-size:12px;padding:3px 11px}
 
 /* admin AI panel */
 .ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
@@ -224,9 +209,6 @@ aside h2,aside .go,aside input,aside .afrow{flex:none}
 .h-cov{font-size:10.5px;color:var(--mut);margin-top:8px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .h-cov b{font-weight:600;color:var(--fg)}
-.h-foot{display:flex;align-items:center;gap:8px;margin-top:6px}
-.h-foot .tm{font-size:10.5px;color:var(--faint)}
-.h-foot .ghost{margin-left:auto;font-size:11px;padding:2px 10px}
 .side-empty{color:var(--mut);font-size:12.5px;padding:18px 13px;text-align:center}
 
 /* login */
@@ -276,14 +258,18 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
    tiles, and a one-line coverage strip. */
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
 .tiles.small{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;margin-top:8px}
-.tile{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
-.tile .tl{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;
+.tile{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.tile .tl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;
   color:var(--mut);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile b{display:block;font-size:18px;margin-top:3px;font-variant-numeric:tabular-nums;
-  letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tiles.small .tile b{font-size:13.5px}
-.tile i{display:block;font-style:normal;font-size:10.5px;color:var(--faint);margin-top:2px;
+/* Big quiet number, small calm label — the money is the point of the tile. */
+.tile b{display:block;font-size:21px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums;
+  letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tiles.small .tile b{font-size:14px}
+.tile i{display:block;font-style:normal;font-size:11px;color:var(--mut);margin-top:3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* A tile that is secretly a chart control says so. */
+.tile.clk .tl::after{content:" · chart";color:var(--faint);font-weight:400;
+  text-transform:none;letter-spacing:0}
 .meter{height:5px;border-radius:99px;background:var(--sunk);border:1px solid var(--line);
   overflow:hidden;margin-top:7px}
 .meter i{display:block;height:100%;margin:0;background:var(--navy)}
@@ -311,7 +297,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .h-day{position:sticky;top:0;z-index:1;background:var(--sunk);border-bottom:1px solid var(--line);
   padding:4px 13px;font-size:9.5px;font-weight:800;letter-spacing:.09em;
   text-transform:uppercase;color:var(--golddark)}
-.h-card,.ghost,.go,.lchip{transition:background .12s,box-shadow .12s,color .12s,border-color .12s}
+.h-card,.ghost,.go{transition:background .12s,box-shadow .12s,color .12s,border-color .12s}
 /* Range chips + clickable tiles */
 .rchip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:3px 11px;
   font-size:11px;cursor:pointer;color:var(--mut);font-family:inherit;
@@ -321,23 +307,39 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .tile.clk{cursor:pointer;transition:border-color .12s,box-shadow .12s}
 .tile.clk:hover{border-color:var(--line2)}
 .tile.clk.act{border-color:var(--gold);box-shadow:0 0 0 2px var(--goldpale)}
-.mt-wrap tbody tr{cursor:pointer}
+/* Small ghost buttons (table toggles, notice actions) — one class, no inline overrides. */
+.ghost.sm{font-size:11px;padding:2px 10px}
+/* Row hover for tracking across wide tables; the gold .hl highlight still wins. */
+tbody tr:hover td{background:var(--sunk)}
+/* Belt and braces: every numeric context stacks its digits. */
+.num,td,.tile b,.factline,.dash-tip,.h-cov,.acctline,.meta{font-variant-numeric:tabular-nums lining-nums}
 @media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}
   main,aside{grid-column:auto;grid-row:auto}
   aside{position:static;max-height:none;display:block}}
+/* This page ends up in a credit file: printing yields the card as a memo —
+   chrome, buttons and the sidebar drop out; the detail tables open. */
+@media print{
+  aside,.acts,.go,.ghost,.rchip,.dash-tip,.x,.who,.skel{display:none !important}
+  .shell{display:block;max-width:none;padding:0}
+  .job{border:none;padding:0}
+  .mt-wrap{max-height:none !important;overflow:visible !important}
+  .print-force[hidden]{display:block !important}
+  body{font-size:12px}
+}
 </style>
 </head>
 <body>
 <div id="gate" hidden>
   <div class="card">
     <h1 class="wordmark" style="font-size:26px"><span class="b1">Get It</span> <span class="b2">Right</span></h1>
+    <p class="sub" style="margin-bottom:4px"><em style="font-style:normal;color:var(--golddark);letter-spacing:.04em">All You Need to Invest Right</em></p>
     <p class="sub">Bank Statement Analyser — sign in to continue</p>
     <label for="u">Email</label>
     <input id="u" type="email" autocomplete="username">
     <label for="pw">Password</label>
     <input id="pw" type="password" autocomplete="current-password">
     <button class="go" id="signin">Sign in</button>
-    <div class="msg" id="gmsg" hidden></div>
+    <div class="msg" id="gmsg" role="alert" hidden></div>
   </div>
 </div>
 
@@ -345,7 +347,9 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <header>
     <div>
       <h1 class="wordmark"><span class="b1">Get It</span> <span class="b2">Right</span></h1>
-      <p class="sub">Bank Statement Analyser · <em>All You Need to Invest Right</em></p>
+      <!-- The working screen makes a checkable claim; the slogan lives on the
+           sign-in gate and the brand materials. -->
+      <p class="sub">Bank Statement Analyser · <em>deterministic, balance-verified extraction</em></p>
     </div>
     <div class="who">
       <span id="whoami"></span><span class="chip done" id="role" hidden></span>
@@ -356,16 +360,18 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   </header>
 
   <main>
-    <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+    <!-- Skeleton until /jobs answers: an empty state shown while loading lies. -->
+    <div id="active"><div class="skel" style="height:120px"></div>
+      <div class="skel" style="height:280px;margin-top:12px"></div></div>
   </main>
 
   <aside>
     <button class="go" id="upBtn" style="width:100%;margin-bottom:12px">Upload statements</button>
     <input type="text" id="q" placeholder="Search name, bank, number…"
-      style="width:100%;margin-bottom:12px;font-size:13px">
+      style="width:100%;margin-bottom:12px;font-size:13px" hidden>
     <div id="afilters" class="afrow" hidden></div>
-    <h2 id="acctHead">Accounts</h2>
-    <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
+    <h2 id="acctHead" hidden>Accounts</h2>
+    <div class="hist" id="hist" hidden><div class="side-empty">No uploads yet</div></div>
   </aside>
 </div>
 
@@ -380,10 +386,14 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     </div>
     <div id="tray"></div>
     <div class="row" id="controls" hidden>
-      <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
       <button class="go" id="go">Analyse</button>
+      <!-- Related parties is a niche optional field — it reveals on demand so
+           the happy path stays two gestures: drop, Analyse. -->
+      <button class="ghost" id="partiesBtn" type="button">+ Related parties</button>
       <span class="hint" id="hint"></span>
+      <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)" hidden>
     </div>
+    <div class="msg" id="upMsg" role="alert" hidden></div>
   </div>
 </dialog>
 
@@ -401,7 +411,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <input id="pwOld" type="password" autocomplete="current-password">
     <label for="pwNew">New password</label>
     <input id="pwNew" type="password" autocomplete="new-password">
-    <div class="msg" id="pwMsg" hidden></div>
+    <div class="msg" id="pwMsg" role="alert" hidden></div>
     <button class="go" id="pwGo" style="width:100%;margin-top:16px">Change password</button>
   </div>
 </dialog>
@@ -450,12 +460,15 @@ function showGate(msg){
 function showApp(){
   $('gate').hidden = true; $('app').hidden = false;
   $('whoami').textContent = WHO;
-  $('role').hidden = false; $('role').textContent = IS_ADMIN ? 'admin' : 'customer';
+  // The role chip is a warning worth showing only to admins (you see every
+  // tenant's jobs); a customer gains nothing from a badge saying "customer".
+  $('role').hidden = !IS_ADMIN; $('role').textContent = 'admin';
   $('cat').hidden = !IS_ADMIN;
   refresh();
 }
 $('signin').onclick = async () => {
-  const b = $('signin'); b.disabled = true; $('gmsg').hidden = true;
+  const b = $('signin'); b.disabled = true; b.textContent = 'Signing in…';
+  $('gmsg').hidden = true;
   try{
     const r = await fetch(API+'/auth/login', {method:'POST',
       headers:{'content-type':'application/json'},
@@ -466,7 +479,7 @@ $('signin').onclick = async () => {
     IS_ADMIN = j.role === 'admin'; WHO = j.email; $('pw').value = '';
     showApp();
   }catch(e){ showGate(e.message); }
-  finally{ b.disabled = false; }
+  finally{ b.disabled = false; b.textContent = 'Sign in'; }
 };
 $('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
 $('u').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
@@ -562,7 +575,12 @@ async function isEncrypted(file){
   return false;
 }
 const drop = $('drop'), fileIn = $('file');
-$('upBtn').onclick = () => $('up').showModal();
+// Inline dialog message — the app never alert()s an error over an error.
+const upMsg = t => { const m = $('upMsg'); m.hidden = !t; if(t) m.textContent = t; };
+$('upBtn').onclick = () => { upMsg(''); $('up').showModal(); };
+$('partiesBtn').onclick = () => {
+  $('partiesBtn').hidden = true; $('parties').hidden = false; $('parties').focus();
+};
 drop.onclick = () => fileIn.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
@@ -572,7 +590,7 @@ fileIn.onchange = () => { stage([...fileIn.files]); fileIn.value=''; };
 async function stage(files){
   for(const f of files){
     if(!/\.pdf$/i.test(f.name)) continue;
-    if(staged.length >= 20){ alert('Up to 20 statements per upload.'); break; }
+    if(staged.length >= 20){ upMsg('Up to 20 statements per upload — the rest were not added.'); break; }
     const it = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
     staged.push(it); renderTray();
     it.locked = await isEncrypted(f); renderTray();
@@ -605,9 +623,10 @@ function updateGo(){
   $('go').disabled = !staged.length;
   $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
   const maybe = staged.filter(s=>s.locked && !s.pw).length;
+  // The drop zone already says "grouped by account" — no second hint needed.
   $('hint').textContent = maybe
     ? `If a file is password-protected, add its password — otherwise just continue.`
-    : (staged.length>1 ? 'Grouped by account — one report per account.' : '');
+    : '';
 }
 $('go').onclick = async () => {
   const b = $('go'); b.disabled = true;
@@ -627,14 +646,26 @@ $('go').onclick = async () => {
     }
     staged=[]; $('parties').value=''; renderTray(); refresh();
     $('up').close();
-  }catch(e){ alert('Upload failed: '+e.message); }
+  }catch(e){ upMsg(`Upload failed — ${e.message}. Your files are still staged; try again.`); }
   finally{ b.disabled=false; updateGo(); }
 };
 
 /* ---------- rendering ---------- */
-const fmtAmt = a => {                       // debits in parentheses, never colour
+/* Debits in parentheses, never colour. Credits reserve the paren slot with a
+   figure space (U+2007, digit-width) so both signs stack in the same grid. */
+const fmtAmt = a => {
   const s = Math.abs(a).toLocaleString('en-IN',{minimumFractionDigits:2});
-  return a<0 ? `(${s})` : s;
+  return a<0 ? `(${s})` : `${s} `;
+};
+/* Whole rupees with the ₹ sign, for numbers that stand alone (tiles). */
+const inrAmt = v => {
+  const s = Math.abs(v||0).toLocaleString('en-IN',{maximumFractionDigits:0});
+  return (v||0)<0 ? `(₹${s})` : '₹'+s;
+};
+/* Whole rupees for table cells — the ₹ lives in the column header. */
+const cellNum = v => {
+  const s = Math.abs(v||0).toLocaleString('en-IN',{maximumFractionDigits:0});
+  return (v||0)<0 ? `(${s})` : `${s} `;
 };
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function shortDate(iso){
@@ -642,30 +673,38 @@ function shortDate(iso){
   const [y,m,d] = iso.split('-');
   return `${Number(d)}-${MON[Number(m)-1]}-${y.slice(2)}`;
 }
-// Continuous periods are already collapsed server-side; a gap stays its own range.
-const fmtPeriods = ps => (ps||[]).map(p=>`${shortDate(p[0])} to ${shortDate(p[1])}`).join('; ');
-
 function statusChip(st){
-  if(st==='done')      return '<span class="chip done">Done</span>';
+  if(st==='done')      return '<span class="chip done">Processed</span>';
   if(st==='reviewed')  return '<span class="chip done">Reviewed</span>';
   if(st==='needs_review') return '<span class="chip warn">Needs review</span>';
   if(st==='failed' || st==='password_required')
     return `<span class="chip fail">${st==='failed'?'Failed':'Password required'}</span>`;
   return `<span class="chip busy">${esc(String(st).replace(/_/g,' '))}…</span>`;
 }
-function validationChip(v){
-  if(!v) return '';
-  if(v==='passed') return '<span class="chip done">Balance passed</span>';
-  if(v==='failed') return '<span class="chip fail">Balance FAILED</span>';
-  return '<span class="chip warn">Balance warnings</span>';
+/* The account card's attestation, in reconciliation language: what was
+   verified, by what method, over what population. Always rendered — a desk
+   must never have to infer a check from the absence of an error. */
+function verifStrip(a){
+  const v = a.validation;
+  const bal = v==='passed'
+    ? `<span class="vseg"><span class="chip done">Reconciled</span>
+       running balance agrees on all ${nfmt(a.rows||0)} rows</span>`
+    : v==='failed'
+    ? `<span class="vseg"><span class="chip fail">Does not reconcile</span>
+       the running balance breaks — detail in Review</span>`
+    : v
+    ? `<span class="vseg"><span class="chip warn">Reconciled with exceptions</span>
+       ${esc(String(v).replace(/_/g,' '))}</span>`
+    : '';
+  const ig = a.integrity;
+  const integ = !ig ? ''
+    : ig.assessment==='verified'
+    ? `<span class="vseg"><span class="chip done">Integrity</span> no tamper signals</span>`
+    : `<span class="vseg"><span class="chip warn">Integrity — review</span></span>`;
+  const flags = (ig && ig.assessment!=='verified' && (ig.flags||[]).length)
+    ? `<div class="flags">${ig.flags.map(f=>`· ${esc(f)}`).join('<br>')}</div>` : '';
+  return (bal || integ) ? `<div class="verif">${bal}${integ}${flags}</div>` : '';
 }
-function integrityChip(intg){
-  if(!intg) return '';
-  return intg.assessment==='verified'
-    ? '<span class="chip done">Integrity verified</span>'
-    : '<span class="chip warn">Integrity: review</span>';
-}
-function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
 
 /* Navigation is ACCOUNT-first: one card per account, across every upload.
    The same account in three uploads is still one card; each upload keeps its
@@ -705,17 +744,6 @@ function confLine(c){
   return `<div class="conf"><span class="clabel">Categorisation confidence</span>
     <span class="cbar"><i style="width:${100*(c.high||0)/tot}%"></i><i class="m" style="width:${100*(c.medium||0)/tot}%"></i></span>
     <span>${conf}% confident${low?` · <b>${nfmt(low)}</b> flagged for review`:' · none flagged'}</span></div>`;
-}
-/* Party quality: how many rows name a real counterparty, vs a machine handle
-   (account number / VPA), vs none at all. Same bar as confidence: solid fill
-   = named, grey = handle, empty = none. Old jobs lack the key — hide. */
-function partyLine(pq){
-  if(!pq) return '';
-  const tot=(pq.named||0)+(pq.handle||0)+(pq.none||0); if(!tot) return '';
-  const pc=k=>Math.round(100*(pq[k]||0)/tot);
-  return `<div class="conf"><span class="clabel">Party quality</span>
-    <span class="cbar"><i style="width:${100*(pq.named||0)/tot}%"></i><i class="m" style="width:${100*(pq.handle||0)/tot}%"></i></span>
-    <span>names: ${pc('named')}% named · ${pc('handle')}% handle · ${pc('none')}% none</span></div>`;
 }
 /* Display at most the LAST 4 digits of an account number, whatever shape the
    stored value has (XXXXXX1234, unmasked legacy, etc.). */
@@ -792,16 +820,18 @@ function accountCard(e){
         ${sub?`<div class="acctline" style="margin-top:1px">${sub}</div>`:''}
       </div>
       <button class="go" style="padding:5px 16px;font-size:13px;flex:none"
-        onclick="dl('${j.job_id}','${a.slug}','xlsx')">Download Report</button></div>
+        onclick="dl('${j.job_id}','${a.slug}','xlsx',this)">Download workbook (XLSX)</button></div>
+    ${verifStrip(a)}
     <div class="dash" id="dash-${esc(e.slug)}">
-      <div class="ch">Account dashboard</div>
+      <div class="ch">Credit assessment</div>
       <div class="dash-body">
         <div class="skel" style="height:24px;width:60%"></div>
         <div class="skel" style="height:200px;margin-top:10px"></div>
         <div class="skel" style="height:70px;margin-top:10px"></div>
       </div>
     </div>
-    <div class="meta">From: ${esc(e.files.join(', '))}</div>
+    <details class="meta"><summary style="cursor:pointer">Source: ${e.files.length} file${e.files.length===1?'':'s'}</summary>
+      <div style="margin-top:4px">${esc(e.files.join(', '))}</div></details>
     ${a.unreadable_pages ? `<div class="err"><b>${nfmt(a.unreadable_pages)} page(s) had no readable text</b>
       — scanned or image-only pages. Any transactions printed on them are missing from
       this report, which is the usual cause of a balance break.</div>` : ''}
@@ -809,16 +839,13 @@ function accountCard(e){
       ? `<div class="err"><b>Where the balance chain breaks:</b>
         ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
     ${cats?`<div class="catmix"><div class="ch">Category mix</div>${cats}</div>`:''}
+    ${confLine(a.confidence)}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
         ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
         : ''}
       ${IS_ADMIN?`
-      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}')">Preview</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>`:''}
-      ${IS_ADMIN && (j.corrections||[]).length
-        ? `<button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>`:''}
+      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}',${(j.corrections||[]).length})">Preview</button>`:''}
     </div></div>`;
 }
 
@@ -828,6 +855,10 @@ function accountCard(e){
    lives in the account cards. */
 function uploadNotices(){
   const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
+  // Admin-only operator hint, rendered once per notice at most.
+  const LQ_HINT = `<div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
+    <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code>
+    — fetch the sample, write the YAML, retry. No deploy needed.</div>`;
   const out = [];
   for(const j of jobs){
     const s = j.summary || {};
@@ -857,35 +888,32 @@ function uploadNotices(){
           `</tbody></table>`:''}</div>` : '';
     out.push(`<div class="upnote">
       <div class="top"><span class="nm">Upload · ${esc(jobLabel(j))}</span>${statusChip(j.status)}</div>
-      ${busy?`<div class="meta">Processing ${nfmt(s.files||(s.filenames||[]).length||0)} file(s) —
-        accounts appear below when this finishes.</div>`:''}
-      ${failed.length?`<div class="err"><b>${failed.length} file(s) could not be read</b>`+
+      ${busy?`<div class="meta">Processing ${nfmt(s.files||(s.filenames||[]).length||0)}
+        file${(s.files||(s.filenames||[]).length||0)===1?'':'s'} —
+        accounts appear here when done.</div>`:''}
+      ${failed.length?`<div class="err"><b>${failed.length} file${failed.length===1?'':'s'} could not be read</b>`+
         failed.map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}${
           IS_ADMIN && /no layout/i.test(f.error||'')
             ? ' <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>':''}</div>`).join('')
-        +((IS_ADMIN && failed.some(f=>/no layout/i.test(f.error||'')))
-            ? `<div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
-               <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code>
-               — fetch the sample, write the YAML, retry. No deploy needed.</div>`:'')
+        +((s.accounts||[]).length
+            ? `<div style="margin-top:7px">The accounts shown are built only from the files
+               that could be read — nothing from these files is included.</div>`:'')
+        +((IS_ADMIN && failed.some(f=>/no layout/i.test(f.error||''))) ? LQ_HINT : '')
         +`</div>`:''}
       ${j.error?`<div class="err">${esc(j.error)}${
         IS_ADMIN && !failed.length && jobNeedsLayout(j)
-          ? ` <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>
-            <div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
-            <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code></div>`:''}</div>`:''}
+          ? ` <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>${LQ_HINT}`:''}</div>`:''}
       ${j.status==='needs_review'
         ? ((s.accounts||[]).filter(a=>a.validation && a.validation!=='passed').map(a=>
             `<div class="meta" style="margin-top:7px">${bankBadge(a.bank)}<b>${esc(a.holder||a.bank||'Account')}</b>
                ${esc(acctNo(a.account_no))} — balance ${esc(String(a.validation).replace(/_/g,' '))}${
                a.unreadable_pages?`, ${nfmt(a.unreadable_pages)} unreadable page${a.unreadable_pages===1?'':'s'}`:''},
                <b>${nfmt(a.issues||0)}</b> row${(a.issues||0)===1?'':'s'} to check
-               <button class="ghost" style="font-size:11px;padding:1px 9px;margin-left:5px"
-                 onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review rows</button>
-               <button class="ghost" style="font-size:11px;padding:1px 9px"
+               <button class="ghost sm" style="margin-left:5px"
                  onclick="selectAcct('${j.job_id}/${a.slug}')">Open account</button></div>`).join('')
           + `<div class="rv-foot" style="padding-left:0;padding-right:0">
              <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
-             <button class="go" onclick="markReviewed('${j.job_id}')">Mark reviewed</button>
+             <button class="go" onclick="markReviewed('${j.job_id}',this)">Mark reviewed</button>
            </div>`)
         : ''}
       ${aiPanel}
@@ -927,27 +955,45 @@ const dayLabel = ts => {
   if(d.toDateString()===yest.toDateString()) return 'Yesterday';
   return d.toLocaleDateString(undefined,{day:'numeric',month:'short'});
 };
-const timeLabel = ts => new Date(ts*1000)
-  .toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
 
+let LOADED = false, STALE = null, LAST_FP = '';
 function render(){
   const accts = accountIndex().filter(e=>!IS_ADMIN || jobMatches(e.latest.j));
   if(IS_ADMIN){
+    // A filter chip onto an empty set is noise: render a chip only when its
+    // count is live, and the whole strip disappears on a clean board.
     const chip=(f,lbl,n)=>`<button class="rchip ${AFILTER===f?'act':''}"
         onclick="setFilter('${f}')">${lbl}${n?` · ${n}`:''}</button>`;
-    $('afilters').hidden = false;
-    $('afilters').innerHTML =
-        chip('all','All')
-      + chip('review','Review', jobs.filter(j=>j.status==='needs_review').length)
-      + chip('issues','Issues', jobs.filter(jobHasIssue).length)
-      + chip('layout','Layout', jobs.filter(jobNeedsLayout).length);
+    const nR = jobs.filter(j=>j.status==='needs_review').length,
+          nI = jobs.filter(jobHasIssue).length,
+          nL = jobs.filter(jobNeedsLayout).length;
+    const parts = [];
+    if(nR) parts.push(chip('review','Review',nR));
+    if(nI) parts.push(chip('issues','Issues',nI));
+    if(nL) parts.push(chip('layout','Layout',nL));
+    if(AFILTER!=='all' && !{review:nR,issues:nI,layout:nL}[AFILTER]) AFILTER='all';
+    $('afilters').hidden = !parts.length;
+    $('afilters').innerHTML = parts.length ? chip('all','All')+parts.join('') : '';
   }
   if(!accts.some(e=>e.slug===selSlug)) selSlug = accts.length ? accts[0].slug : null;
+  // Skip the DOM rewrite when nothing changed — the 15s poll was resetting
+  // table scroll and open toggles mid-read.
+  const fp = JSON.stringify([jobs.map(j=>[j.job_id,j.status,j.updated_at,
+    (j.corrections||[]).length]), selSlug, QUERY, AFILTER, LOADED, !!STALE]);
+  if(fp === LAST_FP) return;
+  LAST_FP = fp;
   const notices = uploadNotices();
   const sel = accts.find(e=>e.slug===selSlug);
-  $('active').innerHTML = notices
+  const staleBar = STALE ? `<div class="meta" style="margin-bottom:10px">Couldn't refresh —
+    showing data from ${STALE.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})}.
+    Retrying automatically.</div>` : '';
+  $('active').innerHTML = staleBar + notices
     + (sel ? accountCard(sel)
-           : (notices ? '' : '<div class="empty">Nothing yet — upload statements to begin.</div>'));
+           : (notices ? '' : (LOADED
+               ? `<div class="empty" onclick="up.showModal()">No accounts yet.<br>
+                  <b>Upload statement PDFs</b> — grouped by account, every report balance-verified.</div>`
+               : `<div class="skel" style="height:120px"></div>
+                  <div class="skel" style="height:280px;margin-top:12px"></div>`)));
   if(sel) loadDash(sel);
 
   const q = QUERY.trim().toLowerCase();
@@ -957,6 +1003,12 @@ function render(){
               +(a.files||[]).join(' ')).toLowerCase().includes(q);
     }) : accts;
   const busyN = jobs.filter(j=>BUSY.includes(j.status)).length;
+  // First run: one message, and the message is the button. The search box and
+  // the Accounts heading appear once there is something to search or list.
+  const anyList = accts.length || busyN;
+  $('q').hidden = !accts.length;
+  $('acctHead').hidden = !anyList;
+  $('hist').hidden = !anyList;
   $('acctHead').textContent = accts.length
     ? `Accounts (${q ? shown.length+' of '+accts.length : accts.length})` : 'Accounts';
   let lastDay = '';
@@ -969,6 +1021,8 @@ function render(){
         const day = dayLabel(e.latest.j.created_at||0);
         const divider = day!==lastDay ? `<div class="h-day">${esc(day)}</div>` : '';
         lastDay = day;
+        // Click selects; the selected card carries the download. No per-row
+        // button, no stopPropagation, no duplicate timestamp.
         return divider + `<div class="h-card ${e.slug===selSlug?'sel':''}" onclick="selectAcct('${e.slug}')">
           <div class="h-top">
             <div class="h-av" style="background:${color}">${esc(code)}</div>
@@ -979,9 +1033,6 @@ function render(){
           </div>
           <div class="h-cov">${ps?`<b>${esc(monYY(ps.start))} – ${esc(monYY(ps.end))}</b> · `:''}${nfmt(e.statements)} stmt${e.statements===1?'':'s'} · ${nfmt(e.pages)} pg</div>
           ${IS_ADMIN && e.latest.j.owner ? `<div class="h-own">${esc(e.latest.j.owner)}</div>`:''}
-          <div class="h-foot"><span class="tm">${esc(timeLabel(e.latest.j.created_at||0))}</span>
-            <button class="ghost" title="Download report"
-              onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${e.latest.a.slug}','xlsx')">Download</button></div>
         </div>`;}).join('')
     : (q ? '<div class="side-empty">No accounts match your search</div>'
          : '<div class="side-empty">No uploads yet</div>');
@@ -996,10 +1047,11 @@ const DASH = {};                       // job/slug -> {months, series, visible, 
 // Credits green / debits red by convention — but the colourblind-safe pair
 // (bluish green / vermilion, Okabe-Ito), so deutan readers can still tell
 // them apart. Fixed order, palette validated (dataviz six checks).
+// Net flow (credits − debits) is derivable and had its own off-by-default
+// chip — a control guarding a line nobody needs. The tiles are the toggles.
 const DASH_SERIES = [
   ['Credits',          '#009E73', true],
   ['Debits',           '#D55E00', true],
-  ['Net flow',         '#0072B2', false],
   ['Closing balance',  '#CC79A7', true],
   ['Cash deposits',    '#56B4E9', false],
   ['Cash withdrawals', '#E69F00', false],
@@ -1062,7 +1114,6 @@ async function loadDash(e){
         const r = by.get(mo);
         series['Credits'].push(r?r.c:null);
         series['Debits'].push(r?r.d:null);
-        series['Net flow'].push(r?r.c-r.d:null);
         series['Closing balance'].push(r?r.close:null);
         series['Cash deposits'].push(r?r.cd:null);
         series['Cash withdrawals'].push(r?r.cw:null);
@@ -1127,27 +1178,35 @@ function drawDash(host, st){
   if(lo<0) svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(0)}" y2="${Y(0)}" stroke="#aab2c2" stroke-width="1"/>`;
   MO.forEach((mo,i)=>{ if(i%step===0||i===MO.length-1)
     svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#8b93a5">${mlabel(mo)}</text>`;});
+  const endLabels=[];
   for(const [nm,col] of vis){
     const pts=SE[nm]; let d='', pen=false;
     pts.forEach((v,i)=>{ if(v==null){pen=false;return;}
       d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true;});
     svg+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     let li=pts.length-1; while(li>=0&&pts[li]==null)li--;
-    if(li>=0) svg+=`<circle cx="${X(li)}" cy="${Y(pts[li])}" r="3" fill="${col}"/>`
-      +`<text x="${X(li)+7}" y="${Y(pts[li])+3.5}" font-size="10" fill="#5a6478">${nm}</text>`;
+    if(li>=0){ svg+=`<circle cx="${X(li)}" cy="${Y(pts[li])}" r="3" fill="${col}"/>`;
+      endLabels.push({x:X(li)+7, y:Y(pts[li])+3.5, nm}); }
   }
+  // The end-of-line labels are the only legend; keep them from overlapping
+  // when two lines finish within a text-height of each other.
+  endLabels.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<endLabels.length;i++)
+    if(endLabels[i].y-endLabels[i-1].y<12) endLabels[i].y=endLabels[i-1].y+12;
+  for(const l of endLabels)
+    svg+=`<text x="${l.x}" y="${l.y}" font-size="10" fill="#5a6478">${l.nm}</text>`;
   svg+=`<g class="hoverg"></g><rect class="hot" x="${ML}" y="${MT}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
   // Totals over the visible window: credit / debit / turnover / cash.
-  const inr0 = v=>'₹'+Number(v).toLocaleString('en-IN',{maximumFractionDigits:0});
-  const nData = MO.filter((m,i)=>SE['Credits'][i]!=null).length || 1;
+  const inr0 = inrAmt;                     // tiles carry their own ₹
+  const nData = MO.filter((mo_,i)=>SE['Credits'][i]!=null).length || 1;
   const tot = nm => SE[nm].reduce((s,v)=>s+(v||0),0);
   const totC = tot('Credits'), totD = tot('Debits');
   const totT = TU.reduce((s,v)=>s+(v||0),0);
   const totCd = tot('Cash deposits'), totCw = tot('Cash withdrawals');
   const pct = (v,base) => base ? (100*v/base).toFixed(1)+'%' : '—';
-  // ONE dashboard band instead of two tables: hero tiles for the money
-  // dimensions (with share meters), small tiles for the credit metrics, and
-  // a one-line coverage strip. Underwriting reads close the band.
+  // The band reads conclusion-first, the way a credit memo does: hero tiles,
+  // credit metrics, observations, coverage — then the trend chart as the
+  // exhibit, then the detail tables.
   const ae = st.acct, aa = ae ? ae.latest.a : null;
   const m = (aa && aa.credit_summary && aa.credit_summary.metrics) || null;
   const reads = ((aa && aa.credit_summary && aa.credit_summary.reads)||[])
@@ -1168,75 +1227,94 @@ function drawDash(host, st){
     ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g', 'Cash deposits')}
     ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r', 'Cash withdrawals')}
     ${m?hero('Monthly surplus', m.monthly_surplus, (m.monthly_surplus||0)<0?'drn':'crn',
-      'debt-svc cover '+(m.servicing_coverage==null?'—':m.servicing_coverage+'×')):''}
+      m.servicing_coverage==null?'—':`inflow covers EMI outflow ${m.servicing_coverage}×`):''}
   </div>`;
   const smallRow = m ? `<div class="tiles small">
-    ${small('Avg balance','₹'+inr(m.avg_balance))}
-    ${small('Min balance','₹'+inr(m.min_balance))}
-    ${small('EMI outflow / mo','₹'+inr(m.emi_outflow_monthly))}
-    ${small('Bounce events', nfmt(m.bounce_count||0))}
+    ${small('Avg balance', inrAmt(m.avg_balance))}
+    ${small('Min balance', inrAmt(m.min_balance))}
+    ${small('EMI outflow / mo', inrAmt(m.emi_outflow_monthly))}
+    ${small('Bounces · last 90d', `${nfmt(m.bounces_last_90d!=null?m.bounces_last_90d:(m.bounce_count||0))}${
+      m.bounces_prior_90d!=null?` <span class="shr">vs ${nfmt(m.bounces_prior_90d)} prior</span>`:''}`)}
+    ${m.low_balance_days_pct!=null?small('Days below '+inrShort(m.low_balance_threshold||0), m.low_balance_days_pct+'%'):''}
     ${small('Related-party',(m.related_party_credit_pct||0)+'%')}
     ${small('Turnover trend', esc(m.turnover_trend||'—'))}
   </div>` : '';
+  // Observations carry provenance: every sentence traces to a reconciled
+  // number, and the clean case says so rather than staying silent.
+  const obs = `<div class="ch" style="margin:14px 0 0">Observations — deterministic checks</div>
+    <ul class="creads">${reads || '<li>No adverse signals detected on the deterministic checks.</li>'}</ul>
+    <div class="obsnote">Each observation is derived from the reconciled rows above — nothing here is modelled or scored.</div>`;
   const factline = ae ? `<div class="factline">
     <b>${nfmt(ae.statements)}</b> statement${ae.statements===1?'':'s'} ·
     uploaded <b>${esc(jobLabel(ae.latest.j))}</b> ·
     <b>${nfmt(ae.pages)}</b> pages · <b>${nfmt(aa.rows)}</b> transactions
     ${aps?` · <b>${esc(shortDate(aps.start))}</b> to <b>${esc(shortDate(aps.end))}</b>
-      (${nfmt(aps.days)} days) · missing: ${aps.gaps.length?esc(aps.gaps.join('; ')):'none'}`:''}
+      (${nfmt(aps.days)} days) · ${aps.gaps.length?`gaps: ${esc(aps.gaps.join('; '))}`:'no gaps in coverage'}`:''}
   </div>` : '';
-  const sumTable = heroRow + smallRow + factline
-    + (reads?`<ul class="creads">${reads}</ul>`:'');
-  // Month-by-month table: the chart's data in full, one row per month.
-  // Linked to the chart (hover a row → crosshair on that month, and vice
-  // versa). MINIMISED by default — the end user sees chart + totals; the
-  // detail tables open on demand.
-  const mtOpen = st.mtOpen === true;
-  const cell = (v,cls) => v==null ? '<td class="num">—</td>'
-    : `<td class="num ${cls||''}">${inr0(v)}</td>`;
-  const monthTable = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
-      <span>Month by month</span>
-      <button class="ghost mt-tgl" style="font-size:11px;padding:2px 10px;text-transform:none;letter-spacing:0">${mtOpen?'Minimise':'Show'}</button></div>`
-    + (mtOpen?`<div class="mt-wrap" style="overflow:auto;max-height:300px"><table>
-    <thead><tr><th>Month</th><th class="num">Credits</th><th class="num">Debits</th>
-      <th class="num">Net flow</th><th class="num">Turnover</th><th class="num">Cash dep</th>
-      <th class="num">Cash wdl</th><th class="num">Closing balance</th></tr></thead>
+  const sumTable = heroRow + smallRow + obs + factline;
+  // Detail tables are ALWAYS rendered and toggled via [hidden], so opening one
+  // keeps scroll state, and @media print can reveal them all for the file copy.
+  // Sign notation and the (₹) header carry the ledger; per-cell colour is
+  // reserved for the tiles and the chart, where sign is the message.
+  const cell = v => v==null ? '<td class="num">—</td>'
+    : `<td class="num">${cellNum(v)}</td>`;
+  const secHead = (title, cls, open, openLbl) =>
+    `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
+      <span>${title}</span>
+      <button class="ghost sm ${cls}" style="text-transform:none;letter-spacing:0">${open?'Hide':openLbl}</button></div>`;
+  // Month by month opens itself when the reviewer is being asked to judge the
+  // period (validation not passed); otherwise it opens on demand.
+  const mtOpen = st.mtOpen!=null ? st.mtOpen===true
+    : !!(aa && aa.validation && aa.validation!=='passed');
+  const mtShowLbl = `Show ${MO.length} month${MO.length===1?'':'s'}`;
+  const monthTable = secHead('Month by month','mt-tgl',mtOpen,mtShowLbl)
+    + `<div class="mt-wrap print-force" style="overflow:auto;max-height:300px" ${mtOpen?'':'hidden'}><table>
+    <thead><tr><th>Month</th><th class="num">Credits (₹)</th><th class="num">Debits (₹)</th>
+      <th class="num">Turnover (₹)</th><th class="num">Cash dep (₹)</th>
+      <th class="num">Cash wdl (₹)</th><th class="num">Closing (₹)</th></tr></thead>
     <tbody>${MO.map((mo,i)=>`<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
-        ${cell(SE['Credits'][i],'crn')}${cell(SE['Debits'][i],'drn')}
-        ${cell(SE['Net flow'][i])}${cell(TU[i])}
-        ${cell(SE['Cash deposits'][i],'crn')}${cell(SE['Cash withdrawals'][i],'drn')}
-        ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`:'');
-  // Top 10 counterparties, credits and debits side by side — also minimised.
+        ${cell(SE['Credits'][i])}${cell(SE['Debits'][i])}
+        ${cell(TU[i])}
+        ${cell(SE['Cash deposits'][i])}${cell(SE['Cash withdrawals'][i])}
+        ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`;
+  // Existing obligations: the schedule an underwriter cross-checks against the
+  // bureau report, obligation by obligation. Computed server-side already.
+  const emis = (m && m.emi_obligations) || [];
+  const emiOpen = st.emiOpen === true;
+  const emiTable = emis.length ? secHead('Existing obligations (EMI)','emi-tgl',emiOpen,`Show ${emis.length}`)
+    + (m.new_emi_obligations_last_quarter
+        ? `<div class="meta" style="margin:0 0 6px"><b>${nfmt(m.new_emi_obligations_last_quarter)}</b>
+           obligation${m.new_emi_obligations_last_quarter===1?'':'s'} first seen in the last quarter.</div>` : '')
+    + `<div class="emi-wrap print-force" ${emiOpen?'':'hidden'}><table>
+      <thead><tr><th>Lender / party</th><th class="num">Monthly (₹)</th><th class="num">Months seen</th>
+        <th>First seen</th><th>Status</th></tr></thead>
+      <tbody>${emis.map(o=>`<tr><td>${esc(o.party)}</td><td class="num">${cellNum(o.monthly_amount)}</td>
+        <td class="num">${nfmt(o.months_seen)}</td><td style="white-space:nowrap">${esc(shortDate(o.first_seen))}</td>
+        <td>${o.active?'Active':'Ceased'}</td></tr>`).join('')}</tbody></table></div>` : '';
+  // Top 10 counterparties, credits and debits side by side.
   const tpOpen = st.tpOpen === true;
-  const ptable = (title, rows, base, cls) => `<div style="min-width:240px;flex:1">
+  const ptable = (title, rows, base) => `<div style="min-width:240px;flex:1">
     <div class="ch" style="margin:0 0 6px">${title}</div>
-    ${rows.length?`<table><thead><tr><th>Party</th><th class="num">Total</th>
+    ${rows.length?`<table><thead><tr><th>Party</th><th class="num">Total (₹)</th>
       <th class="num">Share</th></tr></thead><tbody>${
-      rows.map(([nm,v])=>`<tr><td>${esc(nm)}</td><td class="num ${cls}">${inr0(v)}</td>
+      rows.map(([nm,v])=>`<tr><td>${esc(nm)}</td><td class="num">${cellNum(v)}</td>
         <td class="num">${pct(v,base)}</td></tr>`).join('')}</tbody></table>`
       :'<div class="meta">No named parties.</div>'}</div>`;
-  const partyTables = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
-      <span>Top 10 parties</span>
-      <button class="ghost tp-tgl" style="font-size:11px;padding:2px 10px;text-transform:none;letter-spacing:0">${tpOpen?'Minimise':'Show'}</button></div>`
-    + (tpOpen?`<div style="display:flex;gap:18px;flex-wrap:wrap">
-      ${ptable('Credits', st.topCr, totC, 'crn')}
-      ${ptable('Debits', st.topDr, totD, 'drn')}</div>`:'');
+  const partyTables = secHead('Top 10 parties','tp-tgl',tpOpen,'Show')
+    + `<div class="tp-wrap print-force" style="display:flex;gap:18px;flex-wrap:wrap" ${tpOpen?'':'hidden'}>
+      ${ptable('Credits', st.topCr, totC)}
+      ${ptable('Debits', st.topDr, totD)}</div>`;
   const RANGES = [['3',3],['6',6],['12',12],['All','all']];
   const curRange = st.range || 'all';
-  body.innerHTML = `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
-      `<label class="lchip ${st.visible.has(nm)?'':'off'}">
-         <input type="checkbox" data-s="${esc(nm)}" ${st.visible.has(nm)?'checked':''}>
-         <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')
-    + `<span style="margin-left:auto;display:inline-flex;gap:5px">`
+  // The end-of-line labels are the chart's legend; the tiles are its toggles.
+  const trendHead = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
+      <span>Monthly trend</span>
+      <span style="margin-left:auto;display:inline-flex;gap:5px">`
     + RANGES.map(([lbl,val])=>`<button class="rchip ${String(curRange)===String(val)?'act':''}"
-         data-r="${val}">${lbl==='All'?'All':lbl+'M'}</button>`).join('')+`</span></div>`
-    + svg + `<div class="dash-tip"></div>` + sumTable + monthTable + partyTables;
-  body.querySelectorAll('.lchip input').forEach(cb=>cb.onchange=()=>{
-    const nm=cb.dataset.s;
-    if(cb.checked) st.visible.add(nm);
-    else if(st.visible.size>1) st.visible.delete(nm);
-    drawDash(host, st);
-  });
+         data-r="${val}">${lbl==='All'?'All':lbl+'M'}</button>`).join('')+`</span></div>`;
+  body.innerHTML = sumTable
+    + trendHead + svg + `<div class="dash-tip"></div>`
+    + emiTable + monthTable + partyTables;
   body.querySelectorAll('.rchip').forEach(b=>b.onclick=()=>{
     st.range = b.dataset.r==='all' ? 'all' : +b.dataset.r;
     drawDash(host, st);
@@ -1247,21 +1325,24 @@ function drawDash(host, st){
     else st.visible.add(nm);
     drawDash(host, st);
   });
-  const tgl = body.querySelector('.mt-tgl');
-  if(tgl) tgl.onclick = ()=>{ st.mtOpen = !mtOpen; drawDash(host, st); };
-  const ptgl = body.querySelector('.tp-tgl');
-  if(ptgl) ptgl.onclick = ()=>{ st.tpOpen = !tpOpen; drawDash(host, st); };
+  // Table toggles flip [hidden] in place — no redraw, scroll state kept.
+  const wireToggle = (btnCls, wrapCls, key, showLbl) => {
+    const tgl = body.querySelector('.'+btnCls), wrap = body.querySelector('.'+wrapCls);
+    if(tgl && wrap) tgl.onclick = ()=>{
+      st[key] = wrap.hidden; wrap.hidden = !wrap.hidden;
+      tgl.textContent = wrap.hidden ? showLbl : 'Hide';
+    };
+  };
+  wireToggle('mt-tgl','mt-wrap','mtOpen',mtShowLbl);
+  wireToggle('emi-tgl','emi-wrap','emiOpen',`Show ${emis.length}`);
+  wireToggle('tp-tgl','tp-wrap','tpOpen','Show');
   const svgEl=body.querySelector('svg'), tip=body.querySelector('.dash-tip'),
         hg=svgEl.querySelector('.hoverg'), hot=svgEl.querySelector('.hot');
   const rowEls=[...body.querySelectorAll('.mt-wrap tbody tr')];
-  // st.pinAbs holds a PINNED month (absolute index): click a month on the
-  // chart or in the table to hold the crosshair while comparing; click the
-  // same month again to release. Survives range switches when still visible.
-  const pinView = ()=> (st.pinAbs!=null && st.pinAbs>=i0 && st.pinAbs<n0) ? st.pinAbs-i0 : null;
-  const hoverAt=(i,pinned)=>{
+  const hoverAt=i=>{
     const x=X(i);
-    let h=`<line x1="${x}" x2="${x}" y1="${MT}" y2="${MT+ih}" stroke="${pinned?'#b9902e':'#aab2c2'}"
-      stroke-width="${pinned?1.5:1}" stroke-dasharray="${pinned?'':'3 3'}"/>`;
+    let h=`<line x1="${x}" x2="${x}" y1="${MT}" y2="${MT+ih}" stroke="#aab2c2"
+      stroke-width="1" stroke-dasharray="3 3"/>`;
     let rows='';
     for(const [nm,col] of vis){
       const v=SE[nm][i];
@@ -1271,20 +1352,17 @@ function drawDash(host, st){
         <b style="margin:0">₹${Number(v).toLocaleString('en-IN',{maximumFractionDigits:0})}</b></div>`;
     }
     hg.innerHTML=h;
-    tip.innerHTML=`<b>${mlabel(MO[i])}${pinned?' · pinned':''}</b>`
+    tip.innerHTML=`<b>${mlabel(MO[i])}</b>`
       +(rows||'<div class="row">no data this month</div>');
     tip.style.display='block';
     const bw=body.clientWidth, tx=(x/W)*bw;
     tip.style.left=Math.min(Math.max(tx+14,0), Math.max(bw-170,0))+'px';
-    tip.style.top='34px';
+    // The chart no longer sits at the top of the band — anchor the tip to it.
+    tip.style.top=(svgEl.offsetTop+20)+'px';
     rowEls.forEach(r=>r.classList.toggle('hl', +r.dataset.i===i));
   };
-  const restore=()=>{
-    const p = pinView();
-    if(p!=null) hoverAt(p, true);
-    else{ hg.innerHTML=''; tip.style.display='none';
-      rowEls.forEach(r=>r.classList.remove('hl')); }
-  };
+  const restore=()=>{ hg.innerHTML=''; tip.style.display='none';
+    rowEls.forEach(r=>r.classList.remove('hl')); };
   const idxFromEvent=ev=>{
     const r=svgEl.getBoundingClientRect();
     const px=(ev.clientX-r.left)*W/r.width;
@@ -1293,36 +1371,38 @@ function drawDash(host, st){
   };
   hot.addEventListener('mousemove',ev=>hoverAt(idxFromEvent(ev)));
   hot.addEventListener('mouseleave',restore);
-  hot.addEventListener('click',ev=>{
-    const abs=i0+idxFromEvent(ev);
-    st.pinAbs = (st.pinAbs===abs) ? null : abs;
-    restore(); if(st.pinAbs==null) hoverAt(idxFromEvent(ev));
-  });
-  rowEls.forEach(r=>{
-    r.addEventListener('mouseenter',()=>hoverAt(+r.dataset.i));
-    r.addEventListener('click',()=>{
-      const abs=i0+ +r.dataset.i;
-      st.pinAbs = (st.pinAbs===abs) ? null : abs;
-      restore();
-    });
-  });
+  rowEls.forEach(r=>r.addEventListener('mouseenter',()=>hoverAt(+r.dataset.i)));
   const mtw=body.querySelector('.mt-wrap');
   if(mtw) mtw.addEventListener('mouseleave',restore);
-  restore();                            // re-show a surviving pin after redraw
 }
 
 async function refresh(){
   try{
     const r = await api('/jobs');
-    jobs = r.jobs || [];
+    jobs = r.jobs || []; LOADED = true;
+    if(STALE){ STALE = null; LAST_FP = ''; }
     render();
     if(jobs.some(j=>['processing','awaiting_upload','merging'].includes(j.status)))
       setTimeout(refresh, 3000);
-  }catch(e){ console.error(e); }
+  }catch(e){
+    if(e.message === 'signed out') return;
+    // Never let the UI silently go stale: say so, and keep showing the data
+    // we have. The 15s interval keeps retrying.
+    if(LOADED && !STALE){ STALE = new Date(); LAST_FP = ''; render(); }
+    else if(!LOADED)
+      $('active').innerHTML = '<div class="empty" onclick="refresh()">Could not load your accounts — click to retry.</div>';
+    console.error(e);
+  }
 }
-async function dl(id, acct, fmt){
-  const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
-  location.href = url;
+async function dl(id, acct, fmt, btn){
+  const old = btn && btn.textContent;
+  if(btn){ btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try{
+    const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
+    location.href = url;
+    if(btn) btn.textContent = old;
+  }catch(e){ if(btn) btn.textContent = 'Failed — retry'; }
+  finally{ if(btn) btn.disabled = false; }
 }
 /* Review. The reconciliation detail the pipeline produced, unedited: which
    row broke the chain, what the statement said, and what the arithmetic
@@ -1342,7 +1422,7 @@ function issueFeedback(el){
     body: JSON.stringify({description:(d||'reconciliation issue').slice(0,300),
                           account:RVC.acct, note:v, source:'reconciliation'})})
     .then(()=>{ el.textContent='feedback recorded'; el.classList.remove('fixable'); refresh(); })
-    .catch(e=>alert('Could not save the feedback: '+e.message));
+    .catch(()=>{ el.textContent='could not save — click to retry'; });
 }
 async function review(id, acct, name){
   RVC = {id, acct};
@@ -1382,13 +1462,17 @@ async function review(id, acct, name){
   }
 }
 
-async function markReviewed(id){
+async function markReviewed(id, btn){
   const note = ($('rvNote-'+id)||{}).value || '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
   try{
     await api(`/jobs/${id}/review`, {method:'POST',
       headers:{'content-type':'application/json'}, body: JSON.stringify({note})});
+    LAST_FP = '';
     refresh();
-  }catch(e){ alert('Could not mark reviewed: '+e.message); }
+  }catch(e){
+    if(btn){ btn.disabled = false; btn.textContent = 'Could not save — retry'; }
+  }
 }
 
 /* Correction capture: an admin clicks a row's category or party in the
@@ -1423,10 +1507,12 @@ function fixRow(i, field){
   api(`/jobs/${PV.id}/corrections`, {method:'POST',
     headers:{'content-type':'application/json'}, body:JSON.stringify(body)})
     .then(()=>{ const el=$('pvfix'+i); if(el) el.innerHTML=' <span class="rvw">corrected</span>'; refresh(); })
-    .catch(e=>alert('Could not save the correction: '+e.message));
+    .catch(()=>{ const el=$('pvfix'+i); if(el) el.innerHTML=' <span class="rvw">save failed — retry</span>'; });
 }
-async function dlCorrections(id){
+async function dlCorrections(id, btn){
   // The export is CSV, not JSON, so it bypasses api()'s json parse.
+  const old = btn && btn.textContent;
+  if(btn){ btn.disabled = true; btn.textContent = 'Preparing…'; }
   try{
     const r = await fetch(`${API}/jobs/${id}/corrections?format=csv`,
       {headers:{authorization:'Bearer '+(token()||'')}});
@@ -1435,29 +1521,45 @@ async function dlCorrections(id){
     const a = document.createElement('a');
     a.href = u; a.download = `corrections_${id}.csv`; a.click();
     URL.revokeObjectURL(u);
-  }catch(e){ alert('Could not export corrections: '+e.message); }
+    if(btn) btn.textContent = old;
+  }catch(e){ if(btn) btn.textContent = 'Failed — retry'; }
+  finally{ if(btn) btn.disabled = false; }
 }
-async function preview(id, acct, name, bank){
-  const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
-  const data = await (await fetch(url)).json();
-  PV = {id, acct, bank: bank||'', rows: data.rows};
-  $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
-  const lowN = data.rows.filter(r=>r.confidence==='low').length;
-  const banner = lowN
-    ? `<div class="lowbanner"><b>${lowN} row${lowN>1?'s':''} flagged for review</b> — a
-       category we could not tie to a rule or a named party (marked <span class="rvw">review</span>).
-       Everything else is either a definite category or a known-party transfer.</div>` : '';
-  const corrHint = IS_ADMIN
-    ? `<div class="rv-note">Click a row's category or party to record a correction —
-       it is captured as training data and never rewrites this report.</div>` : '';
-  $('pvBody').innerHTML = banner + corrHint + `<table><thead><tr><th>Date</th><th>Description</th>
-      <th class="num">Amount</th><th>Category · party</th><th class="num">Balance</th></tr></thead><tbody>`+
-    data.rows.map((r,i)=>`<tr class="${r.confidence==='low'?'lowrow':''}"><td style="white-space:nowrap">${esc(r.date)}</td>
-      <td>${esc(r.description)}</td><td class="num ${r.amount<0?'drn':'crn'}">${fmtAmt(r.amount)}</td>
-      <td>${pvCatCell(r,i)}</td>
-      <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')+
-    '</tbody></table>';
+async function preview(id, acct, name, bank, corrN){
+  // Open first, fetch second — a button that dead-clicks for seconds lies.
+  $('pvTitle').textContent = name;
+  $('pvBody').innerHTML = '<div class="rv-note">Loading rows…</div>';
   $('pv').showModal();
+  try{
+    const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
+    const data = await (await fetch(url)).json();
+    PV = {id, acct, bank: bank||'', rows: data.rows};
+    $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
+    const lowN = data.rows.filter(r=>r.confidence==='low').length;
+    const banner = lowN
+      ? `<div class="lowbanner"><b>${lowN} row${lowN>1?'s':''} flagged for review</b> — a
+         category we could not tie to a rule or a named party (marked <span class="rvw">review</span>).
+         Everything else is either a definite category or a known-party transfer.</div>` : '';
+    // Raw-row exports live with the raw rows, not on the account card.
+    const exportBar = IS_ADMIN
+      ? `<div class="rv-note" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+         <span>Export:</span>
+         <button class="ghost sm" onclick="dl('${id}','${acct}','csv',this)">CSV</button>
+         <button class="ghost sm" onclick="dl('${id}','${acct}','json',this)">JSON</button>
+         ${corrN?`<button class="ghost sm" onclick="dlCorrections('${id}',this)">Corrections CSV · ${nfmt(corrN)}</button>`:''}
+         <span style="flex:1"></span>
+         <span>Click a category or party to record a correction — training data,
+         never a rewrite of this report.</span></div>` : '';
+    $('pvBody').innerHTML = banner + exportBar + `<table><thead><tr><th>Date</th><th>Description</th>
+        <th class="num">Amount (₹)</th><th>Category · party</th><th class="num">Balance (₹)</th></tr></thead><tbody>`+
+      data.rows.map((r,i)=>`<tr class="${r.confidence==='low'?'lowrow':''}"><td style="white-space:nowrap">${esc(r.date)}</td>
+        <td>${esc(r.description)}</td><td class="num">${fmtAmt(r.amount)}</td>
+        <td>${pvCatCell(r,i)}</td>
+        <td class="num">${fmtAmt(r.balance)}</td></tr>`).join('')+
+      '</tbody></table>';
+  }catch(e){
+    $('pvBody').innerHTML = `<div class="rv-note">Could not load the preview: ${esc(e.message)}</div>`;
+  }
 }
 
 (async () => {
