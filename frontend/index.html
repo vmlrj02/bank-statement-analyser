@@ -190,7 +190,10 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
    inside it — otherwise cards past the fold were simply unreachable. */
 aside{position:sticky;top:22px;max-height:calc(100vh - 40px);
   display:flex;flex-direction:column}
-aside h2,aside .go,aside input{flex:none}
+aside h2,aside .go,aside input,aside .afrow{flex:none}
+.afrow{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.h-own{font-size:10px;color:var(--faint);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hist{border:1px solid var(--line2);border-radius:var(--radius);
   overflow-y:auto;flex:1;min-height:0;scrollbar-width:thin}
 /* macOS hides overlay scrollbars until scrolled, which makes the capped list
@@ -360,6 +363,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <button class="go" id="upBtn" style="width:100%;margin-bottom:12px">Upload statements</button>
     <input type="text" id="q" placeholder="Search name, bank, number…"
       style="width:100%;margin-bottom:12px;font-size:13px">
+    <div id="afilters" class="afrow" hidden></div>
     <h2 id="acctHead">Accounts</h2>
     <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
   </aside>
@@ -777,7 +781,8 @@ function accountCard(e){
   const nm = a.holder || a.bank || a.title || 'Account';
   const [bcode, bcolor] = bankBrand(a.bank);
   const sub = [a.bank ? esc(a.bank) : '',
-               a.account_no ? 'A/c '+esc(acctNo(a.account_no)) : '']
+               a.account_no ? 'A/c '+esc(acctNo(a.account_no)) : '',
+               IS_ADMIN && j.owner ? `<b>${esc(j.owner)}</b>` : '']
       .filter(Boolean).join(' · ');
   return `<div class="job" id="acct-${esc(e.slug)}">
     <div class="top" style="flex-wrap:nowrap;align-items:center">
@@ -833,6 +838,7 @@ function uploadNotices(){
       ['failed','password_required','needs_review'].includes(j.status) ||
       (IS_ADMIN && ai && ai.used);
     if(!notable) continue;
+    if(IS_ADMIN && !jobMatches(j)) continue;
     const aiPanel = (IS_ADMIN && ai && ai.used) ? `<div class="ai" style="margin-top:10px">
         <h4>AI usage for this upload · admin only</h4>
         <div class="grid">
@@ -854,8 +860,19 @@ function uploadNotices(){
       ${busy?`<div class="meta">Processing ${nfmt(s.files||(s.filenames||[]).length||0)} file(s) —
         accounts appear below when this finishes.</div>`:''}
       ${failed.length?`<div class="err"><b>${failed.length} file(s) could not be read</b>`+
-        failed.map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}</div>`).join('')+`</div>`:''}
-      ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
+        failed.map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}${
+          IS_ADMIN && /no layout/i.test(f.error||'')
+            ? ' <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>':''}</div>`).join('')
+        +((IS_ADMIN && failed.some(f=>/no layout/i.test(f.error||'')))
+            ? `<div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
+               <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code>
+               — fetch the sample, write the YAML, retry. No deploy needed.</div>`:'')
+        +`</div>`:''}
+      ${j.error?`<div class="err">${esc(j.error)}${
+        IS_ADMIN && !failed.length && jobNeedsLayout(j)
+          ? ` <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>
+            <div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
+            <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code></div>`:''}</div>`:''}
       ${j.status==='needs_review'
         ? `<div class="rv-foot" style="padding-left:0;padding-right:0">
              <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
@@ -865,15 +882,34 @@ function uploadNotices(){
       ${aiPanel}
     </div>`);
   }
+  // Unfiltered admin view: cap the pile — the filter chips reach the rest.
+  if(IS_ADMIN && AFILTER==='all' && out.length>4){
+    const extra = out.length-4;
+    return out.slice(0,4).join('')
+      + `<div class="meta" style="margin-bottom:10px">…and ${extra} more notice${extra===1?'':'s'} — use the Review / Issues / Layout filters to see them all.</div>`;
+  }
   return out.join('');
 }
 
 /* Sidebar account card → the main view shows ONLY that account. The first
    account is selected by default, so there is always exactly one card on
    screen; operational notices (processing / failed uploads) sit above it. */
-let selSlug = null, QUERY = '';
+let selSlug = null, QUERY = '', AFILTER = 'all';
 function selectAcct(slug){ selSlug = slug; render(); }
+function setFilter(f){ AFILTER = f; render(); }
 $('q').oninput = function(){ QUERY = this.value; render(); };
+
+/* Admin triage predicates — what state a JOB is in, for the filter chips.
+   A job whose files ALL failed has no summary; its reason lives in j.error. */
+const jobNeedsLayout = j => /no layout/i.test(j.error||'')
+    || ((j.summary||{}).failed_files||[]).some(f=>/no layout/i.test(f.error||''));
+const jobHasIssue = j => !!(j.error || ((j.summary||{}).failed_files||[]).length
+    || ['failed','password_required'].includes(j.status));
+const jobMatches = j =>
+    AFILTER==='all' ? true
+  : AFILTER==='review' ? j.status==='needs_review'
+  : AFILTER==='issues' ? jobHasIssue(j)
+  : AFILTER==='layout' ? jobNeedsLayout(j) : true;
 
 const dayLabel = ts => {
   const d = new Date(ts*1000);
@@ -886,7 +922,17 @@ const timeLabel = ts => new Date(ts*1000)
   .toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
 
 function render(){
-  const accts = accountIndex();
+  const accts = accountIndex().filter(e=>!IS_ADMIN || jobMatches(e.latest.j));
+  if(IS_ADMIN){
+    const chip=(f,lbl,n)=>`<button class="rchip ${AFILTER===f?'act':''}"
+        onclick="setFilter('${f}')">${lbl}${n?` · ${n}`:''}</button>`;
+    $('afilters').hidden = false;
+    $('afilters').innerHTML =
+        chip('all','All')
+      + chip('review','Review', jobs.filter(j=>j.status==='needs_review').length)
+      + chip('issues','Issues', jobs.filter(jobHasIssue).length)
+      + chip('layout','Layout', jobs.filter(jobNeedsLayout).length);
+  }
   if(!accts.some(e=>e.slug===selSlug)) selSlug = accts.length ? accts[0].slug : null;
   const notices = uploadNotices();
   const sel = accts.find(e=>e.slug===selSlug);
@@ -923,6 +969,7 @@ function render(){
             </div>
           </div>
           <div class="h-cov">${ps?`<b>${esc(monYY(ps.start))} – ${esc(monYY(ps.end))}</b> · `:''}${nfmt(e.statements)} stmt${e.statements===1?'':'s'} · ${nfmt(e.pages)} pg</div>
+          ${IS_ADMIN && e.latest.j.owner ? `<div class="h-own">${esc(e.latest.j.owner)}</div>`:''}
           <div class="h-foot"><span class="tm">${esc(timeLabel(e.latest.j.created_at||0))}</span>
             <button class="ghost" title="Download report"
               onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${e.latest.a.slug}','xlsx')">Download</button></div>
