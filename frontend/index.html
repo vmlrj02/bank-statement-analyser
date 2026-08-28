@@ -150,6 +150,7 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   border:1px solid var(--line)}
 .cx{background:var(--bg);padding:8px 10px}
 .cx b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+.cx.sm b{font-size:12px;line-height:1.5}
 .cx span{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
 .creads{margin:10px 0 0;padding-left:17px;font-size:12.5px;color:var(--mut)}
 .creads li{margin:3px 0}
@@ -588,26 +589,37 @@ function integrityChip(intg){
     : '<span class="chip warn">Integrity: review</span>';
 }
 function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
-function creditBlock(cs){
-  if(!cs || !cs.metrics) return '';
-  const m=cs.metrics;
-  const cell=(label,val)=>`<div class="cx"><b>${val}</b><span>${label}</span></div>`;
-  const cov=(m.servicing_coverage==null?'—':m.servicing_coverage+'×');
-  const grid=[
-    cell('Avg credits / mo','₹'+inr(m.avg_monthly_credits)),
-    cell('Turnover trend',m.turnover_trend||'—'),
-    cell('Avg balance','₹'+inr(m.avg_balance)),
-    cell('Min balance','₹'+inr(m.min_balance)),
-    cell('Bounce events',nfmt(m.bounce_count||0)),
-    cell('EMI outflow / mo','₹'+inr(m.emi_outflow_monthly)),
-    cell('Debt-svc cover',cov),
-    cell('Monthly surplus','₹'+inr(m.monthly_surplus)),
-    cell('Related-party',(m.related_party_credit_pct||0)+'%'),
-    cell('Months',nfmt(m.months||0)),
+/* ONE summary panel: document counts, period coverage and the credit
+   assessment metrics in a single continuous grid, reads below. */
+function summaryBlock(e, a, ps){
+  const cs = a.credit_summary || {};
+  const m = cs.metrics || null;
+  const cell=(label,val,sm)=>`<div class="cx${sm?' sm':''}"><b>${val}</b><span>${label}</span></div>`;
+  const cells = [
+    cell('Statements', nfmt(e.statements)),
+    cell('Uploads', nfmt(e.uploads.length)),
+    cell('Total pages', nfmt(e.pages)),
+    cell('Transactions', nfmt(a.rows)),
+    ...(ps?[cell('Start date', esc(shortDate(ps.start))),
+            cell('End date', esc(shortDate(ps.end))),
+            cell('Missing period', ps.gaps.length?esc(ps.gaps.join('; ')):'None', true),
+            cell('Total days', nfmt(ps.days))]:[]),
+    ...(m?[
+      cell('Avg credits / mo','₹'+inr(m.avg_monthly_credits)),
+      cell('Turnover trend', m.turnover_trend||'—'),
+      cell('Avg balance','₹'+inr(m.avg_balance)),
+      cell('Min balance','₹'+inr(m.min_balance)),
+      cell('Bounce events', nfmt(m.bounce_count||0)),
+      cell('EMI outflow / mo','₹'+inr(m.emi_outflow_monthly)),
+      cell('Debt-svc cover', m.servicing_coverage==null?'—':m.servicing_coverage+'×'),
+      cell('Monthly surplus','₹'+inr(m.monthly_surplus)),
+      cell('Related-party',(m.related_party_credit_pct||0)+'%'),
+      cell('Months', nfmt(m.months||0)),
+    ]:[]),
   ].join('');
   const reads=(cs.reads||[]).map(r=>`<li>${esc(r)}</li>`).join('');
-  return `<div class="credit"><div class="ch">Credit assessment</div>
-    <div class="cgrid">${grid}</div>
+  return `<div class="credit"><div class="ch">Account summary &amp; credit assessment</div>
+    <div class="cgrid">${cells}</div>
     ${reads?`<ul class="creads">${reads}</ul>`:''}</div>`;
 }
 
@@ -715,7 +727,6 @@ function accountCard(e){
                a.account_no ? 'A/c '+esc(acctNo(a.account_no)) : '']
       .filter(Boolean).join(' · ');
   const ps = periodStats(a.periods);
-  const dcell = (label,val,small)=>`<div class="stat"><b style="font-size:${small?13:17}px">${val}</b><span>${label}</span></div>`;
   // History: every upload that contained this account, each with its own
   // balance-verified report. Numbers below the fold come from the NEWEST one.
   const history = e.uploads.length>1 ? `<div class="meta" style="margin-top:13px">
@@ -735,17 +746,7 @@ function accountCard(e){
       <div class="ch">Monthly trends</div>
       <div class="dash-body"><div class="meta" style="margin:6px 0">Loading chart…</div></div>
     </div>
-    <div class="stats">
-      <div class="stat"><b>${nfmt(e.statements)}</b><span>Statements</span></div>
-      <div class="stat"><b>${nfmt(e.uploads.length)}</b><span>Uploads</span></div>
-      <div class="stat"><b>${nfmt(e.pages)}</b><span>Total pages</span></div>
-      <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
-      ${ps?dcell('Start date', esc(shortDate(ps.start)), true)
-          +dcell('End date', esc(shortDate(ps.end)), true)
-          +dcell('Missing period', ps.gaps.length?esc(ps.gaps.join('; ')):'None', true)
-          +dcell('Total days', nfmt(ps.days)):''}
-    </div>
-    ${creditBlock(a.credit_summary)}
+    ${summaryBlock(e, a, ps)}
     <div class="meta">From: ${esc(e.files.join(', '))}</div>
     ${a.unreadable_pages ? `<div class="err"><b>${nfmt(a.unreadable_pages)} page(s) had no readable text</b>
       — scanned or image-only pages. Any transactions printed on them are missing from
