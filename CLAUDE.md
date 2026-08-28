@@ -128,8 +128,15 @@ their own uploads and never the AI block.
     over both would compare March's opening balance to January's closing and
     report a failure that is not real. The account shows the worst individual
     statement's status. Pinned by tests/test_period_gap.py.
-13. The UI is strictly black/white/grey. Status is carried by words plus fill
-    and border weight, never colour; debits use accounting parentheses.
+13. The UI follows the Get It Right brand: deep navy + gold on white, after
+    the company logo (boss's instruction, Aug 2026 — replaced the earlier
+    strictly-black/white/grey rule). Status must still read without colour
+    alone — explicit words plus fill and border weight — and debits use
+    accounting parentheses. The UI is also ACCOUNT-first: one card per
+    account across every upload (grouped client-side by slug), with each
+    upload's balance-verified report listed as history inside the card;
+    upload-level problems (processing, failed files, needs-review) surface
+    as notices above the cards, not as the navigation.
 14. Listing a customer's jobs must be a QUERY on the owner index, never a
     scan filtered by owner. A scan returns items in key order, so once the
     table outgrew the scanned page a customer could see none of their own jobs

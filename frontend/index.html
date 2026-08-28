@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Statement Analyser</title>
 <style>
-/* Strictly black, white and grey. No hue anywhere. Status must still read at a
-   glance, so it is carried by explicit words plus fill and border weight —
-   never by colour. Debits use accounting parentheses, matching the CSV. */
+/* Get It Right brand: deep navy + gold on white, after the company logo.
+   Status still reads without colour alone — explicit words plus fill and
+   border weight — and debits keep accounting parentheses, matching the CSV. */
 :root{
-  --bg:#ffffff; --fg:#000000; --mut:#5c5c5c; --faint:#8a8a8a;
-  --line:#d6d6d6; --line2:#a8a8a8; --sunk:#f2f2f2;
+  --bg:#ffffff; --fg:#16294f; --mut:#5a6478; --faint:#8b93a5;
+  --line:#dce0e8; --line2:#aab2c2; --sunk:#f5f6fa;
+  --navy:#16294f; --gold:#b9902e; --golddark:#8a6a1d; --goldpale:#f7f0dd;
   --radius:10px;
 }
 *{box-sizing:border-box}
@@ -22,11 +23,20 @@ body{margin:0;background:var(--bg);color:var(--fg);
   font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 
 .shell{max-width:1140px;margin:0 auto;padding:0 24px 80px;
-  display:grid;grid-template-columns:minmax(0,1fr) 268px;gap:36px;align-items:start}
-header{grid-column:1/-1;padding:34px 0 20px;border-bottom:2px solid var(--fg);margin-bottom:28px;
-  display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
-header h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0}
-header .sub{color:var(--mut);font-size:14px;margin:2px 0 0}
+  display:grid;grid-template-columns:268px minmax(0,1fr);gap:36px;align-items:start}
+/* Uploads list on the LEFT, content on the right. DOM order stays main-first
+   so the narrow single-column view keeps the drop zone on top. */
+main{grid-column:2;grid-row:2}
+aside{grid-column:1;grid-row:2}
+header{grid-column:1/-1;padding:30px 0 18px;border-bottom:2px solid var(--navy);margin-bottom:28px;
+  display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;position:relative}
+header::after{content:"";position:absolute;left:0;right:0;bottom:-5px;height:1px;background:var(--gold)}
+.wordmark{font-family:Georgia,'Times New Roman',serif;font-size:30px;font-weight:700;
+  letter-spacing:.01em;margin:0;line-height:1.15}
+.wordmark .b1{color:var(--navy)}
+.wordmark .b2{color:var(--gold)}
+header .sub{color:var(--mut);font-size:13.5px;margin:3px 0 0}
+header .sub em{font-style:normal;color:var(--golddark);letter-spacing:.04em}
 .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mut)}
 h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;
   color:var(--mut);margin:0 0 12px}
@@ -34,7 +44,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;
 /* upload */
 .drop{border:2px dashed var(--line2);border-radius:var(--radius);padding:34px 22px;
   text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
-.drop:hover,.drop.hover{border-color:var(--fg);background:var(--sunk);border-style:solid}
+.drop:hover,.drop.hover{border-color:var(--gold);background:var(--sunk);border-style:solid}
 .drop .t{font-size:16px;font-weight:700}
 .drop .s{color:var(--mut);font-size:13px;margin-top:5px}
 .tray{border:1px solid var(--line);border-radius:var(--radius);margin-top:14px;overflow:hidden}
@@ -67,27 +77,40 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .ghost:hover{background:var(--fg);color:var(--bg)}
 .hint{color:var(--mut);font-size:12.5px;width:100%}
 
-/* counter with hover list */
-.counter{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line2);
-  border-radius:999px;padding:5px 14px;font-size:13px;font-weight:700;cursor:default;position:relative}
-.counter .pop{display:none;position:absolute;top:calc(100% + 7px);left:0;z-index:20;
-  min-width:250px;max-width:380px;max-height:260px;overflow:auto;background:var(--bg);
-  border:2px solid var(--fg);border-radius:8px;padding:9px 12px;font-weight:400;
-  font-size:12.5px;line-height:1.7;box-shadow:0 6px 18px rgba(0,0,0,.18)}
-.counter:hover .pop,.counter:focus .pop{display:block}
-.counter .pop b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
-  color:var(--mut);margin-bottom:4px}
-.counter .pop div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
 /* account card */
 .job{border:1px solid var(--line2);border-radius:var(--radius);padding:17px 19px;margin-bottom:13px}
-.job.sel{border:2px solid var(--fg)}
+.job.sel{border:2px solid var(--gold);box-shadow:0 0 0 3px var(--goldpale)}
 .job .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .job .nm{font-weight:700;font-size:15.5px;margin-right:auto;letter-spacing:-.01em}
+.job .acctline{color:var(--mut);font-size:12.5px;margin-top:3px;font-variant-numeric:tabular-nums}
+.job .acctline b{color:var(--fg);font-weight:600}
+.bklogo{display:inline-flex;align-items:center;justify-content:center;height:16px;
+  padding:0 5px;border-radius:4px;color:#fff;font-size:8.5px;font-weight:800;
+  letter-spacing:.04em;vertical-align:-3px;margin-right:5px}
+/* Monthly trends dashboard */
+.dash{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
+.dash .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
+  font-weight:700;margin-bottom:9px}
+.dash-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.lchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;
+  padding:3px 11px;font-size:11.5px;cursor:pointer;color:var(--mut);background:var(--bg);font-family:inherit}
+.lchip input{accent-color:var(--navy);margin:0;cursor:pointer}
+.lchip .sw{width:9px;height:9px;border-radius:50%;flex:none}
+.lchip.off{opacity:.4}
+.lchip:hover{border-color:var(--line2)}
+.dash-body{position:relative}
+.dash-tip{position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--line2);
+  border-radius:6px;padding:7px 10px;font-size:11.5px;line-height:1.6;display:none;z-index:5;
+  min-width:140px;box-shadow:0 4px 14px rgba(0,0,0,.14)}
+.dash-tip b{display:block;margin-bottom:2px}
+.dash-tip .row{display:flex;align-items:center;gap:8px;justify-content:space-between;white-space:nowrap}
+.dash-tip .sw{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.dash svg{display:block;width:100%;height:auto}
+.dash svg text{font-family:inherit}
 .chip{font-size:11px;padding:3px 10px;border-radius:999px;font-weight:700;white-space:nowrap;
   text-transform:uppercase;letter-spacing:.07em}
 .chip.done{background:var(--fg);color:var(--bg);border:2px solid var(--fg)}
-.chip.warn{background:var(--bg);color:var(--fg);border:2px solid var(--fg)}
+.chip.warn{background:var(--goldpale);color:var(--golddark);border:2px solid var(--gold)}
 .chip.fail{background:var(--bg);color:var(--fg);border:2px solid var(--fg);
   text-decoration:underline;text-underline-offset:2px}
 .chip.busy{background:var(--bg);color:var(--mut);border:1px dashed var(--line2);
@@ -121,7 +144,7 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .err{border:1px solid var(--fg);border-left-width:4px;font-size:12.5px;padding:9px 11px;
   border-radius:6px;margin-top:11px;word-break:break-word}
 .credit{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
-.credit .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+.credit .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
   font-weight:700;margin-bottom:9px}
 .cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
   border:1px solid var(--line)}
@@ -135,9 +158,18 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .empty{color:var(--mut);text-align:center;padding:32px 0;font-size:14px;
   border:1px dashed var(--line2);border-radius:var(--radius)}
 
-.uphead{border:2px solid var(--fg);border-radius:var(--radius);padding:16px 18px;margin-bottom:6px}
-.uphead .nm{font-weight:700;font-size:16px;margin-right:auto}
-.uphead .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+/* Upload status notices — processing / failed / needs-review batches. The
+   account cards are the content; these are operational notes above them. */
+.upnote{border:1px solid var(--line2);border-left:4px solid var(--gold);border-radius:8px;
+  padding:10px 14px;margin-bottom:10px;font-size:13px}
+.upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.upnote .nm{font-weight:700;margin-right:auto}
+/* Per-upload history rows inside an account card */
+.uprow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px dotted var(--line);
+  font-size:12.5px;flex-wrap:wrap}
+.uprow .d{font-weight:600}
+.uprow .m{color:var(--mut)}
+.uprow .ghost{margin-left:auto;font-size:12px;padding:3px 11px}
 
 /* admin AI panel */
 .ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
@@ -150,16 +182,27 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .ai table{width:100%;border-collapse:collapse;font-size:12px}
 .ai td,.ai th{padding:6px 12px;border-top:1px solid var(--line);text-align:left}
 
-/* sidebar */
+/* sidebar — one CARD per ACCOUNT, across every upload. Most users care about
+   an account, not a batch: holder, bank, last-4 and the period at a glance,
+   with the report download right there. Clicking scrolls to the account card. */
 aside{position:sticky;top:22px}
 .hist{border:1px solid var(--line2);border-radius:var(--radius);overflow:hidden}
-.h-item{display:block;width:100%;text-align:left;background:none;border:0;
-  border-bottom:1px solid var(--line);padding:10px 13px;cursor:pointer;font-family:inherit}
-.h-item:last-child{border-bottom:0}
-.h-item:hover{background:var(--sunk)}
-.h-item.sel{background:var(--sunk);box-shadow:inset 4px 0 0 var(--fg)}
-.h-nm{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.h-sub{color:var(--mut);font-size:11px;margin-top:2px;display:flex;gap:6px}
+.h-group{display:flex;align-items:center;gap:8px;width:100%;
+  background:var(--sunk);border-bottom:1px solid var(--line);padding:7px 13px;
+  font-size:10.5px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--golddark)}
+.h-card{position:relative;display:block;padding:10px 13px;border-bottom:1px solid var(--line);
+  cursor:pointer}
+.h-card:last-child{border-bottom:0}
+.h-card:hover{background:var(--sunk);box-shadow:inset 3px 0 0 var(--gold)}
+.h-card.sel{background:var(--sunk);box-shadow:inset 3px 0 0 var(--gold)}
+.h-hold{font-size:12.5px;font-weight:700;padding-right:84px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-bank{font-size:11.5px;color:var(--mut);margin-top:2px;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-per{font-size:10.5px;color:var(--faint);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-dl{position:absolute;top:9px;right:10px;font-size:11px;padding:3px 9px}
 .side-empty{color:var(--mut);font-size:12.5px;padding:18px 13px;text-align:center}
 
 /* login */
@@ -200,14 +243,20 @@ th{position:sticky;top:0;background:var(--bg);text-align:left;font-weight:700;pa
   text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
 td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-@media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}aside{position:static}}
+/* Accounting colours: credits green, debits red (text-contrast-safe shades). */
+.crn{color:#00795c}
+.drn{color:#b3251e}
+.shr{font-size:10px;color:var(--faint);font-weight:400}
+.mt-wrap tr.hl td{background:var(--goldpale)}
+@media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}
+  main,aside{grid-column:auto;grid-row:auto}aside{position:static}}
 </style>
 </head>
 <body>
 <div id="gate" hidden>
   <div class="card">
-    <h1>Bank Statement Analyser</h1>
-    <p class="sub">Sign in to continue</p>
+    <h1 class="wordmark" style="font-size:26px"><span class="b1">Get It</span> <span class="b2">Right</span></h1>
+    <p class="sub">Bank Statement Analyser — sign in to continue</p>
     <label for="u">Email</label>
     <input id="u" type="email" autocomplete="username">
     <label for="pw">Password</label>
@@ -220,8 +269,8 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 <div class="shell" id="app" hidden>
   <header>
     <div>
-      <h1>Bank Statement Analyser</h1>
-      <p class="sub">Statements in, one balance-checked report per account.</p>
+      <h1 class="wordmark"><span class="b1">Get It</span> <span class="b2">Right</span></h1>
+      <p class="sub">Bank Statement Analyser · <em>All You Need to Invest Right</em></p>
     </div>
     <div class="who">
       <span id="whoami"></span><span class="chip done" id="role" hidden></span>
@@ -232,6 +281,20 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   </header>
 
   <main>
+    <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+  </main>
+
+  <aside>
+    <button class="go" id="upBtn" style="width:100%;margin-bottom:14px">Upload statements</button>
+    <h2>Accounts</h2>
+    <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
+  </aside>
+</div>
+
+<dialog id="up">
+  <div class="dh"><b>Upload statements</b>
+    <span style="margin-left:auto"><button class="ghost" onclick="up.close()">Close</button></span></div>
+  <div class="db" style="padding:17px">
     <div class="drop" id="drop">
       <div class="t">Drop PDFs here, or click to choose</div>
       <div class="s">Up to 20 at once — grouped by account, one report each</div>
@@ -243,20 +306,8 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
       <button class="go" id="go">Analyse</button>
       <span class="hint" id="hint"></span>
     </div>
-
-    <div style="display:flex;align-items:center;gap:12px;margin:30px 0 12px;flex-wrap:wrap">
-      <h2 style="margin:0">Reports</h2>
-      <span class="counter" id="counter" tabindex="0">Total statements uploaded: 0
-        <span class="pop" id="pop"></span></span>
-    </div>
-    <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
-  </main>
-
-  <aside>
-    <h2>Uploads</h2>
-    <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
-  </aside>
-</div>
+  </div>
+</dialog>
 
 <dialog id="rv">
   <div class="dh"><b id="rvTitle">Review</b>
@@ -309,7 +360,7 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 const nfmt = n => Number(n||0).toLocaleString('en-IN');
 const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
 const TKEY = 'bsa.token';
-let IS_ADMIN = false, WHO = '', jobs = [], activeKey = null;
+let IS_ADMIN = false, WHO = '', jobs = [];
 let staged = [], seq = 0;
 
 /* ---------- auth: session token from our own API, no external service ---------- */
@@ -393,7 +444,7 @@ $('cdGo').onclick = async () => {
     $('cdOut').hidden = false;
     $('cdOut').innerHTML =
       `<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:14px;display:grid;grid-template-columns:auto 1fr;gap:8px 16px">
-        <b>Category</b><span>${esc(j.category||'—')}</span>
+        <b>Category</b><span>${esc(catLabel(j.category||'—'))}</span>
         <b>Party</b><span>${esc(j.party||'—')}</span>
         <b>Direction</b><span>${dr?'debit':'credit'}</span>
         <b>Mode</b><span>${esc(j.mode||'—')}</span>
@@ -433,6 +484,7 @@ async function isEncrypted(file){
   return false;
 }
 const drop = $('drop'), fileIn = $('file');
+$('upBtn').onclick = () => $('up').showModal();
 drop.onclick = () => fileIn.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
@@ -496,6 +548,7 @@ $('go').onclick = async () => {
       if(!res.ok) throw new Error(`upload failed for ${files[i].name}`);
     }
     staged=[]; $('parties').value=''; renderTray(); refresh();
+    $('up').close();
   }catch(e){ alert('Upload failed: '+e.message); }
   finally{ b.disabled=false; updateGo(); }
 };
@@ -541,16 +594,14 @@ function creditBlock(cs){
   const cell=(label,val)=>`<div class="cx"><b>${val}</b><span>${label}</span></div>`;
   const cov=(m.servicing_coverage==null?'—':m.servicing_coverage+'×');
   const grid=[
-    cell('Turnover / mo','₹'+inr(m.avg_monthly_credits)),
+    cell('Avg credits / mo','₹'+inr(m.avg_monthly_credits)),
     cell('Turnover trend',m.turnover_trend||'—'),
     cell('Avg balance','₹'+inr(m.avg_balance)),
     cell('Min balance','₹'+inr(m.min_balance)),
-    cell('Cash intensity',(m.cash_intensity_pct||0)+'%'),
     cell('Bounce events',nfmt(m.bounce_count||0)),
     cell('EMI outflow / mo','₹'+inr(m.emi_outflow_monthly)),
     cell('Debt-svc cover',cov),
     cell('Monthly surplus','₹'+inr(m.monthly_surplus)),
-    cell('Top party',(m.top_party_share_pct||0)+'%'),
     cell('Related-party',(m.related_party_credit_pct||0)+'%'),
     cell('Months',nfmt(m.months||0)),
   ].join('');
@@ -560,14 +611,38 @@ function creditBlock(cs){
     ${reads?`<ul class="creads">${reads}</ul>`:''}</div>`;
 }
 
-/* Navigation is upload-first: the sidebar lists uploads, and selecting one
-   shows every account inside it. Flattening all accounts from all uploads into
-   a single list made it impossible to tell which report came from which batch. */
+/* Navigation is ACCOUNT-first: one card per account, across every upload.
+   The same account in three uploads is still one card; each upload keeps its
+   own balance-verified report, listed as history inside the card with the
+   NEWEST upload's report as the card's headline numbers. */
 function jobLabel(j){
   const d = new Date((j.created_at||0)*1000);
   const when = d.toLocaleDateString(undefined,{day:'numeric',month:'short'})
              + ' ' + d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
   return when;
+}
+const BUSY = ['processing','awaiting_upload','merging'];
+/* Group accounts across uploads by slug (slug = bank + masked account no, the
+   same identity the pipeline groups by). jobs arrive newest-first, so
+   uploads[0] is always the latest report for the account. */
+function accountIndex(){
+  const map = new Map();
+  for(const j of jobs){
+    for(const a of ((j.summary||{}).accounts||[])){
+      if(!map.has(a.slug)) map.set(a.slug, {slug:a.slug, uploads:[]});
+      map.get(a.slug).uploads.push({j, a});
+    }
+  }
+  return [...map.values()].map(e=>{
+    const latest = e.uploads[0];
+    const files = [...new Set(e.uploads.flatMap(u=>u.a.files||[]))];
+    return {
+      slug: e.slug, uploads: e.uploads, latest,
+      files,
+      statements: e.uploads.reduce((n,u)=>n+(u.a.statements||0),0),
+      pages:      e.uploads.reduce((n,u)=>n+(u.a.pages||0),0),
+    };
+  });
 }
 
 function confLine(c){
@@ -590,132 +665,429 @@ function partyLine(pq){
     <span class="cbar"><i style="width:${100*(pq.named||0)/tot}%"></i><i class="m" style="width:${100*(pq.handle||0)/tot}%"></i></span>
     <span>names: ${pc('named')}% named · ${pc('handle')}% handle · ${pc('none')}% none</span></div>`;
 }
-function accountCard(j, a){
+/* Display at most the LAST 4 digits of an account number, whatever shape the
+   stored value has (XXXXXX1234, unmasked legacy, etc.). */
+const acctNo = n => n ? 'xx'+String(n).slice(-4) : '';
+/* Bank identity badge: initials on the bank's brand colour, shown wherever the
+   bank name appears. Inline (no external images), name always alongside. */
+const BANK_BRAND = [
+  [/hdfc/i,        ['HDFC','#004C8F']],
+  [/icici/i,       ['ICICI','#F06321']],
+  [/state bank/i,  ['SBI','#22409A']],
+  [/axis/i,        ['AXIS','#97144D']],
+  [/equitas/i,     ['EQ','#E4701E']],
+  [/vasavi/i,      ['VAS','#1D5C2E']],
+];
+function bankBadge(bank){
+  if(!bank) return '';
+  const hit = BANK_BRAND.find(([re])=>re.test(bank));
+  const [code, color] = hit ? hit[1] : [bank.trim().slice(0,2).toUpperCase(), '#16294f'];
+  return `<span class="bklogo" style="background:${color}">${esc(code)}</span>`;
+}
+/* Start / end / gaps / span from the collapsed period ranges. */
+function periodStats(ps){
+  if(!(ps||[]).length) return null;
+  const s = [...ps].sort((x,y)=>x[0]<y[0]?-1:1);
+  const D = x => new Date(x+'T00:00:00Z');
+  const iso = d => d.toISOString().slice(0,10);
+  const start = s[0][0], end = s[s.length-1][1];
+  const days = Math.round((D(end)-D(start))/86400000)+1;
+  const gaps = [];
+  for(let i=1;i<s.length;i++){
+    const g = Math.round((D(s[i][0])-D(s[i-1][1]))/86400000)-1;
+    if(g>0) gaps.push(`${shortDate(iso(new Date(D(s[i-1][1]).getTime()+86400000)))} to `+
+                      `${shortDate(iso(new Date(D(s[i][0]).getTime()-86400000)))} (${g}d)`);
+  }
+  return {start, end, days, gaps};
+}
+/* Display rename only: the pipeline's "Regular credit/debit" tags read as
+   "Business credit/debit" in the UI. Corrections still send the raw tag. */
+const catLabel = c => c==='Regular credit' ? 'Business credit'
+                    : c==='Regular debit'  ? 'Business debit' : c;
+function accountCard(e){
+  const j = e.latest.j, a = e.latest.a;
   const cats = Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,8)
-      .map(([k,v])=>`<span>${esc(k)} · ${v}</span>`).join('');
-  const period = (a.periods||[]).length
-    ? `<div class="meta">Period: <b>${esc(fmtPeriods(a.periods))}</b></div>` : '';
-  return `<div class="job">
-    <div class="top"><span class="nm">${esc(a.title || (a.bank+' - '+a.account_no))}</span>
-      ${validationChip(a.validation)}${integrityChip(a.integrity)}</div>
-    ${period}
-    <div class="stats">
-      <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
-      <div class="stat"><b>${nfmt(a.pages)}</b><span>Total pages</span></div>
-      <div class="stat"><b>${nfmt(a.statements)}</b><span>Statements</span></div>
-      <div class="stat"><b>${nfmt(a.issues||0)}</b><span>Rows to review</span></div>
+      .map(([k,v])=>`<span>${esc(catLabel(k))} · ${v}</span>`).join('');
+  // Holder name leads; bank and masked number sit on their own quiet line.
+  // Old jobs may predate the holder field — fall back to the composed title.
+  const nm = a.holder || a.bank || a.title || 'Account';
+  const sub = [a.bank ? bankBadge(a.bank)+esc(a.bank) : '',
+               a.account_no ? 'A/c '+esc(acctNo(a.account_no)) : '']
+      .filter(Boolean).join(' · ');
+  const ps = periodStats(a.periods);
+  const dcell = (label,val,small)=>`<div class="stat"><b style="font-size:${small?13:17}px">${val}</b><span>${label}</span></div>`;
+  // History: every upload that contained this account, each with its own
+  // balance-verified report. Numbers below the fold come from the NEWEST one.
+  const history = e.uploads.length>1 ? `<div class="meta" style="margin-top:13px">
+      <b>Uploads for this account (${e.uploads.length})</b> — headline figures are from the latest.</div>`
+    + e.uploads.map(u=>`<div class="uprow">
+        <span class="d">${esc(jobLabel(u.j))}</span>
+        <span class="m">${nfmt((u.a.files||[]).length)} file${(u.a.files||[]).length===1?'':'s'} ·
+          ${nfmt(u.a.pages||0)} pages · ${nfmt(u.a.rows||0)} txns</span>
+        <button class="ghost" onclick="dl('${u.j.job_id}','${e.slug}','xlsx')">Download</button>
+      </div>`).join('') : '';
+  return `<div class="job" id="acct-${esc(e.slug)}">
+    <div class="top"><span class="nm">${esc(nm)}</span>
+      <button class="go" style="padding:5px 16px;font-size:13px"
+        onclick="dl('${j.job_id}','${a.slug}','xlsx')">Download Report</button></div>
+    ${sub?`<div class="acctline">${sub}</div>`:''}
+    <div class="dash" id="dash-${esc(e.slug)}">
+      <div class="ch">Monthly trends</div>
+      <div class="dash-body"><div class="meta" style="margin:6px 0">Loading chart…</div></div>
     </div>
-    <div class="meta">From: ${esc((a.files||[]).join(', '))}</div>
+    <div class="stats">
+      <div class="stat"><b>${nfmt(e.statements)}</b><span>Statements</span></div>
+      <div class="stat"><b>${nfmt(e.uploads.length)}</b><span>Uploads</span></div>
+      <div class="stat"><b>${nfmt(e.pages)}</b><span>Total pages</span></div>
+      <div class="stat"><b>${nfmt(a.rows)}</b><span>Transactions</span></div>
+      ${ps?dcell('Start date', esc(shortDate(ps.start)), true)
+          +dcell('End date', esc(shortDate(ps.end)), true)
+          +dcell('Missing period', ps.gaps.length?esc(ps.gaps.join('; ')):'None', true)
+          +dcell('Total days', nfmt(ps.days)):''}
+    </div>
+    ${creditBlock(a.credit_summary)}
+    <div class="meta">From: ${esc(e.files.join(', '))}</div>
     ${a.unreadable_pages ? `<div class="err"><b>${nfmt(a.unreadable_pages)} page(s) had no readable text</b>
       — scanned or image-only pages. Any transactions printed on them are missing from
       this report, which is the usual cause of a balance break.</div>` : ''}
     ${a.validation==='failed' && (a.issue_sample||[]).length
       ? `<div class="err"><b>Where the balance chain breaks:</b>
         ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
-    ${a.integrity && a.integrity.assessment!=='verified' && (a.integrity.flags||[]).length
-      ? `<div class="err"><b>Integrity — for review:</b><ul style="margin:6px 0 0;padding-left:18px">`
-        + a.integrity.flags.map(f=>`<li>${esc(f)}</li>`).join('') + `</ul></div>` : ''}
-    ${creditBlock(a.credit_summary)}
-    ${confLine(a.confidence)}
-    ${partyLine(a.party_quality)}
     ${cats?`<div class="cats">${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
         ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
         : ''}
+      ${IS_ADMIN?`
       <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}')">Preview</button>
       <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','xlsx')">Excel</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>
-    </div></div>`;
+      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>`:''}
+      ${IS_ADMIN && (j.corrections||[]).length
+        ? `<button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>`:''}
+    </div>
+    ${history}</div>`;
 }
 
-function uploadView(j){
-  if(!j) return '<div class="empty">Nothing yet — upload statements to begin.</div>';
-  const s = j.summary || {};
-  const accts = s.accounts || [];
-  const busy = ['processing','awaiting_upload','merging'].includes(j.status);
-  const ai = s.ai;
+/* Operational notices for uploads that need attention: still processing,
+   failed files, needs-review, plus the admin-only AI accounting when AI was
+   actually used. Settled, clean uploads produce no notice — their substance
+   lives in the account cards. */
+function uploadNotices(){
   const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
-  // AI accounting belongs to the upload, not to each account inside it.
-  const aiPanel = (IS_ADMIN && ai) ? `<div class="ai"><h4>AI usage for this upload · admin only</h4>
-      <div class="grid">
-        <div class="g"><b>${ai.used?'Yes':'No'}</b><span>AI used</span></div>
-        <div class="g"><b>${nfmt(ai.ai_files||0)}/${nfmt(s.files||0)}</b><span>Files via AI</span></div>
-        <div class="g"><b>${nfmt(ai.tokens_in||0)}</b><span>Tokens in</span></div>
-        <div class="g"><b>${nfmt(ai.tokens_out||0)}</b><span>Tokens out</span></div>
-        <div class="g"><b>${nfmt(ai.calls||0)}</b><span>Calls</span></div>
-        <div class="g"><b>${money(ai.cost_usd)}</b><span>Cost</span></div></div>
-      ${(ai.files||[]).length?`<table><thead><tr><th>File</th><th>Parser</th>
-        <th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead><tbody>`+
-        ai.files.map(f=>`<tr><td>${esc(f.filename)}</td>
-          <td>${f.ai?esc(f.model||f.provider||'AI'):esc(f.layout||'template')}</td>
-          <td class="num">${f.ai?nfmt(f.tokens_in):'—'}</td>
-          <td class="num">${f.ai?nfmt(f.tokens_out):'—'}</td>
-          <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('')+
-        `</tbody></table>`:''}</div>` : '';
-
-  const names = s.filenames || [];
-  const head = `<div class="uphead">
+  const out = [];
+  for(const j of jobs){
+    const s = j.summary || {};
+    const busy = BUSY.includes(j.status);
+    const failed = s.failed_files || [];
+    const ai = s.ai;
+    const notable = busy || j.error || failed.length ||
+      ['failed','password_required','needs_review'].includes(j.status) ||
+      (IS_ADMIN && ai && ai.used);
+    if(!notable) continue;
+    const aiPanel = (IS_ADMIN && ai && ai.used) ? `<div class="ai" style="margin-top:10px">
+        <h4>AI usage for this upload · admin only</h4>
+        <div class="grid">
+          <div class="g"><b>${nfmt(ai.ai_files||0)}/${nfmt(s.files||0)}</b><span>Files via AI</span></div>
+          <div class="g"><b>${nfmt(ai.tokens_in||0)}</b><span>Tokens in</span></div>
+          <div class="g"><b>${nfmt(ai.tokens_out||0)}</b><span>Tokens out</span></div>
+          <div class="g"><b>${nfmt(ai.calls||0)}</b><span>Calls</span></div>
+          <div class="g"><b>${money(ai.cost_usd)}</b><span>Cost</span></div></div>
+        ${(ai.files||[]).length?`<table><thead><tr><th>File</th><th>Parser</th>
+          <th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead><tbody>`+
+          ai.files.map(f=>`<tr><td>${esc(f.filename)}</td>
+            <td>${f.ai?esc(f.model||f.provider||'AI'):esc(f.layout||'template')}</td>
+            <td class="num">${f.ai?nfmt(f.tokens_in):'—'}</td>
+            <td class="num">${f.ai?nfmt(f.tokens_out):'—'}</td>
+            <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('')+
+          `</tbody></table>`:''}</div>` : '';
+    out.push(`<div class="upnote">
       <div class="top"><span class="nm">Upload · ${esc(jobLabel(j))}</span>${statusChip(j.status)}</div>
-      <div class="stats">
-        <div class="stat"><b>${nfmt(s.files||names.length||0)}${(s.failed_files||[]).length?`<span style="font-size:12px;font-weight:400"> +${(s.failed_files||[]).length} failed</span>`:''}</b><span>Statements</span></div>
-        <div class="stat"><b>${nfmt(accts.length)}</b><span>Accounts</span></div>
-        <div class="stat"><b>${nfmt(s.pages||0)}</b><span>Total pages</span></div>
-        <div class="stat"><b>${nfmt(s.rows||0)}</b><span>Transactions</span></div>
-      </div>
-      ${names.length?`<div class="meta">Files: ${esc(names.join(', '))}</div>`:''}
-      ${(s.failed_files||[]).length?`<div class="err"><b>${(s.failed_files||[]).length} file(s) could not be read</b>`+
-        (s.failed_files||[]).map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}</div>`).join('')+
-        `</div>`:''}
+      ${busy?`<div class="meta">Processing ${nfmt(s.files||(s.filenames||[]).length||0)} file(s) —
+        accounts appear below when this finishes.</div>`:''}
+      ${failed.length?`<div class="err"><b>${failed.length} file(s) could not be read</b>`+
+        failed.map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}</div>`).join('')+`</div>`:''}
       ${j.error?`<div class="err">${esc(j.error)}</div>`:''}
       ${j.status==='needs_review'
         ? `<div class="rv-foot" style="padding-left:0;padding-right:0">
-             <input type="text" id="rvNote" placeholder="Note (optional) — what you checked">
+             <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
              <button class="go" onclick="markReviewed('${j.job_id}')">Mark reviewed</button>
            </div>`
         : ''}
-      ${j.review
-        ? `<div class="meta">Reviewed by <b>${esc(j.review.by||'')}</b> on
-             ${esc(new Date((j.review.at||0)*1000).toLocaleString())}${
-             j.review.note?` — ${esc(j.review.note)}`:''}</div>`
-        : ''}
-      ${IS_ADMIN && (j.corrections||[]).length
-        ? `<div class="acts"><button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>
-           <span class="hint" style="width:auto">reviewer corrections, in the golden-set shape</span></div>`
-        : ''}
       ${aiPanel}
-    </div>`;
-
-  if(busy) return head + '<div class="empty">Processing — accounts appear when this upload finishes.</div>';
-  if(!accts.length) return head;
-  return head + `<h2 style="margin:22px 0 12px">Accounts in this upload (${accts.length})</h2>`
-       + accts.map(a=>accountCard(j,a)).join('');
+    </div>`);
+  }
+  return out.join('');
 }
 
-function select(id){ activeKey = id; render(); }
+/* Sidebar account card → the main view shows ONLY that account. The first
+   account is selected by default, so there is always exactly one card on
+   screen; operational notices (processing / failed uploads) sit above it. */
+let selSlug = null;
+function selectAcct(slug){ selSlug = slug; render(); }
 
 function render(){
-  if(!jobs.some(j=>j.job_id===activeKey)) activeKey = jobs.length ? jobs[0].job_id : null;
-  const cur = jobs.find(j=>j.job_id===activeKey);
-  $('active').innerHTML = uploadView(cur);
+  const accts = accountIndex();
+  if(!accts.some(e=>e.slug===selSlug)) selSlug = accts.length ? accts[0].slug : null;
+  const notices = uploadNotices();
+  const sel = accts.find(e=>e.slug===selSlug);
+  $('active').innerHTML = notices
+    + (sel ? accountCard(sel)
+           : (notices ? '' : '<div class="empty">Nothing yet — upload statements to begin.</div>'));
+  if(sel) loadDash(sel);
 
-  $('hist').innerHTML = jobs.length ? jobs.map(j=>{
-      const s = j.summary || {};
-      const n = (s.accounts||[]).length;
-      const busy = ['processing','awaiting_upload','merging'].includes(j.status);
-      return `<button class="h-item ${j.job_id===activeKey?'sel':''}" onclick="select('${j.job_id}')">
-        <div class="h-nm">${esc(jobLabel(j))}</div>
-        <div class="h-sub"><span>${nfmt(s.files||0)} file${(s.files||0)===1?'':'s'}</span>
-          <span>${busy?'…':(n+' acct'+(n===1?'':'s'))}</span>
-          <span style="margin-left:auto">${nfmt(s.rows||0)} txns</span></div></button>`;
-    }).join('') : '<div class="side-empty">No uploads yet</div>';
+  const busyN = jobs.filter(j=>BUSY.includes(j.status)).length;
+  $('hist').innerHTML = (accts.length || busyN)
+    ? (busyN?`<div class="h-group"><span>${busyN} upload${busyN===1?'':'s'} processing…</span></div>`:'')
+      + accts.map(e=>{
+        const a = e.latest.a;
+        return `<div class="h-card ${e.slug===selSlug?'sel':''}" onclick="selectAcct('${e.slug}')">
+          <div class="h-hold">${esc(a.holder||a.bank||'Account')}</div>
+          <div class="h-bank">${bankBadge(a.bank)}${esc(a.bank||'')}${a.account_no?` · ${esc(acctNo(a.account_no))}`:''}</div>
+          ${(a.periods||[]).length?`<div class="h-per">${esc(fmtPeriods(a.periods))}</div>`:''}
+          <div class="h-per">${nfmt(e.statements)} statement${e.statements===1?'':'s'} · ${nfmt(e.pages)} pages</div>
+          <button class="ghost h-dl" title="Download Excel report"
+            onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${e.slug}','xlsx')">Download</button>
+        </div>`;}).join('')
+    : '<div class="side-empty">No uploads yet</div>';
+}
 
-  const names = jobs.flatMap(j => (j.summary&&j.summary.filenames) || []);
-  $('counter').childNodes[0].nodeValue = `Total statements uploaded: ${names.length} `;
-  $('pop').innerHTML = names.length
-    ? '<b>Uploaded files</b>' + names.map(n=>`<div>${esc(n)}</div>`).join('')
-    : '<b>Uploaded files</b><div>None yet</div>';
+/* ---------- monthly trends dashboard ----------
+   Data: the account's full JSON report (all transactions), aggregated to
+   months client-side. One ₹ axis, four fixed-order series (palette validated
+   for CVD + contrast), legend chips toggle, crosshair tooltip on hover.
+   Missing months break the line rather than pretending continuity. */
+const DASH = {};                       // job/slug -> {months, series, visible, ...}
+// Credits green / debits red by convention — but the colourblind-safe pair
+// (bluish green / vermilion, Okabe-Ito), so deutan readers can still tell
+// them apart. Fixed order, palette validated (dataviz six checks).
+const DASH_SERIES = [
+  ['Credits',          '#009E73', true],
+  ['Debits',           '#D55E00', true],
+  ['Net flow',         '#0072B2', false],
+  ['Closing balance',  '#CC79A7', true],
+  ['Cash deposits',    '#56B4E9', false],
+  ['Cash withdrawals', '#E69F00', false],
+];
+const CAT_CASH_DEP = /^cash deposit$/i, CAT_CASH_WD = /^cash withdrawal$/i;
+// Business turnover = credits EXCLUDING loan money in and salary credited —
+// inflows that are not trading revenue.
+const CAT_NON_TURNOVER = /^(loan amount disbursal|salary credited)$/i;
+const inrShort = v => {
+  const a = Math.abs(v);
+  const s = a>=1e7 ? (a/1e7).toFixed(a>=1e8?0:1)+'Cr'
+          : a>=1e5 ? (a/1e5).toFixed(a>=1e6?0:1)+'L'
+          : a>=1e3 ? (a/1e3).toFixed(0)+'k' : a.toFixed(0);
+  return (v<0?'-₹':'₹')+s;
+};
+
+async function loadDash(e){
+  const key = e.latest.j.job_id+'/'+e.slug;
+  try{
+    if(!DASH[key]){
+      const {url} = await api(`/jobs/${e.latest.j.job_id}/download?format=json&account=${encodeURIComponent(e.slug)}`);
+      const d = await (await fetch(url)).json();
+      const by = new Map();
+      const parties = new Map();       // counterparty -> {c, d}
+      for(const t of (d.transactions||[])){
+        const m = String(t.date||'').slice(0,7);
+        if(m.length!==7) continue;
+        let r = by.get(m); if(!r){ r={c:0,d:0,cd:0,cw:0,to:0,close:null}; by.set(m,r); }
+        const cat = t.category||'';
+        if(t.amount>0){
+          r.c += t.amount;
+          if(CAT_CASH_DEP.test(cat)) r.cd += t.amount;
+          if(!CAT_NON_TURNOVER.test(cat)) r.to += t.amount;
+        }else{
+          r.d += -t.amount;
+          if(CAT_CASH_WD.test(cat)) r.cw += -t.amount;
+        }
+        r.close = t.balance;               // rows are chronological; last wins
+        const p = String(t.counterparty||'').trim();
+        if(p){
+          let pr = parties.get(p); if(!pr){ pr={c:0,d:0}; parties.set(p,pr); }
+          if(t.amount>0) pr.c += t.amount; else pr.d += -t.amount;
+        }
+      }
+      const ks = [...by.keys()].sort();
+      const months = [];
+      if(ks.length){
+        let [y,m] = ks[0].split('-').map(Number);
+        const [ey,em] = ks[ks.length-1].split('-').map(Number);
+        while(y<ey || (y===ey && m<=em)){
+          months.push(`${y}-${String(m).padStart(2,'0')}`);
+          m++; if(m>12){ m=1; y++; }
+        }
+      }
+      const series = {};
+      for(const [nm] of DASH_SERIES) series[nm]=[];
+      const turnover = [];
+      for(const mo of months){
+        const r = by.get(mo);
+        series['Credits'].push(r?r.c:null);
+        series['Debits'].push(r?r.d:null);
+        series['Net flow'].push(r?r.c-r.d:null);
+        series['Closing balance'].push(r?r.close:null);
+        series['Cash deposits'].push(r?r.cd:null);
+        series['Cash withdrawals'].push(r?r.cw:null);
+        turnover.push(r?r.to:null);
+      }
+      const top = k => [...parties.entries()]
+        .filter(([,v])=>v[k]>0).sort((x,y)=>y[1][k]-x[1][k]).slice(0,10)
+        .map(([nm,v])=>[nm, v[k]]);
+      DASH[key] = {months, series, turnover,
+        topCr: top('c'), topDr: top('d'),
+        visible: new Set(DASH_SERIES.filter(s=>s[2]).map(s=>s[0]))};
+    }
+    const host = document.getElementById('dash-'+e.slug);
+    if(host) drawDash(host, DASH[key]);
+  }catch(err){
+    const host = document.getElementById('dash-'+e.slug);
+    if(host) host.querySelector('.dash-body').innerHTML =
+      `<div class="meta">Could not load the chart: ${esc(err.message||'failed')}</div>`;
+  }
+}
+
+function drawDash(host, st){
+  const body = host.querySelector('.dash-body');
+  if(st.months.length<2){
+    body.innerHTML = '<div class="meta">Not enough months to chart yet — needs at least two.</div>';
+    return;
+  }
+  const W=760, H=280, ML=58, MR=112, MT=14, MB=30;
+  const iw=W-ML-MR, ih=H-MT-MB;
+  const vis = DASH_SERIES.filter(s=>st.visible.has(s[0]));
+  const vals = vis.flatMap(s=>st.series[s[0]]).filter(v=>v!=null);
+  let lo=Math.min(0,...vals), hi=Math.max(1,...vals);
+  const pad=(hi-lo)*0.06; hi+=pad; if(lo<0) lo-=pad;
+  const X=i=>ML+i*iw/(st.months.length-1);
+  const Y=v=>MT+ih-((v-lo)/(hi-lo))*ih;
+  const mlabel=mo=>{const [y,m]=mo.split('-');return MON[+m-1]+' '+y.slice(2);};
+  const step=Math.ceil(st.months.length/8);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly trends">`;
+  for(let i=0;i<=4;i++){
+    const t=lo+(hi-lo)*i/4;
+    svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e7eaf0" stroke-width="1"/>`
+       +`<text x="${ML-8}" y="${Y(t)+3.5}" text-anchor="end" font-size="10" fill="#8b93a5">${inrShort(t)}</text>`;
+  }
+  if(lo<0) svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(0)}" y2="${Y(0)}" stroke="#aab2c2" stroke-width="1"/>`;
+  st.months.forEach((mo,i)=>{ if(i%step===0||i===st.months.length-1)
+    svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#8b93a5">${mlabel(mo)}</text>`;});
+  for(const [nm,col] of vis){
+    const pts=st.series[nm]; let d='', pen=false;
+    pts.forEach((v,i)=>{ if(v==null){pen=false;return;}
+      d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true;});
+    svg+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    let li=pts.length-1; while(li>=0&&pts[li]==null)li--;
+    if(li>=0) svg+=`<circle cx="${X(li)}" cy="${Y(pts[li])}" r="3" fill="${col}"/>`
+      +`<text x="${X(li)+7}" y="${Y(pts[li])+3.5}" font-size="10" fill="#5a6478">${nm}</text>`;
+  }
+  svg+=`<g class="hoverg"></g><rect class="hot" x="${ML}" y="${MT}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
+  // Totals: credit / debit / turnover / cash, total and per-month average
+  // (over months that actually have data — an empty gap month dilutes nothing).
+  const inr0 = v=>'₹'+Number(v).toLocaleString('en-IN',{maximumFractionDigits:0});
+  const nData = st.months.filter((m,i)=>st.series['Credits'][i]!=null).length || 1;
+  const tot = nm => st.series[nm].reduce((s,v)=>s+(v||0),0);
+  const totC = tot('Credits'), totD = tot('Debits');
+  const totT = st.turnover.reduce((s,v)=>s+(v||0),0);
+  const totCd = tot('Cash deposits'), totCw = tot('Cash withdrawals');
+  const pct = (v,base) => base ? (100*v/base).toFixed(1)+'%' : '—';
+  // The share rides next to the total in small print, not in its own column.
+  const srow = (label, v, cls, share) => `<tr><td>${label}</td>
+    <td class="num ${cls}">${inr0(v)}${share?` <span class="shr">${share}</span>`:''}</td>
+    <td class="num ${cls}">${inr0(v/nData)}</td></tr>`;
+  const sumTable = `<div class="ch" style="margin:14px 0 6px">Totals (${nData} month${nData===1?'':'s'})</div>
+    <div style="overflow-x:auto"><table>
+    <thead><tr><th>Dimension</th><th class="num">Total</th><th class="num">Per-month avg</th></tr></thead>
+    <tbody>
+      ${srow('Credits', totC, 'crn')}
+      ${srow('Debits', totD, 'drn')}
+      ${srow('Turnover (credits excl. loan &amp; salary)', totT, 'crn', pct(totT,totC)+' of credits')}
+      ${srow('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits')}
+      ${srow('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits')}
+    </tbody></table></div>`;
+  // Month-by-month table: the chart's data in full, one row per month.
+  // Linked to the chart (hover a row → crosshair on that month, and vice
+  // versa). MINIMISED by default — the end user sees chart + totals; the
+  // detail tables open on demand.
+  const mtOpen = st.mtOpen === true;
+  const cell = (v,cls) => v==null ? '<td class="num">—</td>'
+    : `<td class="num ${cls||''}">${inr0(v)}</td>`;
+  const monthTable = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
+      <span>Month by month</span>
+      <button class="ghost mt-tgl" style="font-size:11px;padding:2px 10px;text-transform:none;letter-spacing:0">${mtOpen?'Minimise':'Show'}</button></div>`
+    + (mtOpen?`<div class="mt-wrap" style="overflow:auto;max-height:300px"><table>
+    <thead><tr><th>Month</th><th class="num">Credits</th><th class="num">Debits</th>
+      <th class="num">Net flow</th><th class="num">Turnover</th><th class="num">Cash dep</th>
+      <th class="num">Cash wdl</th><th class="num">Closing balance</th></tr></thead>
+    <tbody>${st.months.map((mo,i)=>`<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
+        ${cell(st.series['Credits'][i],'crn')}${cell(st.series['Debits'][i],'drn')}
+        ${cell(st.series['Net flow'][i])}${cell(st.turnover[i])}
+        ${cell(st.series['Cash deposits'][i],'crn')}${cell(st.series['Cash withdrawals'][i],'drn')}
+        ${cell(st.series['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`:'');
+  // Top 10 counterparties, credits and debits side by side — also minimised.
+  const tpOpen = st.tpOpen === true;
+  const ptable = (title, rows, base, cls) => `<div style="min-width:240px;flex:1">
+    <div class="ch" style="margin:0 0 6px">${title}</div>
+    ${rows.length?`<table><thead><tr><th>Party</th><th class="num">Total</th>
+      <th class="num">Share</th></tr></thead><tbody>${
+      rows.map(([nm,v])=>`<tr><td>${esc(nm)}</td><td class="num ${cls}">${inr0(v)}</td>
+        <td class="num">${pct(v,base)}</td></tr>`).join('')}</tbody></table>`
+      :'<div class="meta">No named parties.</div>'}</div>`;
+  const partyTables = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
+      <span>Top 10 parties</span>
+      <button class="ghost tp-tgl" style="font-size:11px;padding:2px 10px;text-transform:none;letter-spacing:0">${tpOpen?'Minimise':'Show'}</button></div>`
+    + (tpOpen?`<div style="display:flex;gap:18px;flex-wrap:wrap">
+      ${ptable('Credits', st.topCr, totC, 'crn')}
+      ${ptable('Debits', st.topDr, totD, 'drn')}</div>`:'');
+  body.innerHTML = `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
+      `<label class="lchip ${st.visible.has(nm)?'':'off'}">
+         <input type="checkbox" data-s="${esc(nm)}" ${st.visible.has(nm)?'checked':''}>
+         <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')+`</div>`
+    + svg + `<div class="dash-tip"></div>` + sumTable + monthTable + partyTables;
+  body.querySelectorAll('.lchip input').forEach(cb=>cb.onchange=()=>{
+    const nm=cb.dataset.s;
+    if(cb.checked) st.visible.add(nm);
+    else if(st.visible.size>1) st.visible.delete(nm);
+    drawDash(host, st);
+  });
+  const tgl = body.querySelector('.mt-tgl');
+  if(tgl) tgl.onclick = ()=>{ st.mtOpen = !mtOpen; drawDash(host, st); };
+  const ptgl = body.querySelector('.tp-tgl');
+  if(ptgl) ptgl.onclick = ()=>{ st.tpOpen = !tpOpen; drawDash(host, st); };
+  const svgEl=body.querySelector('svg'), tip=body.querySelector('.dash-tip'),
+        hg=svgEl.querySelector('.hoverg'), hot=svgEl.querySelector('.hot');
+  const rowEls=[...body.querySelectorAll('.mt-wrap tbody tr')];
+  const hoverAt=i=>{
+    const x=X(i);
+    let h=`<line x1="${x}" x2="${x}" y1="${MT}" y2="${MT+ih}" stroke="#aab2c2" stroke-width="1" stroke-dasharray="3 3"/>`;
+    let rows='';
+    for(const [nm,col] of vis){
+      const v=st.series[nm][i];
+      if(v==null) continue;
+      h+=`<circle cx="${x}" cy="${Y(v)}" r="4" fill="${col}" stroke="#fff" stroke-width="2"/>`;
+      rows+=`<div class="row"><span><span class="sw" style="background:${col}"></span>${esc(nm)}</span>
+        <b style="margin:0">₹${Number(v).toLocaleString('en-IN',{maximumFractionDigits:0})}</b></div>`;
+    }
+    hg.innerHTML=h;
+    tip.innerHTML=`<b>${mlabel(st.months[i])}</b>`+(rows||'<div class="row">no data this month</div>');
+    tip.style.display='block';
+    const bw=body.clientWidth, tx=(x/W)*bw;
+    tip.style.left=Math.min(Math.max(tx+14,0), Math.max(bw-170,0))+'px';
+    tip.style.top='34px';
+    rowEls.forEach(r=>r.classList.toggle('hl', +r.dataset.i===i));
+  };
+  const clearHover=()=>{ hg.innerHTML=''; tip.style.display='none';
+    rowEls.forEach(r=>r.classList.remove('hl')); };
+  hot.addEventListener('mousemove',ev=>{
+    const r=svgEl.getBoundingClientRect();
+    const px=(ev.clientX-r.left)*W/r.width;
+    let i=Math.round((px-ML)/(iw/(st.months.length-1)));
+    hoverAt(Math.max(0,Math.min(st.months.length-1,i)));
+  });
+  hot.addEventListener('mouseleave',clearHover);
+  rowEls.forEach(r=>r.addEventListener('mouseenter',()=>hoverAt(+r.dataset.i)));
+  const mtw=body.querySelector('.mt-wrap');
+  if(mtw) mtw.addEventListener('mouseleave',clearHover);
 }
 
 async function refresh(){
@@ -735,7 +1107,24 @@ async function dl(id, acct, fmt){
    row broke the chain, what the statement said, and what the arithmetic
    required. Marking an upload reviewed records that a person looked — it
    never rewrites the validation result, so a failed chain still reads failed. */
+let RVC = null;                              // review context: {id, acct}
+/* Admin feedback on a reconciliation issue: "how this should be handled",
+   recorded through the same corrections endpoint as row relabels — one
+   training pipeline, one export. */
+function issueFeedback(el){
+  if(!RVC) return;
+  const d = el.dataset.detail || '';
+  const v = (prompt('How should this be handled?\n\n'+d, '')||'').trim();
+  if(!v) return;
+  api(`/jobs/${RVC.id}/corrections`, {method:'POST',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify({description:(d||'reconciliation issue').slice(0,300),
+                          account:RVC.acct, note:v, source:'reconciliation'})})
+    .then(()=>{ el.textContent='feedback recorded'; el.classList.remove('fixable'); refresh(); })
+    .catch(e=>alert('Could not save the feedback: '+e.message));
+}
 async function review(id, acct, name){
+  RVC = {id, acct};
   $('rvTitle').textContent = `${name} — reconciliation`;
   $('rvBody').innerHTML = '<div class="rv-note">Loading…</div>';
   $('rv').showModal();
@@ -760,7 +1149,10 @@ async function review(id, acct, name){
           esc(st.unreadable_pages.join(', '))} could not be read — scanned or image-only.
           Transactions printed there are absent from this report.</code></div>` : ''}
         ${(st.issues||[]).slice(0,200).map(i=>`<div class="rv-issue">
-          <span class="k">${esc(i.kind||'')}</span><code>${esc(i.detail||'')}</code></div>`).join('')}
+          <span class="k">${esc(i.kind||'')}</span><code>${esc(i.detail||'')}</code>${
+          IS_ADMIN?` <span class="fixable" style="font-size:11px;color:var(--golddark)"
+            title="Record how this should be handled — training feedback"
+            data-detail="${esc(i.detail||'')}" onclick="issueFeedback(this)">feedback</span>`:''}</div>`).join('')}
         ${(st.issues||[]).length>200?`<div class="rv-issue"><span class="k">…</span>
           <code>${nfmt(st.issues.length-200)} further issues — download the JSON report for all of them</code></div>`:''}
       </div>`).join('');
@@ -770,7 +1162,7 @@ async function review(id, acct, name){
 }
 
 async function markReviewed(id){
-  const note = ($('rvNote')||{}).value || '';
+  const note = ($('rvNote-'+id)||{}).value || '';
   try{
     await api(`/jobs/${id}/review`, {method:'POST',
       headers:{'content-type':'application/json'}, body: JSON.stringify({note})});
@@ -785,18 +1177,19 @@ let PV = null;                               // {id, acct, bank, rows}
 function pvCatCell(r, i){
   const flag = r.confidence==='low' ? ' <span class="rvw">review</span>' : '';
   if(!IS_ADMIN)
-    return `${esc(r.category)}${r.detail?`<span class="dtl"> · ${esc(r.detail)}</span>`:''}${flag}`;
+    return `${esc(catLabel(r.category))}${r.detail?`<span class="dtl"> · ${esc(r.detail)}</span>`:''}${flag}`;
   const party = r.detail
     ? `<span class="dtl"> · <span class="fixable" title="Record the correct party" onclick="fixRow(${i},'party')">${esc(r.detail)}</span></span>`
     : ` <span class="dtl"><span class="fixable" title="Record the correct party" onclick="fixRow(${i},'party')">+ party</span></span>`;
-  return `<span class="fixable" title="Record the correct category" onclick="fixRow(${i},'category')">${esc(r.category)}</span>`
+  return `<span class="fixable" title="Record the correct category" onclick="fixRow(${i},'category')">${esc(catLabel(r.category))}</span>`
        + party + flag + `<span id="pvfix${i}"></span>`;
 }
 function fixRow(i, field){
   const r = ((PV||{}).rows||[])[i]; if(!r) return;
   const body = {description:r.description, amount:r.amount, bank:PV.bank,
                 account:PV.acct, old_category:r.category||'',
-                old_party:r.detail||'', new_category:'', new_party:''};
+                old_party:r.detail||'', new_category:'', new_party:'',
+                source:'preview'};
   if(field==='category'){
     const v = (prompt('Corrected category for:\n'+r.description, r.category||'')||'').trim();
     if(!v || v===r.category) return;
@@ -839,7 +1232,7 @@ async function preview(id, acct, name, bank){
   $('pvBody').innerHTML = banner + corrHint + `<table><thead><tr><th>Date</th><th>Description</th>
       <th class="num">Amount</th><th>Category · party</th><th class="num">Balance</th></tr></thead><tbody>`+
     data.rows.map((r,i)=>`<tr class="${r.confidence==='low'?'lowrow':''}"><td style="white-space:nowrap">${esc(r.date)}</td>
-      <td>${esc(r.description)}</td><td class="num">${fmtAmt(r.amount)}</td>
+      <td>${esc(r.description)}</td><td class="num ${r.amount<0?'drn':'crn'}">${fmtAmt(r.amount)}</td>
       <td>${pvCatCell(r,i)}</td>
       <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')+
     '</tbody></table>';

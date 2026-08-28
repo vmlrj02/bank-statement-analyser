@@ -323,6 +323,34 @@ def write_workbook(result: JobResult, path: str) -> None:
         for party in sorted(by_party, key=lambda p: -by_party[p])[:10]:
             ws.append([party, round(by_party[party], 2), counts[party]])
 
+    # --- Top 10 parties PER MONTH, by direction (same fuzzy grouping) ---
+    for name, want_credit in (("Top 10 Credits MoM", True),
+                              ("Top 10 Debits MoM", False)):
+        ws = wb.create_sheet(name)
+        ws.append(["Month", "Rank", "Party", "Amount", "Count",
+                   "% of Month " + ("Credits" if want_credit else "Debits")])
+        for c in ws[1]:
+            c.font = bold
+        per_month: dict[str, dict[str, list]] = {}
+        month_total: dict[str, float] = defaultdict(float)
+        for t in txns:
+            if (t.amount > 0) != want_credit:
+                continue
+            mk = t.date[:7]
+            month_total[mk] += abs(t.amount)
+            if not t.counterparty:
+                continue
+            label = group_label.get(party_key(t.counterparty), t.counterparty)
+            rec = per_month.setdefault(mk, {}).setdefault(label, [0.0, 0])
+            rec[0] += abs(t.amount)
+            rec[1] += 1
+        for mk in sorted(per_month):
+            ranked = sorted(per_month[mk].items(), key=lambda kv: -kv[1][0])[:10]
+            for rank, (party, (amt, n)) in enumerate(ranked, start=1):
+                base = month_total[mk]
+                ws.append([mk, rank, party, round(amt, 2), n,
+                           round(100 * amt / base, 1) if base else 0.0])
+
     # --- Top 10 single transactions, by direction ---
     for name, want_credit in (("Top 10 Credits(Consolidated)", True),
                               ("Top 10 Debits(Consolidated)", False)):
