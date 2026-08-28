@@ -309,6 +309,16 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   padding:4px 13px;font-size:9.5px;font-weight:800;letter-spacing:.09em;
   text-transform:uppercase;color:var(--golddark)}
 .h-card,.ghost,.go,.lchip{transition:background .12s,box-shadow .12s,color .12s,border-color .12s}
+/* Range chips + clickable tiles */
+.rchip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:3px 11px;
+  font-size:11px;cursor:pointer;color:var(--mut);font-family:inherit;
+  transition:background .12s,color .12s,border-color .12s}
+.rchip:hover{border-color:var(--line2)}
+.rchip.act{background:var(--navy);color:#fff;border-color:var(--navy)}
+.tile.clk{cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.tile.clk:hover{border-color:var(--line2)}
+.tile.clk.act{border-color:var(--gold);box-shadow:0 0 0 2px var(--goldpale)}
+.mt-wrap tbody tr{cursor:pointer}
 @media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}
   main,aside{grid-column:auto;grid-row:auto}
   aside{position:static;max-height:none;display:block}}
@@ -726,6 +736,13 @@ function bankBadge(bank){
   return `<span class="bklogo" style="background:${color}">${esc(code)}</span>`;
 }
 const monYY = iso => { const [y,m]=String(iso).split('-'); return MON[+m-1]+' '+y.slice(2); };
+/* Compact bank names for narrow spots (sidebar), so the last-4 digits never
+   truncate. The full name still shows on the account card. */
+const BANK_SHORT = [
+  [/equitas/i,'Equitas SFB'], [/au small/i,'AU SFB'], [/state bank/i,'SBI'],
+  [/punjab national/i,'PNB'], [/union bank/i,'Union Bank'], [/vasavi/i,'Vasavi MSCM'],
+];
+const bankShort = b => { const hit=BANK_SHORT.find(([re])=>re.test(b||'')); return hit?hit[1]:(b||''); };
 /* Start / end / gaps / span from the collapsed period ranges. */
 function periodStats(ps){
   if(!(ps||[]).length) return null;
@@ -902,7 +919,7 @@ function render(){
             <div class="h-av" style="background:${color}">${esc(code)}</div>
             <div>
               <div class="h-hold">${esc(a.holder||a.bank||'Account')}</div>
-              <div class="h-bank">${esc(a.bank||'')}${a.account_no?` · ${esc(acctNo(a.account_no))}`:''}</div>
+              <div class="h-bank">${esc(bankShort(a.bank))}${a.account_no?` · ${esc(acctNo(a.account_no))}`:''}</div>
             </div>
           </div>
           <div class="h-cov">${ps?`<b>${esc(monYY(ps.start))} – ${esc(monYY(ps.end))}</b> · `:''}${nfmt(e.statements)} stmt${e.statements===1?'':'s'} · ${nfmt(e.pages)} pg</div>
@@ -1018,20 +1035,33 @@ async function loadDash(e){
 
 function drawDash(host, st){
   const body = host.querySelector('.dash-body');
-  if(st.months.length<2){
-    body.innerHTML = '<div class="meta">Not enough months to chart yet — needs at least two.</div>';
+  // Even a single-month account gets the FULL dashboard — tiles, totals,
+  // tables; the chart simply shows dot markers instead of lines. Only a
+  // report with no dated rows at all falls back to a message.
+  if(!st.months.length){
+    body.innerHTML = '<div class="meta">No dated transactions to chart in this report.</div>';
     return;
   }
+  // Time-range window (All / 12M / 6M / 3M): everything below — chart, tiles,
+  // month table — is computed over the sliced view, so the range chips act
+  // like a dashboard-wide filter. Top-10 parties stay whole-period (their
+  // per-month detail lives in the Excel MoM sheets).
+  const n0 = st.months.length;
+  const win = (st.range && st.range!=='all') ? Math.min(n0, st.range) : n0;
+  const i0 = n0 - win;
+  const MO = st.months.slice(i0);
+  const SE = {}; for(const [snm] of DASH_SERIES) SE[snm] = st.series[snm].slice(i0);
+  const TU = st.turnover.slice(i0);
   const W=760, H=280, ML=58, MR=112, MT=14, MB=30;
   const iw=W-ML-MR, ih=H-MT-MB;
   const vis = DASH_SERIES.filter(s=>st.visible.has(s[0]));
-  const vals = vis.flatMap(s=>st.series[s[0]]).filter(v=>v!=null);
+  const vals = vis.flatMap(s=>SE[s[0]]).filter(v=>v!=null);
   let lo=Math.min(0,...vals), hi=Math.max(1,...vals);
   const pad=(hi-lo)*0.06; hi+=pad; if(lo<0) lo-=pad;
-  const X=i=>ML+i*iw/(st.months.length-1);
+  const X=i=>ML+(MO.length===1?iw/2:i*iw/(MO.length-1));
   const Y=v=>MT+ih-((v-lo)/(hi-lo))*ih;
   const mlabel=mo=>{const [y,m]=mo.split('-');return MON[+m-1]+' '+y.slice(2);};
-  const step=Math.ceil(st.months.length/8);
+  const step=Math.ceil(MO.length/8);
   let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly trends">`;
   for(let i=0;i<=4;i++){
     const t=lo+(hi-lo)*i/4;
@@ -1039,10 +1069,10 @@ function drawDash(host, st){
        +`<text x="${ML-8}" y="${Y(t)+3.5}" text-anchor="end" font-size="10" fill="#8b93a5">${inrShort(t)}</text>`;
   }
   if(lo<0) svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(0)}" y2="${Y(0)}" stroke="#aab2c2" stroke-width="1"/>`;
-  st.months.forEach((mo,i)=>{ if(i%step===0||i===st.months.length-1)
+  MO.forEach((mo,i)=>{ if(i%step===0||i===MO.length-1)
     svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#8b93a5">${mlabel(mo)}</text>`;});
   for(const [nm,col] of vis){
-    const pts=st.series[nm]; let d='', pen=false;
+    const pts=SE[nm]; let d='', pen=false;
     pts.forEach((v,i)=>{ if(v==null){pen=false;return;}
       d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true;});
     svg+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
@@ -1051,13 +1081,12 @@ function drawDash(host, st){
       +`<text x="${X(li)+7}" y="${Y(pts[li])+3.5}" font-size="10" fill="#5a6478">${nm}</text>`;
   }
   svg+=`<g class="hoverg"></g><rect class="hot" x="${ML}" y="${MT}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
-  // Totals: credit / debit / turnover / cash, total and per-month average
-  // (over months that actually have data — an empty gap month dilutes nothing).
+  // Totals over the visible window: credit / debit / turnover / cash.
   const inr0 = v=>'₹'+Number(v).toLocaleString('en-IN',{maximumFractionDigits:0});
-  const nData = st.months.filter((m,i)=>st.series['Credits'][i]!=null).length || 1;
-  const tot = nm => st.series[nm].reduce((s,v)=>s+(v||0),0);
+  const nData = MO.filter((m,i)=>SE['Credits'][i]!=null).length || 1;
+  const tot = nm => SE[nm].reduce((s,v)=>s+(v||0),0);
   const totC = tot('Credits'), totD = tot('Debits');
-  const totT = st.turnover.reduce((s,v)=>s+(v||0),0);
+  const totT = TU.reduce((s,v)=>s+(v||0),0);
   const totCd = tot('Cash deposits'), totCw = tot('Cash withdrawals');
   const pct = (v,base) => base ? (100*v/base).toFixed(1)+'%' : '—';
   // ONE dashboard band instead of two tables: hero tiles for the money
@@ -1068,17 +1097,20 @@ function drawDash(host, st){
   const reads = ((aa && aa.credit_summary && aa.credit_summary.reads)||[])
       .map(r=>`<li>${esc(r)}</li>`).join('');
   const aps = aa ? periodStats(aa.periods) : null;
-  const hero = (label, v, cls, sub, meterPct, meterCls) => `<div class="tile">
+  // A hero tile with a `series` name doubles as a chart control: clicking it
+  // toggles that line, and the tile glows gold while its line is shown.
+  const hero = (label, v, cls, sub, meterPct, meterCls, series) => `<div class="tile${
+      series?` clk${st.visible.has(series)?' act':''}" data-s="${esc(series)}`:''}">
       <span class="tl">${label}</span><b class="${cls||''}">${inr0(v)}</b>
       ${meterPct!=null?`<div class="meter ${meterCls||''}"><i style="width:${Math.min(100,meterPct).toFixed(1)}%"></i></div>`:''}
       <i>${sub}</i></div>`;
   const small = (label, val) => `<div class="tile"><span class="tl">${label}</span><b>${val}</b></div>`;
   const heroRow = `<div class="tiles">
-    ${hero('Credits', totC, 'crn', inr0(totC/nData)+' / mo avg')}
-    ${hero('Debits', totD, 'drn', inr0(totD/nData)+' / mo avg')}
+    ${hero('Credits', totC, 'crn', inr0(totC/nData)+' / mo avg', null, null, 'Credits')}
+    ${hero('Debits', totD, 'drn', inr0(totD/nData)+' / mo avg', null, null, 'Debits')}
     ${hero('Turnover · excl. loan &amp; salary', totT, '', pct(totT,totC)+' of credits · '+inr0(totT/nData)+' / mo', totC?100*totT/totC:null)}
-    ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g')}
-    ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r')}
+    ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g', 'Cash deposits')}
+    ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r', 'Cash withdrawals')}
     ${m?hero('Monthly surplus', m.monthly_surplus, (m.monthly_surplus||0)<0?'drn':'crn',
       'debt-svc cover '+(m.servicing_coverage==null?'—':m.servicing_coverage+'×')):''}
   </div>`;
@@ -1113,11 +1145,11 @@ function drawDash(host, st){
     <thead><tr><th>Month</th><th class="num">Credits</th><th class="num">Debits</th>
       <th class="num">Net flow</th><th class="num">Turnover</th><th class="num">Cash dep</th>
       <th class="num">Cash wdl</th><th class="num">Closing balance</th></tr></thead>
-    <tbody>${st.months.map((mo,i)=>`<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
-        ${cell(st.series['Credits'][i],'crn')}${cell(st.series['Debits'][i],'drn')}
-        ${cell(st.series['Net flow'][i])}${cell(st.turnover[i])}
-        ${cell(st.series['Cash deposits'][i],'crn')}${cell(st.series['Cash withdrawals'][i],'drn')}
-        ${cell(st.series['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`:'');
+    <tbody>${MO.map((mo,i)=>`<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
+        ${cell(SE['Credits'][i],'crn')}${cell(SE['Debits'][i],'drn')}
+        ${cell(SE['Net flow'][i])}${cell(TU[i])}
+        ${cell(SE['Cash deposits'][i],'crn')}${cell(SE['Cash withdrawals'][i],'drn')}
+        ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`:'');
   // Top 10 counterparties, credits and debits side by side — also minimised.
   const tpOpen = st.tpOpen === true;
   const ptable = (title, rows, base, cls) => `<div style="min-width:240px;flex:1">
@@ -1133,15 +1165,30 @@ function drawDash(host, st){
     + (tpOpen?`<div style="display:flex;gap:18px;flex-wrap:wrap">
       ${ptable('Credits', st.topCr, totC, 'crn')}
       ${ptable('Debits', st.topDr, totD, 'drn')}</div>`:'');
+  const RANGES = [['3',3],['6',6],['12',12],['All','all']];
+  const curRange = st.range || 'all';
   body.innerHTML = `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
       `<label class="lchip ${st.visible.has(nm)?'':'off'}">
          <input type="checkbox" data-s="${esc(nm)}" ${st.visible.has(nm)?'checked':''}>
-         <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')+`</div>`
+         <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')
+    + `<span style="margin-left:auto;display:inline-flex;gap:5px">`
+    + RANGES.map(([lbl,val])=>`<button class="rchip ${String(curRange)===String(val)?'act':''}"
+         data-r="${val}">${lbl==='All'?'All':lbl+'M'}</button>`).join('')+`</span></div>`
     + svg + `<div class="dash-tip"></div>` + sumTable + monthTable + partyTables;
   body.querySelectorAll('.lchip input').forEach(cb=>cb.onchange=()=>{
     const nm=cb.dataset.s;
     if(cb.checked) st.visible.add(nm);
     else if(st.visible.size>1) st.visible.delete(nm);
+    drawDash(host, st);
+  });
+  body.querySelectorAll('.rchip').forEach(b=>b.onclick=()=>{
+    st.range = b.dataset.r==='all' ? 'all' : +b.dataset.r;
+    drawDash(host, st);
+  });
+  body.querySelectorAll('.tile.clk').forEach(t=>t.onclick=()=>{
+    const nm=t.dataset.s;
+    if(st.visible.has(nm)){ if(st.visible.size>1) st.visible.delete(nm); }
+    else st.visible.add(nm);
     drawDash(host, st);
   });
   const tgl = body.querySelector('.mt-tgl');
@@ -1151,37 +1198,61 @@ function drawDash(host, st){
   const svgEl=body.querySelector('svg'), tip=body.querySelector('.dash-tip'),
         hg=svgEl.querySelector('.hoverg'), hot=svgEl.querySelector('.hot');
   const rowEls=[...body.querySelectorAll('.mt-wrap tbody tr')];
-  const hoverAt=i=>{
+  // st.pinAbs holds a PINNED month (absolute index): click a month on the
+  // chart or in the table to hold the crosshair while comparing; click the
+  // same month again to release. Survives range switches when still visible.
+  const pinView = ()=> (st.pinAbs!=null && st.pinAbs>=i0 && st.pinAbs<n0) ? st.pinAbs-i0 : null;
+  const hoverAt=(i,pinned)=>{
     const x=X(i);
-    let h=`<line x1="${x}" x2="${x}" y1="${MT}" y2="${MT+ih}" stroke="#aab2c2" stroke-width="1" stroke-dasharray="3 3"/>`;
+    let h=`<line x1="${x}" x2="${x}" y1="${MT}" y2="${MT+ih}" stroke="${pinned?'#b9902e':'#aab2c2'}"
+      stroke-width="${pinned?1.5:1}" stroke-dasharray="${pinned?'':'3 3'}"/>`;
     let rows='';
     for(const [nm,col] of vis){
-      const v=st.series[nm][i];
+      const v=SE[nm][i];
       if(v==null) continue;
       h+=`<circle cx="${x}" cy="${Y(v)}" r="4" fill="${col}" stroke="#fff" stroke-width="2"/>`;
       rows+=`<div class="row"><span><span class="sw" style="background:${col}"></span>${esc(nm)}</span>
         <b style="margin:0">₹${Number(v).toLocaleString('en-IN',{maximumFractionDigits:0})}</b></div>`;
     }
     hg.innerHTML=h;
-    tip.innerHTML=`<b>${mlabel(st.months[i])}</b>`+(rows||'<div class="row">no data this month</div>');
+    tip.innerHTML=`<b>${mlabel(MO[i])}${pinned?' · pinned':''}</b>`
+      +(rows||'<div class="row">no data this month</div>');
     tip.style.display='block';
     const bw=body.clientWidth, tx=(x/W)*bw;
     tip.style.left=Math.min(Math.max(tx+14,0), Math.max(bw-170,0))+'px';
     tip.style.top='34px';
     rowEls.forEach(r=>r.classList.toggle('hl', +r.dataset.i===i));
   };
-  const clearHover=()=>{ hg.innerHTML=''; tip.style.display='none';
-    rowEls.forEach(r=>r.classList.remove('hl')); };
-  hot.addEventListener('mousemove',ev=>{
+  const restore=()=>{
+    const p = pinView();
+    if(p!=null) hoverAt(p, true);
+    else{ hg.innerHTML=''; tip.style.display='none';
+      rowEls.forEach(r=>r.classList.remove('hl')); }
+  };
+  const idxFromEvent=ev=>{
     const r=svgEl.getBoundingClientRect();
     const px=(ev.clientX-r.left)*W/r.width;
-    let i=Math.round((px-ML)/(iw/(st.months.length-1)));
-    hoverAt(Math.max(0,Math.min(st.months.length-1,i)));
+    const i=Math.round((px-ML)/(iw/Math.max(1,MO.length-1)));
+    return Math.max(0,Math.min(MO.length-1,i));
+  };
+  hot.addEventListener('mousemove',ev=>hoverAt(idxFromEvent(ev)));
+  hot.addEventListener('mouseleave',restore);
+  hot.addEventListener('click',ev=>{
+    const abs=i0+idxFromEvent(ev);
+    st.pinAbs = (st.pinAbs===abs) ? null : abs;
+    restore(); if(st.pinAbs==null) hoverAt(idxFromEvent(ev));
   });
-  hot.addEventListener('mouseleave',clearHover);
-  rowEls.forEach(r=>r.addEventListener('mouseenter',()=>hoverAt(+r.dataset.i)));
+  rowEls.forEach(r=>{
+    r.addEventListener('mouseenter',()=>hoverAt(+r.dataset.i));
+    r.addEventListener('click',()=>{
+      const abs=i0+ +r.dataset.i;
+      st.pinAbs = (st.pinAbs===abs) ? null : abs;
+      restore();
+    });
+  });
   const mtw=body.querySelector('.mt-wrap');
-  if(mtw) mtw.addEventListener('mouseleave',clearHover);
+  if(mtw) mtw.addEventListener('mouseleave',restore);
+  restore();                            // re-show a surviving pin after redraw
 }
 
 async function refresh(){
