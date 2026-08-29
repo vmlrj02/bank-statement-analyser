@@ -54,7 +54,7 @@ CASES = [
     # Debt obligations
     ("ACH-D BAJAJ FINANCE EMI", -25000, "EMI transaction", "Loan EMIs"),
     ("CRED CC BILL PAYMENT", -31000, "Regular debit", "Credit Card Payments"),
-    ("INT DR OD ACCOUNT", -12000, "Interest payments",
+    ("INT DR OD ACCOUNT", -12000, "Interest / fee payments",
      "OD / CC Interest & Renewal Fees"),
     # Banking friction — a bank penalty and a statutory one are different reads.
     ("MIN BAL NON-MAINT CHG", -236, "other penal charges",

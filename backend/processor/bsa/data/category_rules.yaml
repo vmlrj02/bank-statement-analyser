@@ -7,7 +7,7 @@
 # review docs ID1–ID8. When the master changes, change this file.
 
 # NBFC / lending-company name fragments. A DEBIT that names one of these is a
-# loan servicing payment — an EMI if it recurs, otherwise an "Interest payments"
+# loan servicing payment — an EMI if it recurs, otherwise an "Interest / fee payments"
 # (the master: "non-emi payments to NBFCs"). A CREDIT that names one is a loan
 # disbursal. Matched case-insensitively, spaces ignored, anywhere in narration.
 lenders:

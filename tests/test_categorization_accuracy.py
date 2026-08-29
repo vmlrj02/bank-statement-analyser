@@ -34,14 +34,14 @@ def _categorize_one(desc, amount):
 # amount sign encodes debit/credit; party is checked only when given.
 CASES = [
     # --- Interest: sign decides received vs payments (ID6/ID8) ---
-    ("SB/925010000665679:Int.Pd:03-01-2025 to 31-", -7000.0, "Interest payments", None),
-    ("SB/925010000665679:Int.Pd:01-04-2025 to 30-", -400.0, "Interest payments", None),
+    ("SB/925010000665679:Int.Pd:03-01-2025 to 31-", -7000.0, "Interest / fee payments", None),
+    ("SB/925010000665679:Int.Pd:01-04-2025 to 30-", -400.0, "Interest / fee payments", None),
     ("Int.Pd on Savings", 120.0, "Interest received", None),
-    ("DEBIT INTEREST- /", -456845.0, "Interest payments", None),
+    ("DEBIT INTEREST- /", -456845.0, "Interest / fee payments", None),
     ("CREDIT INTEREST", 500.0, "Interest received", None),
 
-    # --- NBFC / lender names (ID8: EMI or Interest payments on debit; disbursal on credit) ---
-    ("BIL/BPAY/00000018WXN7/BBPS/KinaraCapital/WC", -71007.0, "Interest payments", "Kinara Capital"),
+    # --- NBFC / lender names (ID8: EMI or Interest / fee payments on debit; disbursal on credit) ---
+    ("BIL/BPAY/00000018WXN7/BBPS/KinaraCapital/WC", -71007.0, "Interest / fee payments", "Kinara Capital"),
     ("ACH/CLIXCAPITALSERVICE/ICIC0000000016310674/TXNR", -36938.0, "EMI transaction", None),
     ("ECS/UTIBDE11165163202409/Bajaj Finance Ltd_SMS OT", -128182.0, "EMI transaction", "Bajaj Finance Ltd"),
     ("INDIA/INBSGROYAL CAPITAL PRIVATE L UPI/P2A/847055627294/Bank Account", 943725.0, "Loan amount disbursal", "Royal Capital"),

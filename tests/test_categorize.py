@@ -16,9 +16,9 @@ def txn(desc, amount, mode="other"):
 def test_od_interest_debit_is_interest_payments_not_regular():
     """SBI prints "DEBIT INTEREST- /" on an OD account every month-end; a
     lender reads that as cost of borrowing, not an ordinary transfer. The master
-    renamed this category "Interest payments" (ID8)."""
+    renamed this category "Interest / fee payments" (ID8)."""
     t = categorize([txn("DEBIT INTEREST- /", -456845.00)])[0]
-    assert t.category == "Interest payments"
+    assert t.category == "Interest / fee payments"
 
 
 def test_interest_received_is_untouched_by_the_debit_rule():
@@ -36,7 +36,7 @@ def test_by_cash_credit_is_a_cash_deposit():
 
 def test_interest_payments_detail_reads_as_itself():
     t = categorize([txn("DEBIT INTEREST- /", -1000.0)])[0]
-    assert category_detail(t) == "Interest payments"
+    assert category_detail(t) == "Interest / fee payments"
 
 
 def test_atm_withdrawal_with_hyphen_form():

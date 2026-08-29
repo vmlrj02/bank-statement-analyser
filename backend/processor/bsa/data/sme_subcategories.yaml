@@ -125,7 +125,7 @@ debit:
   - name: OD / CC Interest & Renewal Fees
     group: Debt Obligations (Fixed)
     sheet: EMI Xns
-    tags: [Interest payments]
+    tags: [Interest / fee payments]
     patterns: [INT DR, ANNUAL RENEWAL, RENEWAL CHG, PROCESSING FEE,
                INTEREST DEBIT, OD INT, CC INT]
 
@@ -252,7 +252,7 @@ defaults:
   cash deposit: Direct Cash Deposits
   cash withdrawal: Cash Withdrawals (High Value)
   EMI transaction: Loan EMIs
-  Interest payments: OD / CC Interest & Renewal Fees
+  Interest / fee payments: OD / CC Interest & Renewal Fees
   Loan amount disbursal: Loan Disbursal
   Salary paid: Payroll & Wages
   Interest received: Interest & Treasury Income

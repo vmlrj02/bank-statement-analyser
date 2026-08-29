@@ -61,7 +61,7 @@ to confirm or reverse:
 1. **A lender debit defaults to `EMI transaction` however it was paid.** A
    one-off UPI/IMPS debit to an NBFC is overwhelmingly an EMI paid by hand —
    in the sampled statements it appears right after the NACH pull bounced. The
-   reviewer's "non-EMI payments to NBFCs are Interest payments" (ID8) is kept
+   reviewer's "non-EMI payments to NBFCs are Interest / fee payments" (ID8) is kept
    for BBPS bill-pay rows (the pinned Kinara case) and for narrations that say
    interest.
 2. **ECS/NACH return charges are `inward bounce penal charges`** ("ECS Return

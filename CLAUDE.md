@@ -63,8 +63,10 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
 3. Bundling pip needs --retries 10 --timeout 60 (flaky connection).
 4. The release gate is validate.py: running-balance reconciliation on every row.
    Any parser/LLM change must keep sample statements at "passed".
-5. Categorization = SME lending taxonomy (EMI/ECS/cash/bounce/disbursal/
-   Interest received/Interest payments/related-party/regular transfers), tiers:
+5. Categorization = SME lending taxonomy (EMI, ECS, cash, bounce, disbursal,
+   "Interest received", "Interest / fee payments", related-party, regular
+   transfers — the eighteen tag names are the customer's, spelled exactly as
+   the "Category (ABCL)" tab of the labelling master spells them), tiers:
    rules → NACH recurrence → merchant dictionary → LLM. Don't replace with
    consumer spend categories. The fuzzy vocabulary — NBFC/lender names, penal
    vs non-penal charge phrases, cash-deposit spellings — lives in DATA
@@ -168,6 +170,23 @@ their own uploads and never the AI block.
     updated_at. The sweeper measures staleness from that, never from
     created_at: a twenty-file job legitimately runs for a long time after it
     was created.
+19. A PROTECTED statement carries its password in its own FILE NAME, and
+    ingest.password_candidates() reads it — "Acct Statement pass - 43888983",
+    "PSW-176284535-…", "Password -JAME1982", and sometimes the name simply IS
+    the password ("133591747.pdf"). All 25 protected files in the sample
+    corpus open this way with nothing typed. Two rules keep it safe: a
+    candidate is only ever tried AFTER the file has already refused to open
+    (so an unprotected statement never pays for it, and a wrong guess costs
+    one cheap pikepdf open), and a password the person typed is tried first.
+    The original name must be passed as `filename=` because in Lambda the path
+    is a scratch "/tmp/…/in.pdf".
+    The upload screen therefore does NOT ask up front. isEncrypted() in the
+    frontend is a byte scan for "/Encrypt" that a PDF 1.5+ file hides in a
+    compressed xref and that an EMPTY-password file carries while opening
+    fine — wrong in both directions, and the source of the "our app is asking
+    for a password on a file that isn't protected" report. Only a file that
+    genuinely cannot be opened comes back asking, as Unlock inside its own
+    failure.
 
 ## Workbook = the customer's template, sheet for sheet
 
@@ -334,21 +353,42 @@ to a human underwriter, not an accusation. A ModDate after CreationDate is
 carried as information only (genuine statements are routinely re-saved), NEVER a
 review trigger. Pinned by tests/test_integrity.py.
 
-Registry as it stands — 12 layouts across 6 banks (bank != layout; ICICI alone
-exports five different shapes, so "we support ICICI" is not a meaningful claim):
+Registry as it stands — 31 layouts across 14 banks. Bank != layout:
+ICICI alone exports six different shapes and SBI seven, which is why "we
+support ICICI" is not a meaningful claim — a layout is matched by its page-1
+fingerprint, not by the bank's name:
 
-    Axis Bank                      Account Statement           generic
-    Axis Bank                      Statement of Account        generic
-    Equitas Small Finance Bank     Statement of Account        columnar
-    HDFC Bank                      Statement of account        generic
-    ICICI Bank                     Account statement           columnar
-    ICICI Bank                     Combined Account Statement  generic
-    ICICI Bank                     Detailed Statement          columnar
-    ICICI Bank                     OpTransactionHistory        module
-    State Bank of India            Account Statement (OD)      generic
-    State Bank of India            Internet banking            generic
-    State Bank of India            Passbook savings (multi-token date) generic
-    Vasavi MSCM Co-operative Bank  Account Statement           grouped
+    AU Small Finance Bank          Statement (Perfios)                 columnar
+    Axis Bank                      Account Statement Report            module
+    Axis Bank                      Axis Account Statement              generic
+    Axis Bank                      Cash Credit Statement               generic
+    Axis Bank                      Statement of Account                generic
+    City Union Bank                Statement of Account                generic
+    Equitas Small Finance Bank     Statement of Account                columnar
+    HDFC Bank                      Statement of account                generic
+    ICICI Bank                     Account Statement                   columnar
+    ICICI Bank                     Combined Account Statement          generic
+    ICICI Bank                     Detailed Statement                  columnar
+    ICICI Bank                     Detailed Statement (net-banking)    generic
+    ICICI Bank                     Monthly Statement                   generic
+    ICICI Bank                     OpTransactionHistory                module
+    IDFC FIRST Bank                Statement of Account                generic
+    Indian Overseas Bank           Account Statement                   generic
+    IndusInd Bank                  Account Statement                   generic
+    IndusInd Bank                  Account Statement (bank-reference)  generic
+    Punjab National Bank           Account Statement (current)         generic
+    Punjab National Bank           Statement of Account                generic
+    Punjab National Bank           Statement of Account                generic
+    State Bank of India            Account Statement                   generic
+    State Bank of India            Account Statement                   generic
+    State Bank of India            Savings statement                   generic
+    State Bank of India            Savings-cheque statement            generic
+    State Bank of India            Statement of Account                generic
+    State Bank of India            Statement of Account (SB)           generic
+    State Bank of India            Statement of Account (internet)     generic
+    Union Bank of India            Statement of Account                generic
+    Vasavi MSCM Co-operative Bank  Account Statement                   grouped
+    YES Bank                       Statement of Account                generic
 
 A bank with NO layout is refused: the LLM fallback is off by default, and even
 switched on it may only use an in-account provider, which is currently
@@ -370,29 +410,53 @@ failed files are listed on the upload with a plain reason.
 
 ## Current next steps
 
-1. **More bank layouts** (HDFC, Kotak, and whatever else customers send) as
-   YAML descriptors — needs one sample statement per bank. This is now the
-   only thing that scales with the customer list, and with the S3 registry it
-   no longer needs a deploy. It is also the whole answer to an unknown bank,
+1. **The last two of the founder's top seven.** The target list is HDFC,
+   Axis, ICICI, SBI, Kotak, BoB, PNB. Five are done; the gap is:
+   - **Bank of Baroda** — three samples are in hand (Samples-3/bob) and all
+     three currently fail with "no layout". They are clean digital text in a
+     wrapped-cell shape, so this is an ordinary `columnar` descriptor.
+   - **Kotak** — no layout AND no sample anywhere, so this one is blocked on
+     getting a statement, not on us.
+   Also unsupported, with samples in hand: Karnataka Bank (6 files), Deutsche
+   Bank (2), Canara (1). A descriptor is roughly an hour and, with the S3
+   registry, needs no deploy — it is the whole answer to an unknown bank,
    since the LLM fallback is closed by default.
-2. **Bedrock.** Until its Marketplace subscription works on this account there
+2. **PNB mangles wrapped narration** (diagnosed, not yet fixed). PNB wraps the
+   Description cell at its EDGE, mid-token, so one row prints as
+   "UPI/CR/25845" / "9693857/ROS" / "HAN". generic_layout flattens a row's
+   narration lines into one word list and joins with spaces, so the party
+   reads "ROS HAN" and never consolidates with the same party spelled whole
+   elsewhere; "ROSHAN INFRASTRUC TURE" breaks the same way.
+
+   The fix is NOT a blanket no-separator join — PNB wraps mid-token on some
+   lines and at a space on others, and gluing the latter gives "SAHUON
+   &BORWELLS". The geometry tells them apart: a HARD wrap fills the cell to
+   its right edge (~x1 227 on that export), a space wrap stops short ("HAN"
+   ends at 208). So the join must be per-line and edge-aware, which needs the
+   parser to keep each narration line's right edge instead of flattening to
+   words.
+   A second, separate defect on the same layout: pnb_ca_statement's
+   `remarks_x_max: 370` swallows the Branch Name column, which is why every
+   description on that export carries a stray " -".
+
+3. **Bedrock.** Until its Marketplace subscription works on this account there
    is no in-account inference at all, so a bank with no layout cannot be read.
    Unblocking it is a billing task, not a code one.
-3. **Password reset by email.** Sign-in now has throttling, logout and a
+4. **Password reset by email.** Sign-in now has throttling, logout and a
    self-service password change, but a forgotten password still needs an
    operator running scripts/manage_users.py. A real reset needs a verified SES
    identity — a separate decision, not a missing line of code.
-4. ~~Revoke other sessions on a password change.~~ DONE — no GSI was needed:
+5. ~~Revoke other sessions on a password change.~~ DONE — no GSI was needed:
    the USER# row carries a `pwd_version`, each session is stamped with it at
    login, and _session rejects a stale stamp. A password change (API or
    scripts/manage_users.py) bumps the version, killing every other session
    while deliberately re-stamping the one that made the change.
-5. **Sweeper at scale.** The scheduled sweep is a filtered scan of a table
+6. **Sweeper at scale.** The scheduled sweep is a filtered scan of a table
    holding 180 days of jobs. It is projected and runs every 15 minutes, and
    the on-failure destination handles the common case exactly — but if the
    table grows large, set a `live` attribute while a job runs and query a
    sparse index instead of scanning.
-6. **Upload size limits.** Mostly closed: the processor refuses any file whose
+7. **Upload size limits.** Mostly closed: the processor refuses any file whose
    ContentLength exceeds MAX_UPLOAD_BYTES (default 50 MB) as a per-file failure
    before download, and the UI rejects oversize files client-side. What remains
    open is the presigned PUT itself, which still has no byte ceiling at the S3

@@ -26,7 +26,7 @@ FOOTERISH = re.compile(r"page \d+ of|page no|statement of account|opening balanc
                        r"computer generated|do not share|registered office", re.I)
 CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 SIGN_RULES = {"Salary paid": -1, "Salary credited": 1, "cash deposit": 1,
-              "cash withdrawal": -1, "Interest received": 1, "Interest payments": -1,
+              "cash withdrawal": -1, "Interest received": 1, "Interest / fee payments": -1,
               "Loan amount disbursal": 1, "EMI transaction": -1,
               "inward bounce penal charges": -1, "other penal charges": -1,
               "Regular credit": 1, "Regular debit": -1}

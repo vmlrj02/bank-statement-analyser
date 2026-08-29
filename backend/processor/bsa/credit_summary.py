@@ -132,7 +132,7 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
             stability_cv = round((var ** 0.5) / mean, 2)
 
     cash_in = cat_sum("cash deposit")
-    emi_out = cat_sum("EMI transaction") + cat_sum("Interest payments")
+    emi_out = cat_sum("EMI transaction") + cat_sum("Interest / fee payments")
     bounces = (cat_n("inward bounce penal charges") + cat_n("Outward Bounced Xns"))
     penal_total = cat_sum("other penal charges") + cat_sum("inward bounce penal charges") \
         + cat_sum("Outward Bounced Xns")

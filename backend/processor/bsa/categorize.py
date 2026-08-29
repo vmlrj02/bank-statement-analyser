@@ -2,7 +2,7 @@
 (from Banking_pdf_extraction.xlsx "Category list").
 
 Category tags:
-  EMI transaction | Interest received | Interest payments |
+  EMI transaction | Interest received | Interest / fee payments |
   Investment return credited |
   Loan amount disbursal | Salary paid | Salary credited | ECS transaction |
   cash deposit | cash withdrawal | inward bounce penal charges |
@@ -422,7 +422,7 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         elif not credit and _is_penal(d):
             tag = "other penal charges"
         # Interest, split by SIGN (ID6/ID8): a credit is interest RECEIVED, a
-        # debit is an "Interest payments" (OD interest, or a non-EMI payment to
+        # debit is an "Interest / fee payments" (OD interest, or a non-EMI payment to
         # an NBFC). The old rule tagged every "Int.Pd" as received, so interest
         # DEBITS were mislabelled as a credit category. \s* between INTEREST
         # and its verb because HDFC glues them ("INTERESTPAIDTILL30-JUN-2025",
@@ -441,7 +441,7 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                 # "CR INTERIORS"-style names out.
                 r"|\bCR\.?\s*INT\b|INTEREST\s*TRANSFER",
                 d, re.I):
-            tag = "Interest received" if credit else "Interest payments"
+            tag = "Interest received" if credit else "Interest / fee payments"
         # The TDS guard: "TDS Debit against Cash withdrawal on 16022026" is the
         # tax ON a withdrawal (sec 194N), not cash leaving — a Regular debit.
         elif not credit and (t.mode == "atm-cash" or _matched_norm(d, _CASH_WD_KEYS)) \
@@ -472,7 +472,7 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         elif credit and lender:
             tag = "Loan amount disbursal"
         elif not credit and lender:
-            tag = ("Interest payments" if re.search(r"BPAY|BBPS", d, re.I)
+            tag = ("Interest / fee payments" if re.search(r"BPAY|BBPS", d, re.I)
                    else "EMI transaction")
         elif credit and _any(d, [re.escape(x) for x in INVESTMENT_HINTS]):
             tag = "Investment return credited"

@@ -33,7 +33,7 @@ def test_parimal_finance_no_longer_tags_loan(tmp_path):
                            50000.0).category == "Regular credit"
     # lender as the actual counterparty -> still recognised
     assert _categorize_one("NBSM/141757229/L&T FINANCE LTD/", -80513.90).category \
-        in ("EMI transaction", "Interest payments")
+        in ("EMI transaction", "Interest / fee payments")
 
 
 def test_channel_prefix_and_bank_codes_are_not_names():
