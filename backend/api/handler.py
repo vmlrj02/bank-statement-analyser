@@ -24,6 +24,7 @@ import json
 import os
 import secrets
 import time
+import traceback
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -54,7 +55,13 @@ PBKDF2_ROUNDS = 210_000
 # Login throttling. Passwords are the only credential here and the API is
 # public, so an unthrottled /auth/login is an offline-speed online guessing
 # oracle. Counted per email in the same table, expiring on its own TTL.
+# A second, parallel counter is kept per SOURCE IP with a higher threshold:
+# the email counter alone lets one client lock a known address out forever
+# (a denial of service against the admin), while the IP counter alone would
+# miss a distributed guess. Both use the same window and lockout.
 MAX_FAILED_LOGINS = 8
+MAX_FAILED_LOGINS_IP = int(os.environ.get("MAX_FAILED_LOGINS_IP",
+                                          5 * MAX_FAILED_LOGINS))
 LOCKOUT_S = 15 * 60
 FAIL_WINDOW_S = 15 * 60
 MIN_PASSWORD_LEN = 10
@@ -64,10 +71,22 @@ def _fail_key(email: str) -> str:
     return f"LOGIN#{email}"
 
 
-def _lockout_remaining(email: str) -> int:
-    """Seconds this email must wait, or 0. Counts a wrong email too, so a
+def _ip_fail_key(ip: str) -> str:
+    return f"LOGINIP#{ip}"
+
+
+def _source_ip(event) -> str:
+    """The caller's IP as API Gateway HTTP APIs report it; '' when absent
+    (tests, direct invokes) — in which case the IP layer simply does not
+    count, and the per-email layer still applies."""
+    return str((((event or {}).get("requestContext") or {})
+                .get("http") or {}).get("sourceIp") or "")
+
+
+def _lockout_remaining_pk(pk: str) -> int:
+    """Seconds this counter must wait, or 0. Counts a wrong email too, so a
     locked account and an unknown one stay indistinguishable."""
-    it = AUTH.get_item(Key={"pk": _fail_key(email)}).get("Item")
+    it = AUTH.get_item(Key={"pk": pk}).get("Item")
     if not it:
         return 0
     now = int(time.time())
@@ -76,25 +95,37 @@ def _lockout_remaining(email: str) -> int:
     return 0
 
 
-def _record_failure(email: str) -> None:
+def _record_failure_pk(pk: str, limit: int) -> None:
     now = int(time.time())
-    it = AUTH.get_item(Key={"pk": _fail_key(email)}).get("Item") or {}
+    it = AUTH.get_item(Key={"pk": pk}).get("Item") or {}
     # A slow trickle of wrong guesses should not accumulate into a lockout
     # months later, so the count restarts once the window has passed.
     fails = int(it.get("fails", 0)) + 1 if int(it.get("first_at", 0)) > now - FAIL_WINDOW_S else 1
-    item = {"pk": _fail_key(email), "fails": fails,
+    item = {"pk": pk, "fails": fails,
             "first_at": int(it.get("first_at", now)) if fails > 1 else now,
             "ttl": now + LOCKOUT_S + FAIL_WINDOW_S}
-    if fails >= MAX_FAILED_LOGINS:
+    if fails >= limit:
         item["locked_until"] = now + LOCKOUT_S
     AUTH.put_item(Item=item)
 
 
-def _clear_failures(email: str) -> None:
+def _clear_failures_pk(pk: str) -> None:
     try:
-        AUTH.delete_item(Key={"pk": _fail_key(email)})
+        AUTH.delete_item(Key={"pk": pk})
     except Exception:                                       # noqa: BLE001
         pass
+
+
+def _lockout_remaining(email: str) -> int:
+    return _lockout_remaining_pk(_fail_key(email))
+
+
+def _record_failure(email: str) -> None:
+    _record_failure_pk(_fail_key(email), MAX_FAILED_LOGINS)
+
+
+def _clear_failures(email: str) -> None:
+    _clear_failures_pk(_fail_key(email))
 
 
 def hash_password(password: str, salt: str) -> str:
@@ -104,12 +135,16 @@ def hash_password(password: str, salt: str) -> str:
                                PBKDF2_ROUNDS).hex()
 
 
-def _login(body):
+def _login(body, event=None):
     email = str(body.get("email") or body.get("username") or "").strip().lower()
     password = str(body.get("password") or "")
     if not email or not password:
         return _resp(400, {"error": "email and password required"})
-    if wait := _lockout_remaining(email):
+    ip = _source_ip(event)
+    wait = _lockout_remaining(email)
+    if not wait and ip:
+        wait = _lockout_remaining_pk(_ip_fail_key(ip))
+    if wait:
         return _resp(429, {"error": f"too many failed sign-ins — try again in "
                                     f"{max(wait // 60, 1)} minute(s)"})
     user = AUTH.get_item(Key={"pk": f"USER#{email}"}).get("Item")
@@ -120,14 +155,22 @@ def _login(body):
     got = hash_password(password, salt)
     if not user or not hmac.compare_digest(got, expected):
         _record_failure(email)
+        if ip:
+            _record_failure_pk(_ip_fail_key(ip), MAX_FAILED_LOGINS_IP)
         return _resp(401, {"error": "invalid email or password"})
     _clear_failures(email)
+    if ip:
+        _clear_failures_pk(_ip_fail_key(ip))
 
     token = secrets.token_urlsafe(32)
     now = int(time.time())
     AUTH.put_item(Item={
         "pk": f"SESSION#{token}", "email": email,
         "role": user.get("role", "customer"),
+        # The user's password generation at sign-in time. A password change
+        # bumps the user's pwd_version, which makes every session carrying an
+        # older stamp invalid — revocation without a session index.
+        "pwd_version": int(user.get("pwd_version", 1)),
         "created_at": now, "ttl": now + SESSION_TTL,
     })
     return _resp(200, {"token": token, "email": email,
@@ -148,6 +191,16 @@ def _session(event):
     # DynamoDB TTL deletes lazily, so an expired row can still be returned —
     # check the timestamp rather than trusting the row's presence.
     if not it or int(it.get("ttl", 0)) <= int(time.time()):
+        return None, None
+    # The user row is the source of truth for whether this session may live:
+    # a removed user loses their sessions immediately, and a session stamped
+    # with an older pwd_version was issued before the password last changed —
+    # revoked, without needing an index over sessions. One extra get_item per
+    # authenticated request.
+    user = AUTH.get_item(Key={"pk": f"USER#{it.get('email')}"}).get("Item")
+    if not user:
+        return None, None
+    if int(it.get("pwd_version", 1)) < int(user.get("pwd_version", 1)):
         return None, None
     return it.get("email"), it.get("role", "customer")
 
@@ -212,11 +265,25 @@ def _resp(code, body):
 
 
 def lambda_handler(event, _ctx):
+    """Dispatch, wrapped so every response — including a crash — carries the
+    standard JSON + CORS shape. An exception that escaped to API Gateway would
+    come back as a bare 500 without CORS headers, which a browser reports as
+    an opaque network error rather than anything actionable."""
+    try:
+        return _handle(event)
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "request body is not valid JSON"})
+    except Exception:                                       # noqa: BLE001
+        traceback.print_exc()
+        return _resp(500, {"error": "something went wrong — try again"})
+
+
+def _handle(event):
     route = event.get("routeKey", "")
     path_id = (event.get("pathParameters") or {}).get("id")
     qs = event.get("queryStringParameters") or {}
     if route == "POST /auth/login":
-        return _login(json.loads(event.get("body") or "{}"))
+        return _login(json.loads(event.get("body") or "{}"), event)
 
     # Every other route — all of /jobs* — requires a valid session token.
     user_sub, role = _session(event)
@@ -259,18 +326,30 @@ def lambda_handler(event, _ctx):
             _record_failure(user_sub)
             return _resp(401, {"error": "current password is wrong"})
         salt = secrets.token_bytes(16).hex()
+        # Bumping pwd_version revokes every OTHER session for this user:
+        # _session rejects any session stamped with an older version, so no
+        # index over sessions is needed. Absent means 1 (legacy rows).
+        new_version = int(user.get("pwd_version", 1)) + 1
         AUTH.update_item(
             Key={"pk": f"USER#{user_sub}"},
-            UpdateExpression="SET salt = :s, #h = :h, #r = :r",
+            UpdateExpression="SET salt = :s, #h = :h, #r = :r, pwd_version = :v",
             ExpressionAttributeNames={"#h": "hash", "#r": "rounds"},
             ExpressionAttributeValues={":s": salt,
                                        ":h": hash_password(new, salt),
-                                       ":r": PBKDF2_ROUNDS},
+                                       ":r": PBKDF2_ROUNDS,
+                                       ":v": new_version},
         )
+        # The session that just proved knowledge of the current password keeps
+        # working — re-stamp it with the new version, deliberately.
+        hdrs = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        tok = hdrs.get("authorization", "")[7:].strip()
+        if tok:
+            AUTH.update_item(
+                Key={"pk": f"SESSION#{tok}"},
+                UpdateExpression="SET pwd_version = :v",
+                ExpressionAttributeValues={":v": new_version},
+            )
         _clear_failures(user_sub)
-        # Other sessions for this user stay valid: finding them would need a
-        # secondary index on the auth table, and this is the honest note to
-        # leave rather than implying they were revoked.
         return _resp(200, {"ok": True})
 
     def _owned(it):
@@ -317,6 +396,9 @@ def lambda_handler(event, _ctx):
             "expected": len(entries),
             "uploaded": 0,
             "created_at": now,
+            # Present from birth so concurrent per-file failure writes always
+            # take the per-key conditional path, never a whole-map overwrite.
+            "failed_files": {},
             "ttl": now + 180 * 24 * 3600,
             "owner": user_sub,
         }
@@ -334,8 +416,22 @@ def lambda_handler(event, _ctx):
         # more than 200 jobs a customer could see NONE of their own while
         # other tenants' rows filled the page. A query cannot do that.
         if is_admin:
-            items, kwargs = [], {"Limit": 200}
-            while len(items) < 200:
+            # Scan the WHOLE table, projected to what the console renders. The
+            # old version stopped at 200 items, and a scan returns hash-key
+            # order — so past 200 jobs the admin saw an arbitrary slice and
+            # missed the newest. At scale the fix is a constant-partition GSI
+            # on created_at; until then an exhaustive projected scan is cheap.
+            proj = {"#j": "job_id", "#s": "status", "#fn": "filename",
+                    "#f": "files", "#ex": "expected", "#up": "uploaded",
+                    "#c": "created_at", "#m": "updated_at", "#o": "owner",
+                    "#sm": "summary", "#er": "error", "#rv": "review",
+                    "#co": "corrections", "#rp": "related_parties",
+                    "#ff": "failed_files"}
+            items, kwargs = [], {
+                "ProjectionExpression": ", ".join(proj),
+                "ExpressionAttributeNames": proj,
+            }
+            while True:
                 page = TABLE.scan(**kwargs)
                 items += page.get("Items", [])
                 if "LastEvaluatedKey" not in page:

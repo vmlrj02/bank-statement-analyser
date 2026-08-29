@@ -44,6 +44,12 @@ ddb = boto3.resource("dynamodb")
 TABLE = ddb.Table(os.environ["JOBS_TABLE"])
 BUCKET = os.environ["DATA_BUCKET"]
 
+# A presigned PUT has no content-length ceiling, so the size gate lives here:
+# an arbitrarily large object is refused BEFORE it is downloaded into /tmp,
+# and refused as a normal per-file failure, so the rest of the upload still
+# merges and the person is told which file was too big.
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+
 
 def _ddb_safe(v):
     """DynamoDB's resource interface rejects Python floats — every number must
@@ -294,6 +300,12 @@ def _mark_failed(job_id: str, idx: int, filename: str, msg: str) -> None:
 # function timeout belongs to an invocation that is definitely gone.
 MERGE_CLAIM_TTL_S = 16 * 60
 
+# A job in one of these states is finished. A late duplicate S3 delivery (S3
+# promises at-least-once) must not re-run the merge on it: re-merging a
+# reviewed job would recompute "needs_review" and silently discard the
+# review a person already did.
+TERMINAL_STATUSES = ("done", "needs_review", "reviewed", "failed")
+
 
 def _claim_merge(job_id: str) -> bool:
     """Exactly one invocation performs the merge; the rest bow out.
@@ -304,8 +316,18 @@ def _claim_merge(job_id: str) -> bool:
     The claim expires. Without that, an invocation hard-killed mid-merge left
     the job on "merging" forever and no later attempt — retry or sweeper —
     could ever take it, which is one of the two ways a job used to get stuck.
+
+    A job already in a TERMINAL status is never re-claimed: the only event
+    that can reach here on one is a duplicate or very late S3 delivery, and
+    the answer to those is to do nothing. The sweeper's re-drive is unaffected
+    — it resets a stale claim to "processing" before re-invoking, so a
+    re-driven job arrives here in a live status.
     """
     now = int(time.time())
+    cur = str((TABLE.get_item(Key={"job_id": job_id}).get("Item") or {})
+              .get("status") or "")
+    if cur in TERMINAL_STATUSES:
+        return False
     try:
         TABLE.update_item(
             Key={"job_id": job_id},
@@ -361,13 +383,30 @@ def lambda_handler(event, _ctx):
         # with it. Results are persisted, so a retry only redoes what is missing.
         entry = next((f for f in files if f.get("key") == key), files[0])
         idx = int(entry.get("idx", 0))
-        workdir = f"/tmp/{job_id}_{idx}"
+        # PID suffix: unique per process, so concurrent test runs (or any two
+        # processes sharing this /tmp) cannot delete each other's scratch dirs.
+        workdir = f"/tmp/{job_id}_{idx}_{os.getpid()}"
         os.makedirs(workdir, exist_ok=True)
         try:
             if not _work_exists(job_id, idx):
                 _update(job_id, **{"status": "processing"})
+                src_key = entry.get("key", key)
+                # Size gate before the download. head_object is metadata-only;
+                # ContentLength may be absent from a fake or a degraded
+                # response, in which case the gate simply doesn't fire and the
+                # download surfaces any real problem itself.
+                try:
+                    size = int(s3.head_object(Bucket=BUCKET, Key=src_key)
+                               .get("ContentLength", 0) or 0)
+                except Exception:                          # noqa: BLE001
+                    size = 0
+                if size > MAX_UPLOAD_BYTES:
+                    raise ValueError(
+                        f"this file is {size / (1024 * 1024):.0f} MB — "
+                        f"statements over {MAX_UPLOAD_BYTES // (1024 * 1024)} "
+                        "MB are not accepted")
                 local_pdf = os.path.join(workdir, "in.pdf")
-                s3.download_file(BUCKET, entry.get("key", key), local_pdf)
+                s3.download_file(BUCKET, src_key, local_pdf)
                 ex = extract_one(
                     local_pdf, password=entry.get("password"),
                     time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None))
@@ -421,7 +460,7 @@ def lambda_handler(event, _ctx):
                 groups[key]["lists"].append(txns)
                 groups[key]["files"].append(f.get("filename", ""))
 
-            outroot = f"/tmp/{job_id}_merge"
+            outroot = f"/tmp/{job_id}_merge_{os.getpid()}"
             accounts_out, worst = [], "passed"
             for key in order:
                 g = groups[key]
@@ -649,5 +688,5 @@ def lambda_handler(event, _ctx):
                                "error": f"merge: {str(e)[:380]}"})
         finally:
             _clear_password(job_id)
-            shutil.rmtree(f"/tmp/{job_id}_merge", ignore_errors=True)
+            shutil.rmtree(f"/tmp/{job_id}_merge_{os.getpid()}", ignore_errors=True)
     return {"ok": True}

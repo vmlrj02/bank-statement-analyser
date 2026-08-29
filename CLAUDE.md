@@ -339,14 +339,20 @@ failed files are listed on the upload with a plain reason.
    self-service password change, but a forgotten password still needs an
    operator running scripts/manage_users.py. A real reset needs a verified SES
    identity — a separate decision, not a missing line of code.
-4. **Revoke other sessions on a password change.** Finding a user's other
-   sessions needs a secondary index on the auth table; today they stay valid
-   until their 12-hour TTL, and the UI says so rather than implying otherwise.
+4. ~~Revoke other sessions on a password change.~~ DONE — no GSI was needed:
+   the USER# row carries a `pwd_version`, each session is stamped with it at
+   login, and _session rejects a stale stamp. A password change (API or
+   scripts/manage_users.py) bumps the version, killing every other session
+   while deliberately re-stamping the one that made the change.
 5. **Sweeper at scale.** The scheduled sweep is a filtered scan of a table
    holding 180 days of jobs. It is projected and runs every 15 minutes, and
    the on-failure destination handles the common case exactly — but if the
    table grows large, set a `live` attribute while a job runs and query a
    sparse index instead of scanning.
-6. **Upload size limits.** A presigned PUT has no content-length ceiling, so a
-   client can upload an arbitrarily large object. MAX_FILES_PER_JOB caps count,
-   not bytes.
+6. **Upload size limits.** Mostly closed: the processor refuses any file whose
+   ContentLength exceeds MAX_UPLOAD_BYTES (default 50 MB) as a per-file failure
+   before download, and the UI rejects oversize files client-side. What remains
+   open is the presigned PUT itself, which still has no byte ceiling at the S3
+   edge — stopping the bytes from landing at all needs a switch to
+   generate_presigned_post with a content-length-range condition (and a POST
+   CORS rule), a deliberate upload-contract change.

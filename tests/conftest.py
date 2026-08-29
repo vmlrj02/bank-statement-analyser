@@ -54,6 +54,10 @@ class FakeTable:
         self.name, self.key = name, key
         self.items = {}
         self.writes = []
+        # Real DynamoDB caps a scan page at 1MB regardless of Limit. Set this
+        # in a test to force pagination and prove a caller follows
+        # LastEvaluatedKey to exhaustion. None = everything in one page.
+        self.page_size = None
 
     # -- api surface --
     def put_item(self, Item):
@@ -73,7 +77,18 @@ class FakeTable:
         self.writes.append(("delete", Key[self.key]))
 
     def scan(self, **kw):
-        items = [copy.deepcopy(v) for v in self.items.values()]
+        # A scan walks in hash-key order (arbitrary, NOT recency) — modelled
+        # here as sort-by-key so a test can arrange "newest item last". Limit
+        # and page_size bound the items SCANNED (before the filter, as real
+        # DynamoDB does), and a truncated page carries LastEvaluatedKey.
+        universe = sorted(self.items.values(), key=lambda v: str(v[self.key]))
+        if (start := kw.get("ExclusiveStartKey")) is not None:
+            after = str(start[self.key])
+            universe = [v for v in universe if str(v[self.key]) > after]
+        caps = [c for c in (kw.get("Limit"), self.page_size) if c]
+        page = universe[:min(caps)] if caps else universe
+        truncated = caps and len(universe) > len(page)
+        items = [copy.deepcopy(v) for v in page]
         if (f := kw.get("FilterExpression")) is not None:
             items = [i for i in items if _eval_cond(f, i)]
         # Honour ProjectionExpression. Real DynamoDB returns ONLY the projected
@@ -84,7 +99,10 @@ class FakeTable:
             names = kw.get("ExpressionAttributeNames") or {}
             keep = {names.get(a.strip(), a.strip()) for a in proj.split(",")}
             items = [{k: v for k, v in i.items() if k in keep} for i in items]
-        return {"Items": items}
+        out = {"Items": items}
+        if truncated:
+            out["LastEvaluatedKey"] = {self.key: page[-1][self.key]}
+        return out
 
     def query(self, **kw):
         items = [copy.deepcopy(v) for v in self.items.values()]
@@ -269,12 +287,17 @@ class FakeBoto3:
         self.tables = tables or {}
         self.s3 = s3 or FakeS3()
         self.lam = lam or FakeLambda()
+        # Everything a module passed to boto3.client(), by service name — so a
+        # test can pin HOW a client was built (regional endpoint, sigv4), not
+        # just that one exists. See gotcha 2 in CLAUDE.md.
+        self.client_kwargs = {}
 
     def resource(self, name, **kw):
         assert name == "dynamodb"
         return _FakeDDBResource(self.tables)
 
     def client(self, name, **kw):
+        self.client_kwargs[name] = kw
         if name == "s3":
             return self.s3
         if name == "lambda":
@@ -349,6 +372,18 @@ def api(jobs_table, auth_table, s3):
         "PROCESSOR_FUNCTION": "proc-fn",
     })
     mod._fake_lambda = stub.lam
+    mod._fake_boto3 = stub
+    return mod
+
+
+@pytest.fixture
+def manage_users(auth_table):
+    """The operator CLI, wired to the same fake auth table as `api` would be —
+    so a test can prove a scripted password reset revokes API sessions."""
+    stub = FakeBoto3({"auth": auth_table})
+    mod = load_module("scripts/manage_users.py", "manage_users_undertest", stub,
+                      {"AWS_REGION": "ap-south-1"})
+    mod._fake_boto3 = stub
     return mod
 
 
