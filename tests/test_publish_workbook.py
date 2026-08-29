@@ -174,7 +174,7 @@ def test_top_10_party_sheets_follow_the_templates_shape(tmp_path):
     # The month is a real DATE merged across B:C and shown as mmm-yyyy, as in
     # the template — so it sorts and filters as a date, not as text.
     assert ws["B2"].value == datetime.datetime(2026, 1, 1)
-    assert ws["B2"].number_format == "mmm-yyyy"
+    assert ws["B2"].number_format == "mmm\\-yy"   # the template's own format
     assert "B2:C2" in [str(r) for r in ws.merged_cells.ranges]
     assert [ws["B3"].value, ws["C3"].value] == ["Party", "Amount"]
     assert ws["B4"].value == "ACME TRADERS"

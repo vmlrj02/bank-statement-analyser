@@ -421,7 +421,10 @@ def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
         y, m = mk.split("-")
         cell = ws.cell(row=r, column=2, value=date(int(y), int(m), 1))
         cell.font = bold
-        cell.number_format = "mmm-yyyy"
+        # The template's own format on this cell, verbatim: mmm-yy ("Jan-25").
+        # Its Summary header uses a four-digit year instead — inconsistent in
+        # their file, so each sheet matches its own.
+        cell.number_format = "mmm\\-yy"
         ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
         for col, val in ((2, "Party"), (3, "Amount")):
             h = ws.cell(row=r + 1, column=col, value=val)
