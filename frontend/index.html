@@ -140,6 +140,23 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 @keyframes ibtn-spin{to{transform:rotate(360deg)}}
 .ibtn.spin svg{animation:ibtn-spin .9s linear infinite}
 .ibtn:disabled{opacity:.55;cursor:default}
+/* Re-generate: a LABELLED control, not a bare icon. It replaces the report the
+   reader is looking at, so it has to say what it does before it is pressed. */
+.regen{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+  padding:6px 11px;border:1px solid var(--line2);border-radius:999px;
+  background:#fff;color:var(--fg);font:inherit;font-size:12px;font-weight:600;
+  cursor:pointer;white-space:nowrap;transition:border-color .12s,background .12s}
+.regen:hover{border-color:var(--gold);background:var(--goldpale)}
+.regen svg{width:13px;height:13px;display:block}
+.regen.spin svg{animation:ibtn-spin .9s linear infinite}
+.regen:disabled{opacity:.55;cursor:default}
+/* The generated-on stamp sits beside the download button, where the reviewer
+   asked for it. Quiet type: it dates the report, it is not a headline. */
+.genstamp{flex:0 0 auto;text-align:right;line-height:1.25;margin-left:2px}
+.genstamp span{display:block;font-size:10px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--mut)}
+.genstamp b{font-size:12px;color:var(--fg);white-space:nowrap}
+@media (max-width:720px){.regen span{display:none}.genstamp{display:none}}
 /* The chevron points DOWN when the section is closed (click to open) and UP
    when it is open (click to close). */
 .ibtn.open svg{transform:rotate(180deg)}
@@ -791,6 +808,20 @@ const toggleBtn = (cls, open, what) =>
   `<button class="ibtn ${cls}${open?' open':''}" aria-expanded="${open?'true':'false'}"
      title="${open?'Minimise':'Show'} ${esc(what)}"
      aria-label="${open?'Minimise':'Show'} ${esc(what)}">${ICON_CHEVRON}</button>`;
+/* "Report generated on ..." — WHEN the report on screen was produced. With a
+   re-generate button in the product a reader has to be able to tell which run
+   they are looking at, and an old report is exactly what the button exists to
+   replace. Reads `generated_at`, stamped by the processor at publish; falls
+   back to updated_at for reports made before that field existed. */
+function genStamp(j){
+  const ts = Number(j && (j.generated_at || j.updated_at)) || 0;
+  if(!ts) return '';
+  const d = new Date(ts*1000);
+  const hr = d.getHours(), h12 = hr%12 || 12;
+  const stamp = `${String(d.getDate()).padStart(2,'0')}-${MON[d.getMonth()]}-${d.getFullYear()}`
+    + ` ${h12}:${String(d.getMinutes()).padStart(2,'0')} ${hr<12?'AM':'PM'}`;
+  return `<div class="genstamp"><span>Report generated on</span><b>${esc(stamp)}</b></div>`;
+}
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function shortDate(iso){
   if(!iso || iso.length<10) return iso||'';
@@ -970,9 +1001,9 @@ function accountCard(e){
         ${cover?`<div class="acctline coverline">${cover}</div>`:''}
       </div>
       ${trust?`<div class="trust">${trust}</div>`:''}
-      <button class="ibtn" title="Regenerate this report from the uploaded files"
-        aria-label="Regenerate this report from the uploaded files"
-        onclick="regen('${j.job_id}', this)">${ICON_REFRESH}</button>
+      <button class="regen" title="Re-run the analysis on the files in this upload"
+        onclick="regen('${j.job_id}', this)">${ICON_REFRESH}<span>Re-generate report</span></button>
+      ${genStamp(j)}
       <button class="ibtn solid" title="Download the Excel report"
         aria-label="Download the Excel report"
         onclick="dl('${j.job_id}','${a.slug}','xlsx')">${ICON_DOWNLOAD}</button></div>

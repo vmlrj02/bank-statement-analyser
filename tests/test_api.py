@@ -805,6 +805,27 @@ def test_regenerate_reruns_every_file_and_resets_the_job(api, jobs_table,
     assert len(api._fake_lambda.invocations) == 2
 
 
+def test_regenerate_takes_the_published_report_down_immediately(
+        api, jobs_table, s3, signed_in):
+    """Asked for in as many words: "whenever they click regenerate, remove the
+    existing excel and bring in the new excel when it is prepared." Leaving the
+    old workbook in place until the new run overwrites it means a download in
+    between hands back the stale file — the exact thing being regenerated away.
+    The cached work objects go too, or the pipeline would re-merge its old rows
+    instead of re-extracting."""
+    token, email = signed_in()
+    job_id = _finished_job(jobs_table, email)
+    s3.put_object(Bucket="bucket", Key=f"work/{job_id}/0.json", Body=b"{}")
+    s3.put_object(Bucket="bucket", Key=f"outputs/{job_id}/acct/analysis.xlsx",
+                  Body=b"old")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/regenerate", token, body={},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 200, r["body"]
+    keys = {k for (_b, k) in s3.objects}
+    assert f"outputs/{job_id}/acct/analysis.xlsx" not in keys
+    assert f"work/{job_id}/0.json" not in keys
+
+
 def test_regenerate_refuses_a_job_that_is_still_running(api, jobs_table,
                                                         signed_in):
     """Regenerating mid-flight would race the invocation already running and

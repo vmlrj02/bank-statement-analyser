@@ -685,6 +685,13 @@ def lambda_handler(event, _ctx):
             _update(job_id, **{
                 "status": ("needs_review" if (failed_list or worst != "passed")
                            else "done"),
+                # When the report on screen was actually produced. Stamped
+                # HERE, at publish, not from updated_at — that moves whenever
+                # any status is written (a review mark, for one), so it would
+                # claim a report was regenerated when nothing was re-run. With
+                # regenerate in the product, a reader has to be able to tell
+                # which run they are looking at.
+                "generated_at": int(time.time()),
                 # clear any error left over from a previous failed attempt,
                 # otherwise a job reads "done" while still showing an old error
                 "error": "",

@@ -432,7 +432,7 @@ def _handle(event):
                     "#c": "created_at", "#m": "updated_at", "#o": "owner",
                     "#sm": "summary", "#er": "error", "#rv": "review",
                     "#co": "corrections", "#rp": "related_parties",
-                    "#ff": "failed_files"}
+                    "#ff": "failed_files", "#ga": "generated_at"}
             items, kwargs = [], {
                 "ProjectionExpression": ", ".join(proj),
                 "ExpressionAttributeNames": proj,
@@ -596,6 +596,20 @@ def _handle(event):
                 s3.delete_object(Bucket=BUCKET, Key=f"work/{path_id}/{idx}.json")
             except Exception as e:                       # noqa: BLE001
                 print(f"regenerate: could not drop work {path_id}/{idx}: {e}")
+        # And take the PUBLISHED reports down straight away, rather than
+        # leaving them to be overwritten when the new run finishes. Asked for
+        # explicitly: "whenever they click regenerate, remove the existing
+        # excel and bring in the new excel when it is prepared." Otherwise a
+        # download between the click and the finish hands back the stale
+        # workbook, which is the exact thing being regenerated away.
+        try:
+            pages = s3.get_paginator("list_objects_v2").paginate(
+                Bucket=BUCKET, Prefix=f"outputs/{path_id}/")
+            for page in pages:
+                for obj in page.get("Contents") or []:
+                    s3.delete_object(Bucket=BUCKET, Key=obj["Key"])
+        except Exception as e:                           # noqa: BLE001
+            print(f"regenerate: could not clear outputs for {path_id}: {e}")
         now = int(time.time())
         # Reset every marker the pipeline sets as it goes, so the job starts
         # from the same state a fresh upload would. `extracted` is a string set
