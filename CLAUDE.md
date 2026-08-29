@@ -421,23 +421,28 @@ failed files are listed on the upload with a plain reason.
    Bank (2), Canara (1). A descriptor is roughly an hour and, with the S3
    registry, needs no deploy — it is the whole answer to an unknown bank,
    since the LLM fallback is closed by default.
-2. **PNB mangles wrapped narration** (diagnosed, not yet fixed). PNB wraps the
-   Description cell at its EDGE, mid-token, so one row prints as
-   "UPI/CR/25845" / "9693857/ROS" / "HAN". generic_layout flattens a row's
-   narration lines into one word list and joins with spaces, so the party
-   reads "ROS HAN" and never consolidates with the same party spelled whole
-   elsewhere; "ROSHAN INFRASTRUC TURE" breaks the same way.
+2. **PNB glues/splits wrapped narration** (half fixed). PNB wraps the
+   Description cell at its EDGE, so one row prints as "UPI/CR/25845" /
+   "9693857/ROS" / "HAN". generic_layout space-joins a row's narration lines,
+   so the party reads "ROS HAN" and never consolidates with the same party
+   spelled whole elsewhere.
 
-   The fix is NOT a blanket no-separator join — PNB wraps mid-token on some
-   lines and at a space on others, and gluing the latter gives "SAHUON
-   &BORWELLS". The geometry tells them apart: a HARD wrap fills the cell to
-   its right edge (~x1 227 on that export), a space wrap stops short ("HAN"
-   ends at 208). So the join must be per-line and edge-aware, which needs the
-   parser to keep each narration line's right edge instead of flattening to
-   words.
-   A second, separate defect on the same layout: pnb_ca_statement's
-   `remarks_x_max: 370` swallows the Branch Name column, which is why every
-   description on that export carries a stray " -".
+   FIXED, and separate: pnb_ca_statement's `remarks_x_max` was 370, which
+   swallowed the Branch Name column and put a stray " -" on the end of every
+   description on that export. It is 232 now — the cell really ends at x1 ~229,
+   and nothing between 232 and 370 is transaction text on either CA sample.
+
+   NOT fixed, and do not "just" no-separator-join: the cell is only ~64pt wide
+   and PNB wraps mid-token on some lines and AT A SPACE on others, so joining
+   with nothing turns "SAHU CONSTRUCTION" into "SAHUON" and "INCIDENTAL
+   CHARGES" into "INCIDENTALCHARGES". The obvious discriminator — "a hard wrap
+   runs out to the cell edge" — was built and measured and is NOT sufficient:
+   in a cell this narrow a line that wrapped at a space also lands within a
+   few points of the edge ("INCIDENTAL" ends at ~225, "…/ROS" at 226.2), so
+   the two are geometrically identical. Whatever fixes this needs a signal
+   beyond the right edge — character-level spacing from the PDF content
+   stream, or a dictionary check on the candidate join — and it must be
+   measured against BOTH failure directions, not just the ROS/HAN one.
 
 3. **Bedrock.** Until its Marketplace subscription works on this account there
    is no in-account inference at all, so a bank with no layout cannot be read.

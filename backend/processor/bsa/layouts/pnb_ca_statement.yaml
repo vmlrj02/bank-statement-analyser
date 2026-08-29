@@ -31,7 +31,16 @@ parse:
     cheque_x_min: 99999
     cheque_x_max: 99999
     remarks_x_min: 165          # Description after the date
-    remarks_x_max: 370          # stops before the Dr Amount column (~377)
+    remarks_x_max: 232          # the Description cell really ends at x1 ~229.
+                                # It was 370, which swallowed the Branch Name
+                                # column — that is where the stray " -" on the
+                                # end of every description came from. Nothing
+                                # between 232 and 370 is transaction text on
+                                # this export: only the "-" branch marker and
+                                # page header/footer furniture (checked over
+                                # every page of both CA samples). The wrap test
+                                # also needs this tight, since it measures the
+                                # real cell edge inside this band.
     withdrawal_x1_max: 449      # Dr Amount — right edge ~418
     deposit_x1_max: 508         # Cr Amount — right edge ~480
     balance_x1_max: 558         # Balance   — right edge ~536-550 across exports
