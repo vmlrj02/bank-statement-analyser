@@ -155,8 +155,12 @@ SUMMARY_ROWS = [
 
 # The CSV keeps the fuller internal shape — it is ours, not the customer's, and
 # the party/category-detail columns are what the reviewer harness reads.
+# Category here is the SME sub-category — the classification the customer
+# reads. The ABCL tag rides alongside as "Tag": it is the routing key for the
+# template's sheets and the bounce denominators, so it stays visible for
+# anyone reconciling the two, but it is no longer the headline.
 HEADERS = ["Sl. No.", "Date", "Account", "Bank", "Cheque No.", "Description",
-           "Amount", "Category", "Sub-Category", "Category Detail", "Party",
+           "Amount", "Category", "Tag", "Category Detail", "Party",
            "Balance"]
 
 
@@ -173,8 +177,8 @@ def _fmt_date(iso: str) -> str:
 
 def _row(i: int, t: Txn) -> list:
     return [i, _fmt_date(t.date), t.account_no, t.bank, t.cheque_no,
-            t.description, _fmt_amount(t.amount), t.category,
-            sme_subcategory(t), category_detail(t),
+            t.description, _fmt_amount(t.amount), category_label(t),
+            t.category, category_detail(t),
             t.counterparty or "unknown party", f"{t.balance:,.2f}"]
 
 
@@ -463,10 +467,23 @@ def _party_annual_sheet(ws, txns, want_credit, group_label, title, bold) -> None
     style_party_annual(ws)
 
 
+def category_label(t: Txn) -> str:
+    """What goes in the Category column a customer reads.
+
+    The SME sub-category, not the ABCL tag. The eighteen tags still decide
+    which SHEET a row lands on and still feed the bounce-rate denominators —
+    they are the routing key — but "Regular debit" on a hundred rows tells an
+    underwriter nothing, and the sub-category is the classification the
+    customer asked for. Falls back to the tag if a row's tag is one the SME
+    master does not map, so the column is never blank.
+    """
+    return sme_subcategory(t) or t.category
+
+
 def _xn_row(i: int, t: Txn) -> list:
     """One transaction in the template's seven columns."""
     return [i, _fmt_date(t.date), t.cheque_no, t.description,
-            _fmt_amount(t.amount), t.category, f"{t.balance:,.2f}"]
+            _fmt_amount(t.amount), category_label(t), f"{t.balance:,.2f}"]
 
 
 def write_workbook(result: JobResult, path: str) -> None:
@@ -631,8 +648,8 @@ def write_workbook(result: JobResult, path: str) -> None:
     # ABCL tag says "Regular debit" for a hundred rows, this says how much of
     # that was payroll, GST, suppliers and utilities. It is OUR sheet, so it
     # sits after the customer's nineteen like everything else we add.
-    ws = wb.create_sheet("Sub-Category Mix")
-    _append(ws, ["Group", "Sub-Category", "Direction", "Count", "Amount"])
+    ws = wb.create_sheet("Category Mix")
+    _append(ws, ["Group", "Category", "Direction", "Count", "Amount"])
     for c in ws[1]:
         c.font = bold
     sub_n: dict[str, int] = defaultdict(int)

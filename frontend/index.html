@@ -1535,24 +1535,21 @@ function drawDash(host, st){
         <span class="cbarr"><i style="width:${catT?(100*v/catT).toFixed(1):0}%"></i></span>
         <span class="cn">${nfmt(v)}</span></div>`).join('');
   const cmOpen = st.cmOpen === true;
-  // The SME sub-categories underneath. The broad tag says "Regular debit" for
-  // most of a statement, which tells a lender nothing; this is the split they
-  // actually reason about — payroll, GST, suppliers, utilities. Shown by VALUE
-  // rather than count, because ten ₹500 charges do not matter beside one ₹5L
-  // payroll run. Absent on reports generated before sub-categories existed,
-  // so the block simply does not render for those.
-  const subs = (aa&&aa.subcategory_amounts)||{};
-  const subT = Object.values(subs).reduce((s,v)=>s+v,0);
-  const subrows = Object.entries(subs).sort((x,y)=>y[1]-x[1]).slice(0,10)
+  // Category mix, by VALUE — ten ₹500 charges do not matter beside one ₹5L
+  // payroll run. `category_amounts` carries the SME classification, which is
+  // the category now; reports generated before it existed have only counts,
+  // so those fall back to the count rows above.
+  const camt = (aa&&aa.category_amounts)||{};
+  const amtT = Object.values(camt).reduce((s,v)=>s+v,0);
+  const amtrows = Object.entries(camt).sort((x,y)=>y[1]-x[1]).slice(0,12)
       .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(k)}</span>
-        <span class="cbarr"><i style="width:${subT?(100*v/subT).toFixed(1):0}%"></i></span>
+        <span class="cbarr"><i style="width:${amtT?(100*v/amtT).toFixed(1):0}%"></i></span>
         <span class="cn">${inr0(v)}</span></div>`).join('');
-  const catmix = (catrows||subrows)
+  const catmix = (catrows||amtrows)
     ? `<div class="catmix"><div class="sechead" style="margin-bottom:9px">
-         <span class="ch">Category mix</span>
-         ${toggleBtn('cm-tgl', cmOpen, 'the category mix')}</div>${cmOpen?`
-         ${subrows?`<div class="meta" style="margin:0 0 6px">Sub-category · by value</div>${subrows}`:''}
-         ${catrows?`<div class="meta" style="margin:12px 0 6px">Category · by transaction count</div>${catrows}`:''}`:''}</div>`
+         <span class="ch">Category mix${amtrows?' · by value':' · by transaction count'}</span>
+         ${toggleBtn('cm-tgl', cmOpen, 'the category mix')}</div>${
+         cmOpen?(amtrows||catrows):''}</div>`
     : '';
   /* Month-by-month table: the chart's data as figures, one row per month,
      linked to the chart (hover a row → crosshair on that month, and vice

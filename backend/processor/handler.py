@@ -551,13 +551,15 @@ def lambda_handler(event, _ctx):
 
                 from bsa.normalize import party_kind
                 from bsa.sme_taxonomy import sme_subcategory
+                # `categories` is now the SME classification (the master's
+                # "Category (SME)" tab, column B) — that is the category the
+                # customer reads. The eighteen ABCL tags are kept as `tags`:
+                # they still route rows to the template's sheets and feed the
+                # bounce denominators, but "118 Regular debits" is not a
+                # category anyone can act on.
                 cats: dict[str, int] = {}
-                # The SME master's sub-categories (its "Category (SME)" tab,
-                # column B) — the finer split a lender reads. "118 Regular
-                # debits" says nothing; payroll / GST / suppliers / utilities
-                # does. Counted alongside the ABCL tags, not instead of them.
-                subcats: dict[str, int] = {}
-                subcat_amounts: dict[str, float] = {}
+                cat_amounts: dict[str, float] = {}
+                tags: dict[str, int] = {}
                 conf = {"high": 0, "medium": 0, "low": 0}
                 # Party quality is a different axis from confidence: how many rows
                 # name a real counterparty vs only a machine handle (account
@@ -565,12 +567,11 @@ def lambda_handler(event, _ctx):
                 # handle as "party present"; this splits it out honestly.
                 pq = {"named": 0, "handle": 0, "none": 0}
                 for t in txns:
-                    cats[t.category] = cats.get(t.category, 0) + 1
-                    sc = sme_subcategory(t)
-                    if sc:
-                        subcats[sc] = subcats.get(sc, 0) + 1
-                        subcat_amounts[sc] = round(
-                            subcat_amounts.get(sc, 0.0) + abs(t.amount), 2)
+                    tags[t.category] = tags.get(t.category, 0) + 1
+                    cat = sme_subcategory(t) or t.category
+                    cats[cat] = cats.get(cat, 0) + 1
+                    cat_amounts[cat] = round(
+                        cat_amounts.get(cat, 0.0) + abs(t.amount), 2)
                     conf[t.confidence] = conf.get(t.confidence, 0) + 1
                     kind = party_kind(t.counterparty, t.description)
                     if kind != "na":
@@ -619,10 +620,11 @@ def lambda_handler(event, _ctx):
                     "issue_sample": _issue_sample(statement_issues),
                     "unreadable_pages": sum(
                         len(getattr(m, "unreadable_pages", []) or []) for m in metas),
+                    # The SME classification, by count and by value.
                     "categories": cats,
-                    # The SME master's finer split, by count and by value.
-                    "subcategories": subcats,
-                    "subcategory_amounts": subcat_amounts,
+                    "category_amounts": cat_amounts,
+                    # The ABCL tags, kept for routing and reconciliation.
+                    "tags": tags,
                     # Categorisation confidence: how many rows are a certain tag
                     # vs a known-party regular transfer vs genuinely unsure. The
                     # "low" count is what a reviewer eyeballs — the report never

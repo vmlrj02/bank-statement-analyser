@@ -95,6 +95,23 @@ def test_rows_route_to_their_category_sheets(tmp_path):
     assert wb["Other Xns"].max_row == 2
 
 
+def test_category_column_carries_the_sme_category_not_the_abcl_tag(tmp_path):
+    """The SME classification is THE category the customer reads. The ABCL tag
+    is demoted to a routing key: it still decides which sheet a row lands on
+    and still feeds the bounce denominators, but "Regular debit" on a hundred
+    rows is not a category an underwriter can act on."""
+    wb = _load(tmp_path)
+    # Category is column 6 of the template's seven.
+    emi = wb["EMI Xns"].cell(row=2, column=6).value
+    assert emi == "Loan EMIs", emi
+    dep = wb["Cash Deposit Xns"].cell(row=2, column=6).value
+    assert dep == "Direct Cash Deposits", dep
+    # ...and the row still went to the sheet its TAG maps to, which is the
+    # proof that promoting the label did not disturb routing.
+    assert wb["EMI Xns"].max_row == 2
+    assert wb["Cash Deposit Xns"].max_row == 2
+
+
 def test_every_transaction_appears_on_the_all_transactions_sheet(tmp_path):
     wb = _load(tmp_path)
     ws = wb["Xns"]
