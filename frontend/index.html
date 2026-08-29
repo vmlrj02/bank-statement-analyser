@@ -84,6 +84,15 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .job .nm{font-weight:700;font-size:15.5px;margin-right:auto;letter-spacing:-.01em}
 .job .acctline{color:var(--mut);font-size:12.5px;margin-top:3px;font-variant-numeric:tabular-nums}
 .job .acctline b{color:var(--fg);font-weight:600}
+/* Trust chips beside the account name: balance chain + PDF integrity. */
+.trust{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end;max-width:220px}
+.trust .chip{font-size:9.5px;padding:2px 8px;letter-spacing:.05em}
+/* The plain-language read of the account, above the numbers. It is the first
+   thing on the page for a reason: a sentence lands before a chart does. */
+.blurb{font-size:14px;line-height:1.65;color:var(--fg);margin:0 0 4px;
+  border-left:3px solid var(--gold);padding:2px 0 2px 13px}
+.blurb b{font-variant-numeric:tabular-nums;font-weight:700}
+.blurb .q{color:var(--mut);font-size:12.5px;display:block;margin-top:4px}
 .bklogo{display:inline-flex;align-items:center;justify-content:center;height:16px;
   padding:0 5px;border-radius:4px;color:#fff;font-size:8.5px;font-weight:800;
   letter-spacing:.04em;vertical-align:-3px;margin-right:5px}
@@ -157,6 +166,20 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   padding:10px 14px;margin-bottom:10px;font-size:13px}
 .upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .upnote .nm{font-weight:700;margin-right:auto}
+/* The folded attention strip. One line, quiet, never taller than a row of
+   text — the account below it is the page. */
+.notebar{display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--mut);
+  border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:8px;
+  background:var(--sunk);padding:7px 13px;margin-bottom:12px}
+.notebar.open{margin-bottom:9px}
+.notebar .nb-k{font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--golddark);flex:none}
+.notebar .nb-t{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.notebar .nb-t b{color:var(--fg);font-weight:700;font-variant-numeric:tabular-nums}
+.notebar .nb-x{flex:none;background:none;border:0;padding:0;font-size:12px;font-weight:700;
+  color:var(--golddark);text-decoration:underline;text-underline-offset:2px}
+.notebar .nb-x:hover{color:var(--fg)}
+.notewrap{margin-bottom:14px}
 
 /* admin AI panel */
 .ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
@@ -258,6 +281,11 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .drn{color:#b3251e}
 .shr{font-size:10px;color:var(--faint);font-weight:400}
 .mt-wrap tr.hl td{background:var(--goldpale)}
+/* Eight numeric columns in the card's width: tighten the cells so the last
+   one (closing balance — the column a lender actually looks for) is not the
+   one that falls off the right edge into a scroll. */
+.mt-wrap td,.mt-wrap th{padding:6px 8px;font-size:11.5px}
+.mt-wrap th{font-size:9.5px;letter-spacing:.04em}
 /* Dashboard tiles: hero money dimensions with share meters, small metric
    tiles, and a one-line coverage strip. */
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
@@ -311,6 +339,18 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 @media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}
   main,aside{grid-column:auto;grid-row:auto}
   aside{position:static;max-height:none;display:block}}
+/* Narrow: the account header is a single nowrap row on desktop (name, trust,
+   download). Below this width it has to break, or the holder's name is
+   squeezed to one word per line and the button runs off the page. */
+@media(max-width:640px){
+  header .who{flex-wrap:wrap;justify-content:flex-end}
+  .job .top{flex-wrap:wrap !important}
+  .job .top > div:nth-child(2){min-width:120px}
+  /* basis:100% is what forces the break — avatar + name keep the first row,
+     the chips take the second, the download button the third. */
+  .trust{flex:1 1 100%;max-width:none;justify-content:flex-start;margin-top:4px}
+  .job .top .go{margin-left:0}
+}
 </style>
 </head>
 <body>
@@ -814,6 +854,10 @@ function accountCard(e){
                a.account_no ? 'A/c '+esc(acctNo(a.account_no)) : '',
                IS_ADMIN && j.owner ? `<b>${esc(j.owner)}</b>` : '']
       .filter(Boolean).join(' · ');
+  // Trust reads at the top, next to the name: whether the running balance
+  // reconciles and whether the PDF looks like a genuine bank export. Both are
+  // the first question a credit team asks, so neither should need a scroll.
+  const trust = validationChip(a.validation) + integrityChip(a.integrity);
   return `<div class="job" id="acct-${esc(e.slug)}">
     <div class="top" style="flex-wrap:nowrap;align-items:center">
       <div class="h-av" style="background:${bcolor};width:38px;height:38px;font-size:11px;border-radius:9px">${esc(bcode)}</div>
@@ -821,14 +865,14 @@ function accountCard(e){
         <div class="nm" style="margin-right:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</div>
         ${sub?`<div class="acctline" style="margin-top:1px">${sub}</div>`:''}
       </div>
+      ${trust?`<div class="trust">${trust}</div>`:''}
       <button class="go" style="padding:5px 16px;font-size:13px;flex:none"
         onclick="dl('${j.job_id}','${a.slug}','xlsx')">Download Report</button></div>
     <div class="dash" id="dash-${esc(e.slug)}">
-      <div class="ch">Account dashboard</div>
       <div class="dash-body">
-        <div class="skel" style="height:24px;width:60%"></div>
+        <div class="skel" style="height:44px;width:82%"></div>
+        <div class="skel" style="height:66px;margin-top:12px"></div>
         <div class="skel" style="height:200px;margin-top:10px"></div>
-        <div class="skel" style="height:70px;margin-top:10px"></div>
       </div>
     </div>
     <div class="meta">From: ${esc(e.files.join(', '))}</div>
@@ -855,10 +899,16 @@ function accountCard(e){
 /* Operational notices for uploads that need attention: still processing,
    failed files, needs-review, plus the admin-only AI accounting when AI was
    actually used. Settled, clean uploads produce no notice — their substance
-   lives in the account cards. */
+   lives in the account cards.
+   These are OPERATIONAL, never the content. They used to stack full-height at
+   the top of the main column, so landing on the page meant reading a pile of
+   error boxes before reaching the account's numbers. They now fold into a
+   one-line strip (noticeStrip) that opens on demand, so this returns the
+   bodies AND a tally that lets the strip describe them in a sentence. */
 function uploadNotices(){
   const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
   const out = [];
+  const tally = {busy:0, review:0, files:0, failed:0, ai:0};
   for(const j of jobs){
     const s = j.summary || {};
     const busy = BUSY.includes(j.status);
@@ -869,6 +919,11 @@ function uploadNotices(){
       (IS_ADMIN && ai && ai.used);
     if(!notable) continue;
     if(IS_ADMIN && !jobMatches(j)) continue;
+    if(busy) tally.busy++;
+    if(j.status==='needs_review') tally.review++;
+    tally.files += failed.length;
+    if(!failed.length && (j.error || ['failed','password_required'].includes(j.status))) tally.failed++;
+    if(IS_ADMIN && ai && ai.used) tally.ai++;
     const aiPanel = (IS_ADMIN && ai && ai.used) ? `<div class="ai" style="margin-top:10px">
         <h4>AI usage for this upload · admin only</h4>
         <div class="grid">
@@ -922,12 +977,40 @@ function uploadNotices(){
     </div>`);
   }
   // Unfiltered admin view: cap the pile — the filter chips reach the rest.
+  let html;
   if(IS_ADMIN && AFILTER==='all' && out.length>4){
     const extra = out.length-4;
-    return out.slice(0,4).join('')
+    html = out.slice(0,4).join('')
       + `<div class="meta" style="margin-bottom:10px">…and ${extra} more notice${extra===1?'':'s'} — use the Review / Issues / Layout filters to see them all.</div>`;
+  }else{
+    html = out.join('');
   }
-  return out.join('');
+  return {n: out.length, tally, html};
+}
+
+/* The attention strip: ONE line that says what needs a human, with the detail
+   folded behind it. Closed by default so the account's chart, numbers and
+   description are what a user or admin sees on landing — an unreadable file
+   from three weeks ago is a footnote, not the front page. It opens on click
+   and stays open for the session once opened. */
+let NOTES_OPEN = false;
+function toggleNotes(){ NOTES_OPEN = !NOTES_OPEN; render(); }
+function noticeStrip(nt, hasContent){
+  if(!nt.n) return '';
+  // With nothing else on the page there is nothing to protect, so show it all.
+  const open = NOTES_OPEN || !hasContent;
+  const t = nt.tally, bits = [];
+  if(t.busy)   bits.push(`<b>${nfmt(t.busy)}</b> processing`);
+  if(t.files)  bits.push(`<b>${nfmt(t.files)}</b> file${t.files===1?'':'s'} could not be read`);
+  if(t.failed) bits.push(`<b>${nfmt(t.failed)}</b> upload${t.failed===1?'':'s'} failed`);
+  if(t.review) bits.push(`<b>${nfmt(t.review)}</b> awaiting review`);
+  if(t.ai)     bits.push(`<b>${nfmt(t.ai)}</b> used AI`);
+  const line = bits.length ? bits.join(' · ') : `<b>${nfmt(nt.n)}</b> upload${nt.n===1?'':'s'} need attention`;
+  return `<div class="notebar${open?' open':''}">
+      <span class="nb-k">Uploads</span>
+      <span class="nb-t">${line}</span>
+      ${hasContent?`<button class="nb-x" onclick="toggleNotes()">${open?'Hide':'Show'}</button>`:''}
+    </div>${open?`<div class="notewrap">${nt.html}</div>`:''}`;
 }
 
 /* Sidebar account card → the main view shows ONLY that account. The first
@@ -973,11 +1056,13 @@ function render(){
       + chip('layout','Layout', jobs.filter(jobNeedsLayout).length);
   }
   if(!accts.some(e=>e.slug===selSlug)) selSlug = accts.length ? accts[0].slug : null;
-  const notices = uploadNotices();
+  const nt = uploadNotices();
   const sel = accts.find(e=>e.slug===selSlug);
-  $('active').innerHTML = notices
+  // Content first: the account leads, operational notices ride above it as a
+  // single folded line. With no account to show they expand in its place.
+  $('active').innerHTML = noticeStrip(nt, !!sel)
     + (sel ? accountCard(sel)
-           : (notices ? '' : `<div class="empty" style="cursor:pointer" onclick="upBtn.click()">
+           : (nt.n ? '' : `<div class="empty" style="cursor:pointer" onclick="upBtn.click()">
       Nothing yet — <b>click here to upload statements</b><br>
       <span style="font-size:12.5px">Bank PDF exports, up to 20 at once — grouped by
       account, one balance-checked report each.</span></div>`));
@@ -1160,14 +1245,35 @@ function drawDash(host, st){
   if(lo<0) svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(0)}" y2="${Y(0)}" stroke="#aab2c2" stroke-width="1"/>`;
   MO.forEach((mo,i)=>{ if(i%step===0||i===MO.length-1)
     svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#8b93a5">${mlabel(mo)}</text>`;});
+  // Series lines first, then their end labels — which are collected rather
+  // than drawn inline so that converging lines (credits meeting debits, as
+  // they do in most months) do not print two names on top of each other.
+  const ends=[];
   for(const [nm,col] of vis){
     const pts=SE[nm]; let d='', pen=false;
     pts.forEach((v,i)=>{ if(v==null){pen=false;return;}
       d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true;});
     svg+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     let li=pts.length-1; while(li>=0&&pts[li]==null)li--;
-    if(li>=0) svg+=`<circle cx="${X(li)}" cy="${Y(pts[li])}" r="3" fill="${col}"/>`
-      +`<text x="${X(li)+7}" y="${Y(pts[li])+3.5}" font-size="10" fill="#5a6478">${nm}</text>`;
+    if(li>=0){
+      svg+=`<circle cx="${X(li)}" cy="${Y(pts[li])}" r="3" fill="${col}"/>`;
+      ends.push({nm, col, x:X(li)+7, y:Y(pts[li]), y0:Y(pts[li])});
+    }
+  }
+  // Push labels apart, top-down, keeping each within the plot band and with a
+  // leader tick back to its own point when it had to move.
+  const GAP=12;
+  ends.sort((a,b)=>a.y-b.y);
+  for(let i=1;i<ends.length;i++)
+    if(ends[i].y - ends[i-1].y < GAP) ends[i].y = ends[i-1].y + GAP;
+  const over = ends.length ? ends[ends.length-1].y - (MT+ih) : 0;
+  if(over>0) for(const en of ends) en.y -= over;
+  for(const en of ends){
+    if(Math.abs(en.y-en.y0) > 1)
+      svg+=`<line x1="${(en.x-5).toFixed(1)}" y1="${en.y0.toFixed(1)}" x2="${en.x.toFixed(1)}"
+        y2="${en.y.toFixed(1)}" stroke="${en.col}" stroke-width="1" opacity=".5"/>`;
+    svg+=`<text x="${en.x.toFixed(1)}" y="${(en.y+3.5).toFixed(1)}" font-size="10"
+      fill="${en.col}" font-weight="600">${en.nm}</text>`;
   }
   svg+=`<g class="hoverg"></g><rect class="hot" x="${ML}" y="${MT}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
   // Totals over the visible window: credit / debit / turnover / cash.
@@ -1218,13 +1324,39 @@ function drawDash(host, st){
     ${aps?` · <b>${esc(shortDate(aps.start))}</b> to <b>${esc(shortDate(aps.end))}</b>
       (${nfmt(aps.days)} days) · missing: ${aps.gaps.length?esc(aps.gaps.join('; ')):'none'}`:''}
   </div>` : '';
-  const sumTable = heroRow + smallRow + factline
-    + (reads?`<ul class="creads">${reads}</ul>`:'');
+  // The description: what this account did, in a sentence, before any tile or
+  // line. A chart answers "what is the shape"; only prose answers "so what",
+  // and it is the one part of the page that reads without being studied. Every
+  // number in it is one already on the page — nothing new is asserted here.
+  const closeSE = SE['Closing balance'];
+  let closing = null; for(let i=closeSE.length-1;i>=0;i--) if(closeSE[i]!=null){ closing=closeSE[i]; break; }
+  const span = MO.length===1 ? mlabel(MO[0])
+    : `${MO.length} months, ${mlabel(MO[0])} – ${mlabel(MO[MO.length-1])}`;
+  const cashBit = totCd ? ` <b>${pct(totCd,totC)}</b> of credits arrived as cash.` : '';
+  const balBit = aa && aa.validation==='passed'
+      ? 'Every row reconciles against the printed running balance.'
+    : aa && aa.validation==='failed'
+      ? `<b>${nfmt(aa.issues||0)}</b> balance break${(aa.issues||0)===1?'':'s'} — the running-balance chain does not reconcile.`
+    : aa && aa.validation ? 'Balance warnings on this statement.' : '';
+  const intgBit = (aa && aa.integrity && aa.integrity.assessment!=='verified')
+      ? ' PDF integrity is flagged for a human look.' : '';
+  const blurb = `<div class="blurb">
+    Over <b>${esc(span)}</b>, money in <b>${inr0(totC)}</b>
+    (<b>${inr0(totC/nData)}</b> a month) against money out <b>${inr0(totD)}</b>${
+    closing!=null?`, closing at <b>${inr0(closing)}</b>`:''}.
+    Turnover excluding loan and salary credits is <b>${inr0(totT)}</b>,
+    <b>${pct(totT,totC)}</b> of everything received.${cashBit}
+    <span class="q">${ae?`${nfmt(ae.statements)} statement${ae.statements===1?'':'s'} ·
+      ${nfmt(aa.rows)} transactions${aps?` · ${esc(shortDate(aps.start))} to ${esc(shortDate(aps.end))}`:''} · `:''}${balBit}${intgBit}</span>
+  </div>`;
+  const sumTable = smallRow + (reads?`<ul class="creads">${reads}</ul>`:'') + factline;
   // Month-by-month table: the chart's data in full, one row per month.
   // Linked to the chart (hover a row → crosshair on that month, and vice
-  // versa). MINIMISED by default — the end user sees chart + totals; the
-  // detail tables open on demand.
-  const mtOpen = st.mtOpen === true;
+  // versa). OPEN by default — landing on an account should show the figures
+  // as well as their shape, and it is capped at 300px of scroll so it cannot
+  // run away with the page. Top-10 parties stays folded; it is a second
+  // question, not the first. Minimising sticks for the session.
+  const mtOpen = st.mtOpen !== false;
   const cell = (v,cls) => v==null ? '<td class="num">—</td>'
     : `<td class="num ${cls||''}">${inr0(v)}</td>`;
   const monthTable = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
@@ -1256,7 +1388,12 @@ function drawDash(host, st){
       ${ptable('Debits', st.topDr, totD, 'drn')}</div>`:'');
   const RANGES = [['3',3],['6',6],['12',12],['All','all']];
   const curRange = st.range || 'all';
-  body.innerHTML = `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
+  // Reading order, top to bottom: the sentence, then the headline money, then
+  // the chart with its controls, then the supporting metrics and tables. The
+  // legend used to sit at the very top of the card, which meant the first
+  // thing on the page was six checkboxes.
+  body.innerHTML = blurb + heroRow
+    + `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
       `<label class="lchip ${st.visible.has(nm)?'':'off'}">
          <input type="checkbox" data-s="${esc(nm)}" ${st.visible.has(nm)?'checked':''}>
          <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')
@@ -1309,7 +1446,9 @@ function drawDash(host, st){
     tip.style.display='block';
     const bw=body.clientWidth, tx=(x/W)*bw;
     tip.style.left=Math.min(Math.max(tx+14,0), Math.max(bw-170,0))+'px';
-    tip.style.top='34px';
+    // Anchor to the SVG itself: the chart no longer starts at the top of the
+    // card, so a fixed offset would float the tooltip over the description.
+    tip.style.top=(svgEl.offsetTop+20)+'px';
     rowEls.forEach(r=>r.classList.toggle('hl', +r.dataset.i===i));
   };
   const restore=()=>{
