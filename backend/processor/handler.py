@@ -550,7 +550,14 @@ def lambda_handler(event, _ctx):
                                    f"outputs/{job_id}/{slug}/{os.path.basename(pth)}")
 
                 from bsa.normalize import party_kind
+                from bsa.sme_taxonomy import sme_subcategory
                 cats: dict[str, int] = {}
+                # The SME master's sub-categories (its "Category (SME)" tab,
+                # column B) — the finer split a lender reads. "118 Regular
+                # debits" says nothing; payroll / GST / suppliers / utilities
+                # does. Counted alongside the ABCL tags, not instead of them.
+                subcats: dict[str, int] = {}
+                subcat_amounts: dict[str, float] = {}
                 conf = {"high": 0, "medium": 0, "low": 0}
                 # Party quality is a different axis from confidence: how many rows
                 # name a real counterparty vs only a machine handle (account
@@ -559,6 +566,11 @@ def lambda_handler(event, _ctx):
                 pq = {"named": 0, "handle": 0, "none": 0}
                 for t in txns:
                     cats[t.category] = cats.get(t.category, 0) + 1
+                    sc = sme_subcategory(t)
+                    if sc:
+                        subcats[sc] = subcats.get(sc, 0) + 1
+                        subcat_amounts[sc] = round(
+                            subcat_amounts.get(sc, 0.0) + abs(t.amount), 2)
                     conf[t.confidence] = conf.get(t.confidence, 0) + 1
                     kind = party_kind(t.counterparty, t.description)
                     if kind != "na":
@@ -608,6 +620,9 @@ def lambda_handler(event, _ctx):
                     "unreadable_pages": sum(
                         len(getattr(m, "unreadable_pages", []) or []) for m in metas),
                     "categories": cats,
+                    # The SME master's finer split, by count and by value.
+                    "subcategories": subcats,
+                    "subcategory_amounts": subcat_amounts,
                     # Categorisation confidence: how many rows are a certain tag
                     # vs a known-party regular transfer vs genuinely unsure. The
                     # "low" count is what a reviewer eyeballs — the report never

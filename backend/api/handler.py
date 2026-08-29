@@ -49,6 +49,10 @@ TABLE = ddb.Table(os.environ["JOBS_TABLE"])
 AUTH = ddb.Table(os.environ["AUTH_TABLE"])
 BUCKET = os.environ["DATA_BUCKET"]
 PROCESSOR_FUNCTION = os.environ.get("PROCESSOR_FUNCTION", "")
+# A job in one of these has finished; nothing is running against it. Kept in
+# step with processor.handler.TERMINAL_STATUSES — "password_required" is
+# deliberately NOT here, since that one is waiting on the unlock route.
+TERMINAL_STATUSES = ("done", "needs_review", "reviewed", "failed")
 OWNER_INDEX = os.environ.get("OWNER_INDEX", "owner-created_at-index")
 
 SESSION_TTL = 12 * 3600
@@ -568,6 +572,52 @@ def _handle(event):
                     {"s3": {"object": {"key": key}}}]}).encode())
         return _resp(200, {"ok": True, "status": "processing",
                            "filename": entry.get("filename", "")})
+
+    if route == "POST /jobs/{id}/regenerate" and path_id:
+        it = TABLE.get_item(Key={"job_id": path_id}).get("Item")
+        if not it or not _owned(it):
+            return _resp(404, {"error": "not found"})
+        # Only from a settled job. Regenerating one that is mid-flight would
+        # race the invocation already running and double-write the outputs.
+        if str(it.get("status") or "") not in TERMINAL_STATUSES:
+            return _resp(409, {"error": "this upload is still processing"})
+        files = [f for f in (it.get("files") or []) if isinstance(f, dict)]
+        if not files:
+            return _resp(409, {"error": "this upload has no files to redo"})
+        if not PROCESSOR_FUNCTION:
+            return _resp(503, {"error": "processing is not available"})
+        # Drop the intermediate work objects so the pipeline RE-EXTRACTS rather
+        # than merging what it cached. That is the whole point: a report made
+        # before a parser or categorisation change carries the old answers, and
+        # the numbers on it never move on their own.
+        for i, f in enumerate(files):
+            idx = f.get("idx", i)
+            try:
+                s3.delete_object(Bucket=BUCKET, Key=f"work/{path_id}/{idx}.json")
+            except Exception as e:                       # noqa: BLE001
+                print(f"regenerate: could not drop work {path_id}/{idx}: {e}")
+        now = int(time.time())
+        # Reset every marker the pipeline sets as it goes, so the job starts
+        # from the same state a fresh upload would. `extracted` is a string set
+        # and cannot be assigned an empty one, so it is REMOVEd.
+        TABLE.update_item(
+            Key={"job_id": path_id},
+            UpdateExpression=("SET #s = :p, updated_at = :t "
+                              "REMOVE extracted, failed_files, merging_at, "
+                              "redrives, #e"),
+            ExpressionAttributeNames={"#s": "status", "#e": "error"},
+            ExpressionAttributeValues={":p": "processing", ":t": now},
+        )
+        for i, f in enumerate(files):
+            idx = f.get("idx", i)
+            lam.invoke(
+                FunctionName=PROCESSOR_FUNCTION, InvocationType="Event",
+                Payload=json.dumps({"Records": [
+                    {"s3": {"object": {
+                        "key": f.get("key", f"uploads/{path_id}/{idx}.pdf")}}}
+                ]}).encode())
+        return _resp(200, {"ok": True, "status": "processing",
+                           "files": len(files)})
 
     # Reviewer corrections — captured training data. A correction is one row
     # the reviewer relabelled (right category and/or party), appended to the

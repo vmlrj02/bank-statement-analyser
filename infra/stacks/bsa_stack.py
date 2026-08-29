@@ -412,6 +412,10 @@ class BsaStack(Stack):
             # Supply the password for a protected file that failed for want of
             # one; the PDF is already in S3, so this re-drives that one key.
             ("/jobs/{id}/password", [apigw.HttpMethod.POST]),
+            # Re-run the pipeline over the files already in S3, so a report
+            # made before a parser or categorisation change picks up the
+            # current answers without the customer re-uploading anything.
+            ("/jobs/{id}/regenerate", [apigw.HttpMethod.POST]),
             ("/jobs/{id}/corrections",
              [apigw.HttpMethod.POST, apigw.HttpMethod.GET]),  # admin training data
             ("/admin/try-categorize", [apigw.HttpMethod.POST]),  # admin beta

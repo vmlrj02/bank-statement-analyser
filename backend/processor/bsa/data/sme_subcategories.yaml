@@ -1,0 +1,268 @@
+# The SME sub-categories — column B of the "Category (SME)" tab in the
+# "Banking extraction data labeling" master, with column A as the group,
+# column D as the narration patterns and column E as the template sheet.
+#
+# This is a SECOND, FINER label carried alongside the ABCL category tag; it does
+# not replace it. The master's own column E is the proof: several sub-categories
+# roll up to one sheet (Loan EMIs, Credit Card Payments and OD/CC Interest all
+# land on "EMI Xns"; GST, Direct Tax and PF/ESIC all land on "Regular Debits"),
+# so the ABCL tag still decides where a row is written and the output template's
+# sheet contract is untouched.
+#
+# Kept as DATA, like category_rules.yaml, so the domain owner can add a pattern
+# without a code change. `tags` narrows a sub-category to the ABCL tags it may
+# apply to; `patterns` are matched case-insensitively with spaces and
+# punctuation squashed, so "ACH-D GST PMT" matches "GSTPMT".
+
+credit:
+  - name: B2B Trade Receipts
+    priority: -10
+    group: Operational Revenue
+    sheet: Regular Credits
+    tags: [Regular credit]
+    patterns: [NEFT, RTGS, IMPS, INVOICE, INV NO, BILL, SALES]
+
+  - name: POS / Merchant / QR Settlements
+    group: Operational Revenue
+    sheet: Regular Credits
+    tags: [Regular credit]
+    patterns: [RAZORPAY, PINELABS, PINE LABS, PAYTM, BILLDESK, MRL, CCAVENUE,
+               PHONEPE, BHARATPE, MSWIPE, EZETAP, INSTAMOJO, CASHFREE,
+               PAYU, POS SETTLEMENT, MERCHANT SETTLEMENT, UPI SETTLEMENT]
+
+  - name: Cheque Clearances (Inward)
+    group: Operational Revenue
+    sheet: Regular Credits
+    tags: [Regular credit]
+    patterns: [CLG, CTS, INWARD CLEARING, CHQ DEP, CHEQUE DEPOSIT, MICR]
+
+  - name: Rental Income
+    group: Operational Revenue
+    sheet: Regular Credits
+    tags: [Regular credit]
+    patterns: [RENT, LEASE, LICENCE FEE, LICENSE FEE]
+
+  - name: Interest & Treasury Income
+    group: Non-Operating Receipts
+    sheet: ""
+    tags: [Interest received, Investment return credited]
+    patterns: [INT CR, FD INT, TREASURY, SWEEP, INTEREST, DIVIDEND, MUTUAL FUND]
+
+  - name: Asset Sale Proceeds
+    group: Non-Operating Receipts
+    sheet: ""
+    tags: [Regular credit]
+    patterns: [SALE OF ASSET, ASSET SALE, SALE PROCEEDS, PROPERTY SALE,
+               VEHICLE SALE]
+
+  - name: Tax & Duty Refunds
+    group: Non-Operating Receipts
+    sheet: ""
+    tags: [return / refund, Regular credit]
+    patterns: [GST REFUND, ITR REFUND, INCOME TAX REFUND, CUSTOMS DRAWBACK,
+               DRAWBACK, REFUND OF TAX, TDS REFUND, IT REFUND, CBDT]
+
+  - name: Loan Disbursal
+    group: Capital & Financing
+    sheet: Loan Disbursed Xns
+    tags: [Loan amount disbursal]
+    patterns: [LN DISB, LOAN DISB, DISBURSAL, DISBURSEMENT]
+
+  - name: Promoter / Equity Infusion
+    group: Capital & Financing
+    sheet: ""
+    tags: [Regular credit, Related party credit]
+    patterns: [CAPITAL CONTRIB, CAPITAL INTRO, SHARE APPLICATION,
+               EQUITY INFUSION, PROMOTER CONTRIB, PARTNER CAPITAL,
+               DIRECTOR CONTRIB]
+
+  - name: OD / CC Drawdowns
+    group: Capital & Financing
+    sheet: ""
+    tags: [Regular credit]
+    patterns: [OD DRAWDOWN, CC DRAWDOWN, CASH CREDIT, OVERDRAFT, OD SWEEP,
+               CC SWEEP, LIMIT UTILISATION, LIMIT UTILIZATION]
+
+  - name: Intra-Account / Own Transfers
+    group: Transfers & Adjustments
+    sheet: ""
+    tags: [Regular credit]
+    patterns: [SELF, OWN ACCOUNT, OWN A/C, INTERNAL TRANSFER, FUND TRANSFER SELF]
+
+  - name: Related Party / Group Inflows
+    group: Transfers & Adjustments
+    sheet: ""
+    tags: [Related party credit]
+    patterns: []
+
+  - name: Direct Cash Deposits
+    group: Transfers & Adjustments
+    sheet: Cash Deposit Xns
+    tags: [cash deposit]
+    patterns: []
+
+  - name: Outward Cheque / Mandate Returns
+    group: Contra / Technical
+    sheet: Outward Bounced Xns
+    tags: [Outward Bounced Xns, return / refund]
+    patterns: [INW RET, RETURN CHEQUE, RETURN CHQ, MANDATE REJECT, REVERSAL,
+               CHQ RETURN, RET CHQ]
+
+debit:
+  - name: Loan EMIs
+    group: Debt Obligations (Fixed)
+    sheet: EMI Xns
+    tags: [EMI transaction]
+    patterns: [EMI, NACH, ACH, LOAN INSTAL]
+
+  - name: Credit Card Payments
+    group: Debt Obligations (Fixed)
+    sheet: EMI Xns
+    tags: [EMI transaction, Regular debit, ECS transaction]
+    patterns: [CRED, BBPS CC, CREDIT CARD, CC PAYMENT, CARD BILL, AMEX,
+               CC BILL PAY]
+
+  - name: OD / CC Interest & Renewal Fees
+    group: Debt Obligations (Fixed)
+    sheet: EMI Xns
+    tags: [Interest payments]
+    patterns: [INT DR, ANNUAL RENEWAL, RENEWAL CHG, PROCESSING FEE,
+               INTEREST DEBIT, OD INT, CC INT]
+
+  - name: Payroll & Wages
+    group: Operating Expenses (OpEx)
+    sheet: Salary Paid Xns
+    tags: [Salary paid]
+    patterns: [SAL, SALARY, WAGES, CMS SAL, NEFT WAGES, PAYROLL]
+
+  - name: Supplier / Vendor Settlements
+    priority: -10
+    group: Operating Expenses (OpEx)
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [NEFT, RTGS, IMPS, VENDOR, SUPPLIER, PURCHASE, PAYABLE]
+
+  - name: Commercial Rent & Utilities
+    group: Operating Expenses (OpEx)
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [RENT, LEASE, ELECTRICITY, BESCOM, MSEB, TNEB, TELECOM, AIRTEL,
+               JIO, VODAFONE, BSNL, WATER, BBPS, UTILITY, GAS BILL,
+               BROADBAND, INTERNET BILL]
+
+  - name: GST Payments
+    group: Statutory & Compliance
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [GST PMT, GST, CPIN, CBIC, GSTN]
+
+  - name: Direct Tax (TDS / Advance Tax)
+    group: Statutory & Compliance
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [OLTAS, CHALLAN 281, CHALLAN 280, TDS, ADVANCE TAX, INCOME TAX,
+               SELF ASSESSMENT TAX, TCS PAYMENT]
+
+  - name: Labour Welfare (PF / ESIC)
+    group: Statutory & Compliance
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [EPFO, ESIC, PROVIDENT FUND, PF CHALLAN, ESI, LWF]
+
+  - name: Cash Withdrawals (High Value)
+    group: Cash & Non-Operating
+    sheet: Cash Withdrawal Xns
+    tags: [cash withdrawal]
+    patterns: []
+
+  - name: Promoter Drawings / Remittances
+    group: Cash & Non-Operating
+    sheet: ""
+    tags: [Related party debit, Regular debit]
+    patterns: [DRAWINGS, PARTNER DRAW, DIRECTOR REMUN, PROPRIETOR,
+               DIRECTOR TRANSFER, PARTNER TRANSFER]
+
+  - name: Investments Outflows
+    group: Cash & Non-Operating
+    sheet: ""
+    tags: [Regular debit, ECS transaction]
+    patterns: [MUTUAL FUND, SIP, MF PURCHASE, LIC, INSURANCE PREMIUM,
+               FIXED DEPOSIT, RD INSTAL, PPF, NPS]
+
+  - name: Inward Cheque / Mandate Bounces
+    group: Banking Friction & Penal
+    sheet: Bounced-Penal Xns
+    tags: [inward bounce penal charges]
+    patterns: []
+
+  - name: Bank Penalties & Non-Maintenance
+    group: Banking Friction & Penal
+    sheet: ""
+    tags: [other penal charges]
+    patterns: [PENAL INT, EXCESS OD, MIN BAL, MAB, AMB, NON MAINT,
+               LIMIT EXPIRY, POS THRESHOLD]
+
+  - name: Statutory Penalty / Late Fees
+    group: Banking Friction & Penal
+    sheet: ""
+    tags: [other penal charges, Regular debit]
+    patterns: [ITR LATE FEE, GST LATE FEE, TDS PENALTY, MCA ADDITIONAL FEE,
+               LATE FEE, PENALTY]
+
+  - name: Gambling / Betting / Real-Money Gaming
+    priority: 100
+    group: Speculative & High-Risk Spending
+    sheet: ""
+    tags: []
+    patterns: [DREAM11, RUMMY, POKER, 1XBET, PARIMATCH, CASINO, LOTTERY,
+               GAMES24X7, BETTING, MPL, WINZO, JUNGLEE]
+
+  - name: Virtual Digital Assets / Crypto Exchanges
+    priority: 100
+    group: Speculative & High-Risk Spending
+    sheet: ""
+    tags: []
+    patterns: [WAZIRX, COINDCX, BINANCE, COINSWITCH, ZEBPAY, UNOCOIN, CRYPTO,
+               BITBNS, KUCOIN]
+
+  - name: Unlicensed / P2P Lending Outflows
+    priority: 100
+    group: Speculative & High-Risk Spending
+    sheet: ""
+    tags: []
+    patterns: [FAIRCENT, LENDBOX, LIQUILOANS, P2P LENDING, PEER LENDING]
+
+  - name: Speculative Stock & Derivatives Funding
+    priority: 100
+    group: Speculative & High-Risk Spending
+    sheet: ""
+    tags: []
+    patterns: [ZERODHA, GROWW, UPSTOX, ANGELONE, ANGEL ONE, MCX, COMMODITY,
+               F&O, FNO FUNDING, SHAREKHAN, MOTILAL OSWAL, ICICIDIRECT,
+               5PAISA, DHAN]
+
+# When no pattern matches, a sub-category is chosen from the ABCL tag alone.
+# For most tags this is DEFINITIONAL, not a guess — a cash deposit is a Direct
+# Cash Deposit, an inward bounce charge is an Inward Cheque / Mandate Bounce.
+# The two trade lines are genuine residuals: the SME taxonomy has no "other"
+# bucket, and the master describes B2B Trade Receipts and Supplier / Vendor
+# Settlements as exactly the general trade cases ("other Credit transactions" /
+# "other Debit transactions" in the ABCL tab map to the same two sheets).
+defaults:
+  cash deposit: Direct Cash Deposits
+  cash withdrawal: Cash Withdrawals (High Value)
+  EMI transaction: Loan EMIs
+  Interest payments: OD / CC Interest & Renewal Fees
+  Loan amount disbursal: Loan Disbursal
+  Salary paid: Payroll & Wages
+  Interest received: Interest & Treasury Income
+  Investment return credited: Interest & Treasury Income
+  Related party credit: Related Party / Group Inflows
+  Related party debit: Promoter Drawings / Remittances
+  inward bounce penal charges: Inward Cheque / Mandate Bounces
+  Outward Bounced Xns: Outward Cheque / Mandate Returns
+  other penal charges: Bank Penalties & Non-Maintenance
+  return / refund: Outward Cheque / Mandate Returns
+  ECS transaction: Supplier / Vendor Settlements
+  Regular credit: B2B Trade Receipts
+  Regular debit: Supplier / Vendor Settlements

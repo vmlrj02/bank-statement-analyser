@@ -135,6 +135,11 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   transition:border-color .12s,color .12s,background .12s}
 .ibtn:hover{border-color:var(--gold);color:var(--fg);background:var(--sunk)}
 .ibtn svg{width:14px;height:14px;display:block}
+/* While a regenerate is in flight the icon turns, so the click has visible
+   effect before the job list comes back as "processing". */
+@keyframes ibtn-spin{to{transform:rotate(360deg)}}
+.ibtn.spin svg{animation:ibtn-spin .9s linear infinite}
+.ibtn:disabled{opacity:.55;cursor:default}
 /* The chevron points DOWN when the section is closed (click to open) and UP
    when it is open (click to close). */
 .ibtn.open svg{transform:rotate(180deg)}
@@ -772,6 +777,14 @@ const ICON_DOWNLOAD =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
   + ' stroke-linecap="round" stroke-linejoin="round">'
   + '<path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>';
+/* Regenerate: a circular arrow. A report is a snapshot of the pipeline on the
+   day it ran, so after a parser or categorisation change the numbers on an old
+   one are stale until it is re-run. The files are already in S3, so this costs
+   the customer no re-upload. */
+const ICON_REFRESH =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+  + ' stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
 /* A section's minimise control: chevron only, with the words carried by the
    title/aria-label so nothing is lost for a screen reader or on hover. */
 const toggleBtn = (cls, open, what) =>
@@ -957,6 +970,9 @@ function accountCard(e){
         ${cover?`<div class="acctline coverline">${cover}</div>`:''}
       </div>
       ${trust?`<div class="trust">${trust}</div>`:''}
+      <button class="ibtn" title="Regenerate this report from the uploaded files"
+        aria-label="Regenerate this report from the uploaded files"
+        onclick="regen('${j.job_id}', this)">${ICON_REFRESH}</button>
       <button class="ibtn solid" title="Download the Excel report"
         aria-label="Download the Excel report"
         onclick="dl('${j.job_id}','${a.slug}','xlsx')">${ICON_DOWNLOAD}</button></div>
@@ -1488,10 +1504,24 @@ function drawDash(host, st){
         <span class="cbarr"><i style="width:${catT?(100*v/catT).toFixed(1):0}%"></i></span>
         <span class="cn">${nfmt(v)}</span></div>`).join('');
   const cmOpen = st.cmOpen === true;
-  const catmix = catrows
+  // The SME sub-categories underneath. The broad tag says "Regular debit" for
+  // most of a statement, which tells a lender nothing; this is the split they
+  // actually reason about — payroll, GST, suppliers, utilities. Shown by VALUE
+  // rather than count, because ten ₹500 charges do not matter beside one ₹5L
+  // payroll run. Absent on reports generated before sub-categories existed,
+  // so the block simply does not render for those.
+  const subs = (aa&&aa.subcategory_amounts)||{};
+  const subT = Object.values(subs).reduce((s,v)=>s+v,0);
+  const subrows = Object.entries(subs).sort((x,y)=>y[1]-x[1]).slice(0,10)
+      .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(k)}</span>
+        <span class="cbarr"><i style="width:${subT?(100*v/subT).toFixed(1):0}%"></i></span>
+        <span class="cn">${inr0(v)}</span></div>`).join('');
+  const catmix = (catrows||subrows)
     ? `<div class="catmix"><div class="sechead" style="margin-bottom:9px">
-         <span class="ch">Category mix · by transaction count</span>
-         ${toggleBtn('cm-tgl', cmOpen, 'the category mix')}</div>${cmOpen?catrows:''}</div>`
+         <span class="ch">Category mix</span>
+         ${toggleBtn('cm-tgl', cmOpen, 'the category mix')}</div>${cmOpen?`
+         ${subrows?`<div class="meta" style="margin:0 0 6px">Sub-category · by value</div>${subrows}`:''}
+         ${catrows?`<div class="meta" style="margin:12px 0 6px">Category · by transaction count</div>${catrows}`:''}`:''}</div>`
     : '';
   /* Month-by-month table: the chart's data as figures, one row per month,
      linked to the chart (hover a row → crosshair on that month, and vice
@@ -1662,6 +1692,26 @@ async function dl(id, acct, fmt){
     const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
     location.href = url;
   }catch(e){ alert('Could not fetch the download: '+(e.message||'failed')); }
+}
+/* Regenerate: re-run the pipeline over the files already uploaded. A report is
+   a snapshot of the pipeline on the day it ran, so after a parser or
+   categorisation change an old one keeps its old numbers. Confirmed first,
+   because it replaces the report that is on screen — and it re-extracts every
+   file on the upload, not just this account, since the upload is the unit the
+   processor works in. */
+async function regen(id, btn){
+  if(!confirm('Re-run the analysis on the files in this upload?\n\n'
+    + 'The report is rebuilt with the current parsers and categorisation, and '
+    + 'replaces the one you have now. Nothing needs re-uploading.')) return;
+  const was = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.classList.add('spin'); }
+  try{
+    await api(`/jobs/${id}/regenerate`, {method:'POST', body:'{}'});
+    refresh();                       // picks up "processing" and polls onward
+  }catch(e){
+    if(btn){ btn.disabled = false; btn.classList.remove('spin'); btn.innerHTML = was; }
+    alert('Could not regenerate: '+(e.message||'failed'));
+  }
 }
 /* Review. The reconciliation detail the pipeline produced, unedited: which
    row broke the chain, what the statement said, and what the arithmetic

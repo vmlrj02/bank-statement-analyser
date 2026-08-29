@@ -764,3 +764,63 @@ def test_unlock_reports_an_unknown_file(api, jobs_table, signed_in):
                                body={"idx": 7, "password": "x"},
                                path_id=job_id), None)
     assert r["statusCode"] == 404
+
+
+# --- regenerate --------------------------------------------------------------
+#
+# A report is a snapshot of the pipeline on the day it ran: after a parser or
+# categorisation change an old one keeps its old numbers, and nothing moves
+# them on its own. Regenerate re-runs the analysis over the files already in
+# S3, so the customer re-uploads nothing.
+
+def _finished_job(jobs_table, owner, status="done", job_id="j-regen"):
+    jobs_table.put_item(Item={
+        "job_id": job_id, "owner": owner, "status": status,
+        "filename": "axis.pdf", "created_at": 1, "expected": 2, "uploaded": 2,
+        "extracted": {"0", "1"},
+        "files": [{"idx": 0, "key": f"uploads/{job_id}/0.pdf",
+                   "filename": "axis.pdf"},
+                  {"idx": 1, "key": f"uploads/{job_id}/1.pdf",
+                   "filename": "axis2.pdf"}],
+    })
+    return job_id
+
+
+def test_regenerate_reruns_every_file_and_resets_the_job(api, jobs_table,
+                                                         signed_in):
+    token, email = signed_in()
+    job_id = _finished_job(jobs_table, email)
+    r = api.lambda_handler(_ev("POST /jobs/{id}/regenerate", token, body={},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 200, r["body"]
+    assert _body(r)["files"] == 2
+
+    it = jobs_table.get_item(Key={"job_id": job_id})["Item"]
+    assert it["status"] == "processing"
+    # Every marker the pipeline sets as it goes is cleared, so the job starts
+    # where a fresh upload would. Leaving `extracted` behind would let the
+    # merge fire before anything had been re-extracted.
+    assert "extracted" not in it
+    # Re-driven once per FILE, not once for the job.
+    assert len(api._fake_lambda.invocations) == 2
+
+
+def test_regenerate_refuses_a_job_that_is_still_running(api, jobs_table,
+                                                        signed_in):
+    """Regenerating mid-flight would race the invocation already running and
+    double-write the outputs."""
+    token, email = signed_in()
+    job_id = _finished_job(jobs_table, email, status="processing")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/regenerate", token, body={},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 409, r["body"]
+    assert api._fake_lambda.invocations == []
+
+
+def test_regenerate_is_scoped_to_the_owner(api, jobs_table, signed_in):
+    token, _ = signed_in()
+    job_id = _finished_job(jobs_table, "someone-else@getitright.co.in")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/regenerate", token, body={},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 404, r["body"]
+    assert api._fake_lambda.invocations == []

@@ -25,6 +25,7 @@ from .categorize import category_detail
 from .credit_summary import credit_summary
 from .integrity import account_integrity
 from .models import JobResult, Txn
+from .sme_taxonomy import group_of, sme_subcategory
 from .workbook_style import (style_avg_balances, style_eod, style_party_annual,
                              style_party_month, style_summary, style_xn_sheet)
 
@@ -155,7 +156,8 @@ SUMMARY_ROWS = [
 # The CSV keeps the fuller internal shape — it is ours, not the customer's, and
 # the party/category-detail columns are what the reviewer harness reads.
 HEADERS = ["Sl. No.", "Date", "Account", "Bank", "Cheque No.", "Description",
-           "Amount", "Category", "Category Detail", "Party", "Balance"]
+           "Amount", "Category", "Sub-Category", "Category Detail", "Party",
+           "Balance"]
 
 
 def _fmt_amount(a: float) -> str:
@@ -171,7 +173,8 @@ def _fmt_date(iso: str) -> str:
 
 def _row(i: int, t: Txn) -> list:
     return [i, _fmt_date(t.date), t.account_no, t.bank, t.cheque_no,
-            t.description, _fmt_amount(t.amount), t.category, category_detail(t),
+            t.description, _fmt_amount(t.amount), t.category,
+            sme_subcategory(t), category_detail(t),
             t.counterparty or "unknown party", f"{t.balance:,.2f}"]
 
 
@@ -622,6 +625,29 @@ def write_workbook(result: JobResult, path: str) -> None:
     _append(ws, ["Validation", result.validation.status,
                  f"{result.validation.checked_rows} rows checked",
                  f"{len(result.validation.issues)} issues"])
+
+    # The SME master's sub-categories (its "Category (SME)" tab, column B),
+    # grouped by that tab's column A. This is the split a lender reads: the
+    # ABCL tag says "Regular debit" for a hundred rows, this says how much of
+    # that was payroll, GST, suppliers and utilities. It is OUR sheet, so it
+    # sits after the customer's nineteen like everything else we add.
+    ws = wb.create_sheet("Sub-Category Mix")
+    _append(ws, ["Group", "Sub-Category", "Direction", "Count", "Amount"])
+    for c in ws[1]:
+        c.font = bold
+    sub_n: dict[str, int] = defaultdict(int)
+    sub_amt: dict[str, float] = defaultdict(float)
+    sub_dir: dict[str, str] = {}
+    for t in txns:
+        sc = sme_subcategory(t)
+        if not sc:
+            continue
+        sub_n[sc] += 1
+        sub_amt[sc] += abs(t.amount)
+        sub_dir[sc] = "credit" if t.amount > 0 else "debit"
+    for sc in sorted(sub_n, key=lambda k: (group_of(k), -sub_amt[k])):
+        _append(ws, [group_of(sc), sc, sub_dir[sc], sub_n[sc],
+                     round(sub_amt[sc], 2)])
 
     # Largest SINGLE transactions — a different question from the biggest
     # parties, and the one that finds a one-off ₹50L movement.
