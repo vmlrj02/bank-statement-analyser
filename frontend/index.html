@@ -839,13 +839,9 @@ const catLabel = c => c==='Regular credit' ? 'Business credit'
                     : c==='Regular debit'  ? 'Business debit' : c;
 function accountCard(e){
   const j = e.latest.j, a = e.latest.a;
-  // Category mix as a compact bar list — data is already in the summary,
-  // so this costs no extra fetch.
-  const catT = Object.values(a.categories||{}).reduce((s,v)=>s+v,0);
-  const cats = Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,6)
-      .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(catLabel(k))}</span>
-        <span class="cbarr"><i style="width:${catT?(100*v/catT).toFixed(1):0}%"></i></span>
-        <span class="cn">${nfmt(v)}</span></div>`).join('');
+  // The category mix used to render here, below the dashboard. It now lives
+  // inside drawDash so it can sit in the order the user set — after the
+  // numbers, before the description — rather than after all of them.
   // Hero header: bank avatar, holder over bank · last-4, action on the right.
   // Old jobs may predate the holder field — fall back to the composed title.
   const nm = a.holder || a.bank || a.title || 'Account';
@@ -882,7 +878,6 @@ function accountCard(e){
     ${a.validation==='failed' && (a.issue_sample||[]).length
       ? `<div class="err"><b>Where the balance chain breaks:</b>
         ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
-    ${cats?`<div class="catmix"><div class="ch">Category mix · by transaction count</div>${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
         ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} balance break${(a.issues||0)===1?'':'s'}</button>`
@@ -1349,7 +1344,17 @@ function drawDash(host, st){
     <span class="q">${ae?`${nfmt(ae.statements)} statement${ae.statements===1?'':'s'} ·
       ${nfmt(aa.rows)} transactions${aps?` · ${esc(shortDate(aps.start))} to ${esc(shortDate(aps.end))}`:''} · `:''}${balBit}${intgBit}</span>
   </div>`;
-  const sumTable = smallRow + (reads?`<ul class="creads">${reads}</ul>`:'') + factline;
+  const creads = reads?`<ul class="creads">${reads}</ul>`:'';
+  // Category mix moved here from the card body so that the categorisation sits
+  // where the user placed it — after the numbers, before the description.
+  const catT = Object.values((aa&&aa.categories)||{}).reduce((s,v)=>s+v,0);
+  const catrows = Object.entries((aa&&aa.categories)||{}).sort((x,y)=>y[1]-x[1]).slice(0,6)
+      .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(catLabel(k))}</span>
+        <span class="cbarr"><i style="width:${catT?(100*v/catT).toFixed(1):0}%"></i></span>
+        <span class="cn">${nfmt(v)}</span></div>`).join('');
+  const catmix = catrows
+    ? `<div class="catmix"><div class="ch">Category mix · by transaction count</div>${catrows}</div>`
+    : '';
   // Month-by-month table: the chart's data in full, one row per month.
   // Linked to the chart (hover a row → crosshair on that month, and vice
   // versa). OPEN by default — landing on an account should show the figures
@@ -1388,19 +1393,19 @@ function drawDash(host, st){
       ${ptable('Debits', st.topDr, totD, 'drn')}</div>`:'');
   const RANGES = [['3',3],['6',6],['12',12],['All','all']];
   const curRange = st.range || 'all';
-  // Reading order, top to bottom: the sentence, then the headline money, then
-  // the chart with its controls, then the supporting metrics and tables. The
-  // legend used to sit at the very top of the card, which meant the first
-  // thing on the page was six checkboxes.
-  body.innerHTML = blurb + heroRow
-    + `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
+  // Reading order is the user's, set explicitly: the chart, then the numbers,
+  // then the categorisation, then the description. The month table joins that
+  // between the numbers and the category mix — the figures behind the shape,
+  // ahead of the reading of them.
+  body.innerHTML = `<div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
       `<label class="lchip ${st.visible.has(nm)?'':'off'}">
          <input type="checkbox" data-s="${esc(nm)}" ${st.visible.has(nm)?'checked':''}>
          <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')
     + `<span style="margin-left:auto;display:inline-flex;gap:5px">`
     + RANGES.map(([lbl,val])=>`<button class="rchip ${String(curRange)===String(val)?'act':''}"
          data-r="${val}">${lbl==='All'?'All':lbl+'M'}</button>`).join('')+`</span></div>`
-    + svg + `<div class="dash-tip"></div>` + sumTable + monthTable + partyTables;
+    + svg + `<div class="dash-tip"></div>`
+    + heroRow + smallRow + monthTable + catmix + blurb + creads + factline + partyTables;
   body.querySelectorAll('.lchip input').forEach(cb=>cb.onchange=()=>{
     const nm=cb.dataset.s;
     if(cb.checked) st.visible.add(nm);
