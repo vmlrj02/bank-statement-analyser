@@ -1435,7 +1435,7 @@ function drawDash(host, st){
   const heroRow = `<div class="tiles">
     ${hero('Credits', totC, 'crn', inr0(totC/nData)+' / mo avg', null, null, 'Credits')}
     ${hero('Debits', totD, 'drn', inr0(totD/nData)+' / mo avg', null, null, 'Debits')}
-    ${hero('Turnover (business credits)', totT, '', pct(totT,totC)+' of credits · '+inr0(totT/nData)+' / mo', totC?100*totT/totC:null)}
+    ${hero('Turnover', totT, '', pct(totT,totC)+' of credits · '+inr0(totT/nData)+' / mo', totC?100*totT/totC:null)}
     ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g', 'Cash deposits')}
     ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r', 'Cash withdrawals')}
     ${m?hero('Monthly surplus', m.monthly_surplus, (m.monthly_surplus||0)<0?'drn':'crn',
@@ -1476,9 +1476,8 @@ function drawDash(host, st){
     Over <b>${esc(span)}</b>, money in <b>${inr0(totC)}</b>
     (<b>${inr0(totC/nData)}</b> a month) against money out <b>${inr0(totD)}</b>${
     closing!=null?`, closing at <b>${inr0(closing)}</b>`:''}.
-    Turnover — business credits only, with loan disbursals, salary, interest,
-    investment returns, refunds and related-party inflows stripped out — is
-    <b>${inr0(totT)}</b>, <b>${pct(totT,totC)}</b> of everything received.${cashBit}
+    Turnover is <b>${inr0(totT)}</b>,
+    <b>${pct(totT,totC)}</b> of everything received.${cashBit}
     <span class="q">${ae?`${nfmt(ae.statements)} statement${ae.statements===1?'':'s'} ·
       ${nfmt(aa.rows)} transactions${aps?` · ${esc(shortDate(aps.start))} to ${esc(shortDate(aps.end))}`:''} · `:''}${balBit}${intgBit}</span>
   </div>`;
