@@ -462,3 +462,54 @@ def test_transfer_narrations_name_the_party_or_the_account_number():
     assert party("TRANSFER FROM 4897650123456 RAJESH TRADERS") == "RAJESH TRADERS"
     assert party("TRANSFER TO 4698150044305") == "4698150044305"
     assert party("TRANSFER FROM 4897650123456") == "4897650123456"
+
+
+def test_hdfc_flattened_narrations_name_the_party():
+    """A re-exported HDFC statement has the spaces squeezed out of every
+    narration, so the spaced patterns written for other banks matched none of
+    it and the account named 43% of its nameable rows. These are the shapes
+    that were failing, verbatim from a real statement."""
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    def party(d):
+        return extract_counterparty(d, detect_mode(d))
+
+    # Fund transfers: the payee sits after the account number, hyphens unspaced.
+    assert party("FT-CR-50100415695344-PULIVENKATAI AH") == "PULIVENKATAI AH"
+    assert party("FT-DR-50100563477863-PULIPRANEETH GOUD") == "PULIPRANEETH GOUD"
+    # IMPS through the same prefix — payee is the token before the FTIMPS tail.
+    assert party("FT-99999012489999-IMPSTRANSACTION-PULI 0000FTIMPS054382 "
+                 "SANDEEPGOUD-FTIMPS054382") == "SANDEEPGOUD"
+    # Cheques name who was actually paid, in three different orders.
+    assert party("AKHILESHRAO-CHQPAID-OLDALWAL") == "AKHILESHRAO"
+    assert party("CHEQPAIDTOMOHAMMADBINADBUL SATTARQ -CHQPAID-KOMPALLY") \
+        == "MOHAMMADBINADBUL SATTARQ"
+    assert party("CHQPAID-CTSS5-RKS-CHENDHINAGENDER") == "CHENDHINAGENDER"
+    # Collection credit carrying only the remitter.
+    assert party("PAYMENTS-K&NKIDSLLP") == "K&NKIDSLLP"
+
+
+def test_rows_with_no_counterparty_are_not_counted_as_unnamed():
+    """Party coverage is only honest if rows that CANNOT have a counterparty
+    are excluded. HDFC's own charges, its interest posting, an ATM withdrawal
+    (which names a machine's location) and a cheque drawn to SELF have no payee
+    to find — counting them as failures understated the naming badly."""
+    from bsa.normalize import detect_mode, extract_counterparty, party_kind
+
+    for d in ("NWD-652166XXXXXX3333-18072HRY-KOMPALLY",
+              "SELF-CHQPAID-PETBASHEERAB",
+              "NEFTCHGSBRNINCLGST05-06-2026-EPR2716219786735",
+              "SBCASHTXNCHGSINCLTAXES19-06-2026-EPR2717153040250",
+              "INTERESTPAIDTILL31-MAR-2026",
+              "SBY30259689_DAP_RENEWAL"):
+        kind = party_kind(extract_counterparty(d, detect_mode(d)), d)
+        assert kind == "na", f"{d} -> {kind}"
+
+
+def test_hdfc_atm_withdrawal_is_cash_not_a_supplier_payment():
+    """"NWD-<masked card>-<terminal>-<branch>" is HDFC's ATM withdrawal and
+    carries no "ATM" token, so it fell through to Regular debit and was read as
+    trade spend — a cash withdrawal counted as a supplier payment."""
+    from bsa.normalize import detect_mode
+
+    assert detect_mode("NWD-652166XXXXXX3333-18072HRY-KOMPALLY") == "atm-cash"

@@ -37,7 +37,11 @@ MODE_RULES = [
     (r"\bBIL/|Bil Payment", "billpay"),
     # Axis prints "ATM-CASH/+<branch>" and "ATM-CASH- AXIS/…" — the hyphen
     # form was falling through to Regular debit.
-    (r"NFS/CASH WDL|\bATM[-/ ]|ATM trxn", "atm-cash"),
+    # HDFC's ATM withdrawal code is "NWD-<masked card>-<terminal>-<branch>";
+    # it carries no "ATM" token at all, so it was falling through to Regular
+    # debit and being read as a supplier payment — a cash withdrawal counted as
+    # trade spend, which is the wrong answer twice over.
+    (r"NFS/CASH WDL|\bATM[-/ ]|ATM trxn|\bNWD-", "atm-cash"),
     (r"\bCLG/", "clearing"),
     (r"BY CASH|CASH ?DEP|\bCDM\b|CASHDEP", "cash-deposit"),
     (r"\bCMS/", "cms"),
@@ -516,13 +520,44 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"I/W CHEQUE RETURN-([A-Za-z][^-]{2,})", d)
     if m:
         return _clean_segment(m.group(1))
+    # HDFC cheque payments, flattened. Three shapes, all naming the PAYEE, which
+    # for a cheque is the whole point — a cheque is the one instrument where the
+    # bank prints who was actually paid:
+    #   "PRABHUDAYALSHARMA-CHQPAID-PETBASHEERAB"   payee, then branch
+    #   "CHEQPAIDTOMOHAMMADBINADBUL SATTARQ -CHQPAID-KOMPALLY"
+    #   "CHQPAID-CTSS5-RKS-CHENDHINAGENDER"        payee last, after CTS codes
+    # "SELF-CHQPAID-…" is the account holder drawing their own cash and is left
+    # unnamed on purpose; it is a withdrawal, not a payment to someone.
+    m = re.search(r"CHEQPAIDTO([A-Za-z][A-Za-z .&']{2,}?)\s*-\s*CHQPAID", d, re.I)
+    if m:
+        return _clean_segment(m.group(1))
+    m = re.search(r"^([A-Za-z][A-Za-z .&']{2,})-\s*CHQPAID", d)
+    if m and m.group(1).strip().upper() != "SELF":
+        return _clean_segment(m.group(1))
+    m = re.search(r"CHQPAID-(?:[A-Z0-9]+-)+([A-Za-z][A-Za-z .&']{3,})\s*$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # HDFC collection credit: "PAYMENTS-K&NKIDSLLP" — the remitter is all the
+    # narration carries.
+    m = re.search(r"^PAYMENTS-([A-Za-z&][A-Za-z0-9 .&']{2,})\s*$", d, re.I)
+    if m:
+        return _clean_segment(m.group(1))
     # Equitas transfer tails: "…TRANSFER DR - SHREERENUKA STEELS",
     # "FT - DR - <acct> -KMP STEEL TRADERS", and its long-form UPI
     # "UPI REF NO <ref>P2A-<NAME>-…".
     m = re.search(r"TRANSFER (?:DR|CR) -\s*([A-Za-z][A-Za-z .&/]{2,})\s*$", d)
     if m:
         return _clean_segment(m.group(1))
-    m = re.search(r"\bFT - (?:DR|CR) - \d+ -\s*([A-Za-z].+?)\s*$", d)
+    # Spaces optional around the hyphens: Equitas prints "FT - DR - <acct> -
+    # <NAME>", HDFC prints the same shape flattened, "FT-CR-50100415695344-
+    # PULIVENKATAI AH". A re-exported HDFC statement has the spaces squeezed
+    # out of the whole narration, so the spaced form missed every one of them.
+    m = re.search(r"\bFT\s*-\s*(?:DR|CR)\s*-\s*\d+\s*-\s*([A-Za-z].+?)\s*$", d)
+    if m:
+        return _clean_segment(m.group(1))
+    # HDFC IMPS through the same FT prefix: "FT-<ref>-IMPSTRANSACTION-<junk>
+    # <NAME>-FTIMPS<ref>" — the payee is the token just before the FTIMPS tail.
+    m = re.search(r"IMPSTRANSACTION-.*?([A-Za-z]{4,})\s*-\s*FTIMPS", d, re.I)
     if m:
         return _clean_segment(m.group(1))
     m = re.search(r"UPI REF NO \d+P2[AMVP]-([A-Za-z][^-]{2,})", d)
@@ -708,7 +743,15 @@ _UNNAMEABLE = re.compile(
     r"UPISETTLEMENT|QRSETTLEM|ECSRTN|\bPOS\b|ATW-|CHRGS|\bCHRG\b|\bCHARGES?\b|"
     r"/GST/|CASH\s*DEP|BY CASH|CASH\s*W(?:DL|ITHDRAWAL)|ATM WDR|"
     r"Int\.Pd|Int\.Coll|INTEREST\s*CAPITALIZED|DEBIT INTEREST|"
-    r"MONTHLY SAVINGS INTEREST|AUTOPAYSI", re.I)
+    r"MONTHLY SAVINGS INTEREST|AUTOPAYSI|"
+    # HDFC, with the spaces flattened out: the bank's OWN charges and interest,
+    # and an ATM withdrawal, which names a machine's location and never a payee.
+    # These have no counterparty to find, so they belong here rather than
+    # counting against party coverage as rows we failed to name.
+    r"\bNWD-|CHGSBRN|CHGSINCL|CHGSINCLTAXES|\bCHGS\b|INTERESTPAID|"
+    # A cheque drawn to SELF is the holder taking their own cash out; there is
+    # no payee to name, however the bank orders the words.
+    r"_DAP_RENEWAL|\bSELF\s*-\s*CHQPAID|CHQPAID\s*-?\s*SELF", re.I)
 
 
 def party_kind(counterparty: str, description: str) -> str:
