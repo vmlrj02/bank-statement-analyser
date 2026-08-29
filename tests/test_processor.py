@@ -104,6 +104,24 @@ def test_a_stale_merge_claim_can_be_retaken(proc, jobs_table):
     assert proc._claim_merge("j") is True
 
 
+@pytest.mark.parametrize("status", ["done", "needs_review", "reviewed", "failed"])
+def test_a_finished_job_is_never_reclaimed_for_merge(proc, jobs_table, status):
+    """S3 delivers at-least-once, so a duplicate event can arrive after the job
+    finished. Re-running the merge would regress `reviewed` to `needs_review`
+    and discard a review a person already did."""
+    jobs_table.put_item(Item={"job_id": "j", "status": status})
+    assert proc._claim_merge("j") is False
+    assert jobs_table.items["j"]["status"] == status
+
+
+def test_the_sweepers_redrive_reset_still_claims(proc, jobs_table):
+    """The sweeper releases a stale claim by setting the job back to
+    "processing" before re-invoking — that path must keep working, or a
+    re-driven job could never merge."""
+    jobs_table.put_item(Item={"job_id": "j", "status": "processing"})
+    assert proc._claim_merge("j") is True
+
+
 def test_every_status_write_stamps_progress(proc, jobs_table):
     """The sweeper measures staleness from updated_at; a writer that forgets to
     stamp it would make a live job look stuck."""
@@ -181,6 +199,14 @@ def test_a_multi_account_upload_publishes_one_report_per_account(three_file_job)
     icici = next(a for a in accounts if a["bank"] == "ICICI Bank")
     assert icici["rows"] == 3 and icici["statements"] == 2
     assert icici["account_no"] == "XXXXXXXX2192"       # never the full number
+    # The artifacts themselves must land in S3 — a summary that points at
+    # outputs/ that were never uploaded is a report nobody can download.
+    for a in accounts:
+        keys = [k for (b, k) in s3.objects
+                if b == "bucket" and k.startswith(f"outputs/j1/{a['slug']}/")]
+        assert any(k.endswith(".xlsx") for k in keys), keys   # the workbook
+        assert any(k.endswith(".csv") for k in keys), keys    # the transactions
+        assert any(k.endswith("preview.json") for k in keys), keys
 
 
 def test_ai_cost_is_attributed_to_the_file_that_actually_used_ai(three_file_job):
@@ -286,6 +312,60 @@ def test_a_fully_readable_statement_reports_no_unreadable_pages(three_file_job):
     _run_all(proc, files)
     for a in jobs_table.items["j1"]["summary"]["accounts"]:
         assert a["unreadable_pages"] == 0
+
+
+def test_an_oversize_file_fails_alone_and_the_rest_still_merge(
+        proc, jobs_table, s3, monkeypatch):
+    """A presigned PUT has no content-length ceiling, so the processor gates on
+    head_object before downloading. The oversize file settles as a normal
+    per-file failure with a size the person can act on; the other file's
+    account still publishes."""
+    files = [{"idx": i, "key": f"uploads/j5/{i}.pdf", "filename": f"f{i}.pdf"}
+             for i in range(2)]
+    jobs_table.put_item(Item={"job_id": "j5", "status": "processing",
+                              "files": files, "expected": 2, "owner": "u@x"})
+    for f in files:
+        s3.objects[("bucket", f["key"])] = b"%PDF-1.4\n"
+    # The shared fake's head_object returns no ContentLength; report one here
+    # (real S3 always includes it) without changing its exists/raises contract.
+    sizes = {"uploads/j5/1.pdf": 60 * 1024 * 1024}
+    def head(Bucket, Key, **kw):
+        if (Bucket, Key) not in s3.objects:
+            raise KeyError(Key)
+        return {"ContentLength": sizes.get(Key, len(s3.objects[(Bucket, Key)]))}
+    monkeypatch.setattr(s3, "head_object", head)
+
+    good = _extract("Axis Bank", "42", "f0.pdf", [("01-01-2026", -20.0, 4980.0)])
+    monkeypatch.setattr(proc, "extract_one", lambda *a, **k: good)
+    _run_all(proc, files)
+
+    item = jobs_table.items["j5"]
+    assert item["status"] == "needs_review"
+    assert len(item["summary"]["accounts"]) == 1        # f0's account published
+    failed = item["summary"]["failed_files"]
+    assert failed[0]["filename"] == "f1.pdf"
+    assert "60 MB" in failed[0]["error"]
+    assert "over 50 MB are not accepted" in failed[0]["error"]
+
+
+def test_a_late_duplicate_event_does_not_regress_a_reviewed_job(
+        proc, jobs_table, s3):
+    """S3 delivers at-least-once. A duplicate event on a job someone already
+    reviewed used to re-run the merge, recompute needs_review and silently
+    discard the review."""
+    files = [{"idx": 0, "key": "uploads/j6/0.pdf", "filename": "a.pdf"}]
+    jobs_table.put_item(Item={"job_id": "j6", "status": "reviewed",
+                              "files": files, "expected": 1, "owner": "u@x",
+                              "extracted": {"0"}, "summary": {"rows": 5}})
+    s3.objects[("bucket", files[0]["key"])] = b"%PDF-1.4\n"
+    s3.objects[("bucket", "work/j6/0.json")] = b"{}"
+
+    proc.lambda_handler({"Records": [{"s3": {"object":
+                                             {"key": "uploads/j6/0.pdf"}}}]}, None)
+    item = jobs_table.items["j6"]
+    assert item["status"] == "reviewed"                 # not regressed
+    assert item["summary"] == {"rows": 5}               # not recomputed
+    assert "merging_at" not in item                     # claim never taken
 
 
 def test_ddb_safe_converts_every_float_including_inside_a_set(proc):

@@ -4,11 +4,12 @@ Everything here is reachable from the public internet with no credential but a
 password, so the interesting cases are the ones where it must say no.
 """
 import json
+import sys
 
 import pytest
 
 
-def _ev(route, token=None, body=None, path_id=None, qs=None):
+def _ev(route, token=None, body=None, path_id=None, qs=None, ip=None):
     e = {"routeKey": route, "headers": {}, "queryStringParameters": qs or {}}
     if token:
         e["headers"]["Authorization"] = f"Bearer {token}"
@@ -16,6 +17,8 @@ def _ev(route, token=None, body=None, path_id=None, qs=None):
         e["body"] = json.dumps(body)
     if path_id:
         e["pathParameters"] = {"id": path_id}
+    if ip:
+        e["requestContext"] = {"http": {"sourceIp": ip}}
     return e
 
 
@@ -102,6 +105,55 @@ def test_a_successful_login_clears_the_failure_count(api, user):
     assert r["statusCode"] == 401       # not locked: the counter restarted
 
 
+def test_failures_across_many_emails_lock_the_source_ip(api, user, monkeypatch):
+    """The per-email counter alone misses credential stuffing: one IP walking
+    a list of addresses never trips any single email's threshold."""
+    monkeypatch.setattr(api, "MAX_FAILED_LOGINS_IP", 3)
+    email, password = user()
+    for i in range(3):
+        r = api.lambda_handler(_ev("POST /auth/login",
+                                   body={"email": f"guess{i}@x.com",
+                                         "password": "no"},
+                                   ip="203.0.113.9"), None)
+        assert r["statusCode"] == 401
+    # Even the CORRECT credentials for an untouched email are refused from
+    # the locked IP…
+    r = api.lambda_handler(_ev("POST /auth/login",
+                               body={"email": email, "password": password},
+                               ip="203.0.113.9"), None)
+    assert r["statusCode"] == 429
+    assert "too many failed" in _body(r)["error"]
+    # …while the same sign-in from a different IP is untouched.
+    r = api.lambda_handler(_ev("POST /auth/login",
+                               body={"email": email, "password": password},
+                               ip="198.51.100.7"), None)
+    assert r["statusCode"] == 200
+
+
+def test_the_ip_threshold_sits_above_the_email_threshold(api):
+    """One client hammering ONE address must hit the email lockout first, so a
+    shared office IP is not collateral damage of one forgotten password."""
+    assert api.MAX_FAILED_LOGINS_IP > api.MAX_FAILED_LOGINS
+
+
+def test_a_successful_login_clears_the_ip_counter_too(api, user, monkeypatch):
+    monkeypatch.setattr(api, "MAX_FAILED_LOGINS_IP", 3)
+    email, password = user()
+    for i in range(2):
+        api.lambda_handler(_ev("POST /auth/login",
+                               body={"email": f"guess{i}@x.com", "password": "no"},
+                               ip="203.0.113.9"), None)
+    assert api.lambda_handler(_ev("POST /auth/login",
+                                  body={"email": email, "password": password},
+                                  ip="203.0.113.9"), None)["statusCode"] == 200
+    # the counter restarted: two more failures do not add up to a lockout
+    for i in range(2):
+        r = api.lambda_handler(_ev("POST /auth/login",
+                                   body={"email": f"more{i}@x.com", "password": "no"},
+                                   ip="203.0.113.9"), None)
+        assert r["statusCode"] == 401
+
+
 def test_an_expired_session_row_is_not_accepted(api, auth_table, signed_in):
     """DynamoDB deletes by TTL lazily, so an expired row can still be read."""
     token, _ = signed_in()
@@ -155,6 +207,60 @@ def test_password_change_takes_effect_and_reissues_a_salt(api, auth_table, signe
         "email": email, "password": "Getitright#2026"}), None)["statusCode"] == 401
     assert api.lambda_handler(_ev("POST /auth/login", body={
         "email": email, "password": "NewPassword#2026"}), None)["statusCode"] == 200
+
+
+def test_password_change_revokes_other_sessions_but_not_the_changing_one(api, signed_in):
+    """A password change often means 'someone may have my password' — every
+    session issued before it must stop working. The session that proved the
+    current password keeps working, deliberately."""
+    other, email = signed_in()
+    r = api.lambda_handler(_ev("POST /auth/login", body={
+        "email": email, "password": "Getitright#2026"}), None)
+    current = _body(r)["token"]
+    assert current != other
+    r = api.lambda_handler(_ev("POST /auth/password", current, body={
+        "current_password": "Getitright#2026",
+        "new_password": "NewPassword#2026"}), None)
+    assert r["statusCode"] == 200
+    assert api.lambda_handler(_ev("GET /auth/me", current), None)["statusCode"] == 200
+    assert api.lambda_handler(_ev("GET /auth/me", other), None)["statusCode"] == 401
+
+
+def test_a_session_for_a_removed_user_stops_working(api, auth_table, signed_in):
+    """The user row is the source of truth for a session's right to live."""
+    token, email = signed_in()
+    del auth_table.items[f"USER#{email}"]
+    assert api.lambda_handler(_ev("GET /auth/me", token), None)["statusCode"] == 401
+
+
+def test_a_cli_password_reset_bumps_pwd_version(manage_users, auth_table, monkeypatch):
+    """scripts/manage_users.py must stamp pwd_version exactly like the API's
+    self-service change, or an operator reset would leave old sessions alive."""
+    monkeypatch.setattr(sys, "argv", ["manage_users.py", "add", "x@x.com",
+                                      "--password", "FirstPass#123",
+                                      "--table", "auth"])
+    manage_users.main()
+    first = dict(auth_table.items["USER#x@x.com"])
+    assert first["pwd_version"] == 1
+    monkeypatch.setattr(sys, "argv", ["manage_users.py", "add", "x@x.com",
+                                      "--password", "SecondPass#456",
+                                      "--table", "auth"])
+    manage_users.main()
+    second = auth_table.items["USER#x@x.com"]
+    assert second["pwd_version"] == 2
+    assert second["hash"] != first["hash"]
+
+
+def test_a_cli_password_reset_revokes_live_api_sessions(api, manage_users,
+                                                        signed_in, monkeypatch):
+    """The end-to-end claim: an operator resetting a password from the CLI
+    kills that user's existing bearer tokens on the next request."""
+    token, email = signed_in()
+    monkeypatch.setattr(sys, "argv", ["manage_users.py", "add", email,
+                                      "--password", "BrandNewPw#2026",
+                                      "--table", "auth"])
+    manage_users.main()
+    assert api.lambda_handler(_ev("GET /auth/me", token), None)["statusCode"] == 401
 
 
 # ------------------------------------------------------------------- jobs --
@@ -240,6 +346,51 @@ def test_jobs_are_capped_per_upload(api, signed_in):
     body = {"files": [{"filename": f"{i}.pdf"} for i in range(50)]}
     got = _body(api.lambda_handler(_ev("POST /jobs", token, body=body), None))
     assert len(got["uploads"]) == api.MAX_FILES_PER_JOB
+
+
+def test_a_new_job_initialises_failed_files(api, jobs_table, signed_in):
+    """Present from birth, so concurrent per-file failure writes in the
+    processor and sweeper always take the per-key conditional path instead of
+    a last-writer-wins overwrite of the whole map."""
+    token, _ = signed_in()
+    job_id = _body(api.lambda_handler(_ev("POST /jobs", token,
+                                          body={"filename": "a.pdf"}),
+                                      None))["job_id"]
+    assert jobs_table.items[job_id]["failed_files"] == {}
+
+
+def test_admin_listing_reaches_past_the_first_scan_pages(api, jobs_table, signed_in):
+    """A scan returns hash-key order, not recency. The old 200-item cap meant
+    that once the table outgrew 200 jobs the console showed an arbitrary
+    slice and could miss every recent upload."""
+    token, _ = signed_in(role="admin", email="admin@x.com")
+    for i in range(250):
+        jobs_table.put_item(Item={"job_id": f"job{i:04d}", "owner": "c@x.com",
+                                  "status": "done", "created_at": 1000 + i,
+                                  "summary": {"rows": i}})
+    jobs_table.page_size = 100          # force real pagination
+    jobs = _body(api.lambda_handler(_ev("GET /jobs", token), None))["jobs"]
+    assert len(jobs) == 60
+    # newest first — including the ones a 200-item scan never reached
+    assert [j["job_id"] for j in jobs[:2]] == ["job0249", "job0248"]
+    newest = jobs[0]
+    # and the projection kept what the console renders
+    assert newest["status"] == "done"
+    assert newest["owner"] == "c@x.com"
+    assert newest["summary"]["rows"] == 249
+    assert newest["created_at"] == 1249
+
+
+def test_the_s3_client_pins_the_regional_endpoint_and_sigv4(api):
+    """Gotcha 2: presigned URLs minted against the global endpoint break
+    browser uploads. The client must be built on the regional endpoint with
+    sigv4 and virtual addressing."""
+    kw = api._fake_boto3.client_kwargs["s3"]
+    assert kw["endpoint_url"] == "https://s3.ap-south-1.amazonaws.com"
+    assert kw["region_name"] == "ap-south-1"
+    cfg = kw["config"]
+    assert cfg.signature_version == "s3v4"
+    assert cfg.s3 == {"addressing_style": "virtual"}
 
 
 def test_decimals_come_back_as_json_numbers(api):
@@ -468,3 +619,40 @@ def test_categoriser_playground_rejects_an_empty_narration(api, signed_in):
     r = api.lambda_handler(_ev("POST /admin/try-categorize", token,
                                body={"description": "   ", "amount": 0}), None)
     assert r["statusCode"] == 400
+
+
+# ----------------------------------------------------------- error envelope --
+
+def test_a_malformed_json_body_is_a_400_not_a_crash(api):
+    e = _ev("POST /auth/login")
+    e["body"] = "{definitely not json"
+    r = api.lambda_handler(e, None)
+    assert r["statusCode"] == 400
+    assert "not valid JSON" in _body(r)["error"]
+    assert r["headers"]["access-control-allow-origin"] == "*"
+
+
+def test_a_malformed_body_on_an_authenticated_route_is_also_400(api, signed_in):
+    token, _ = signed_in()
+    e = _ev("POST /jobs", token)
+    e["body"] = "{"
+    assert api.lambda_handler(e, None)["statusCode"] == 400
+
+
+def test_an_unexpected_error_returns_a_json_500_with_cors(api, jobs_table,
+                                                          signed_in, monkeypatch,
+                                                          capsys):
+    """API Gateway's own 500 carries no CORS headers, so a browser reports it
+    as an opaque network error. Ours must stay a readable JSON response —
+    with the traceback logged, not swallowed."""
+    token, _ = signed_in()
+
+    def boom(**_kw):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(jobs_table, "get_item", boom)
+    r = api.lambda_handler(_ev("GET /jobs/{id}", token, path_id="j"), None)
+    assert r["statusCode"] == 500
+    assert _body(r) == {"error": "something went wrong — try again"}
+    assert r["headers"]["access-control-allow-origin"] == "*"
+    assert "kaboom" in capsys.readouterr().err

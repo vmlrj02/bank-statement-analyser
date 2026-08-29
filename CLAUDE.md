@@ -128,8 +128,29 @@ their own uploads and never the AI block.
     over both would compare March's opening balance to January's closing and
     report a failure that is not real. The account shows the worst individual
     statement's status. Pinned by tests/test_period_gap.py.
-13. The UI is strictly black/white/grey. Status is carried by words plus fill
-    and border weight, never colour; debits use accounting parentheses.
+13. The UI follows the Get It Right brand: deep navy + gold on white, after
+    the company logo (boss's instruction, Aug 2026 — replaced the earlier
+    strictly-black/white/grey rule). Status must still read without colour
+    alone — explicit words plus fill and border weight — and debits use
+    accounting parentheses. The UI is also ACCOUNT-first: the sidebar is
+    account cards, and the main pane is that account's card, read top to
+    bottom in ONE fixed order — chart, key numbers, categorisation (mix,
+    confidence, party quality), then the written description (coverage,
+    data-quality notes, credit reads), with the month-by-month and top-party
+    tables collapsed at the end.
+
+    Only two things may appear as a notice ABOVE the cards, because an
+    account card cannot say them: an upload still processing, and files that
+    could not be read at all. NEEDS-REVIEW MUST NOT. `needs_review` is an
+    upload-wide status — processor/handler.py sets it when the WORST account
+    in the upload fails, or any file failed — while the notices render above
+    whichever account is selected. The two together put a review banner over
+    every account in the upload, including the clean ones, in both the admin
+    and the customer view. Balance state belongs to an account and is
+    described in that account's own card. The row-level reconciliation
+    drill-down survives as an admin-only button on the affected account's
+    card; there is no "mark reviewed" workflow, because marking an upload
+    said nothing about any single account in it.
 14. Listing a customer's jobs must be a QUERY on the owner index, never a
     scan filtered by owner. A scan returns items in key order, so once the
     table outgrew the scanned page a customer could see none of their own jobs
@@ -318,14 +339,20 @@ failed files are listed on the upload with a plain reason.
    self-service password change, but a forgotten password still needs an
    operator running scripts/manage_users.py. A real reset needs a verified SES
    identity — a separate decision, not a missing line of code.
-4. **Revoke other sessions on a password change.** Finding a user's other
-   sessions needs a secondary index on the auth table; today they stay valid
-   until their 12-hour TTL, and the UI says so rather than implying otherwise.
+4. ~~Revoke other sessions on a password change.~~ DONE — no GSI was needed:
+   the USER# row carries a `pwd_version`, each session is stamped with it at
+   login, and _session rejects a stale stamp. A password change (API or
+   scripts/manage_users.py) bumps the version, killing every other session
+   while deliberately re-stamping the one that made the change.
 5. **Sweeper at scale.** The scheduled sweep is a filtered scan of a table
    holding 180 days of jobs. It is projected and runs every 15 minutes, and
    the on-failure destination handles the common case exactly — but if the
    table grows large, set a `live` attribute while a job runs and query a
    sparse index instead of scanning.
-6. **Upload size limits.** A presigned PUT has no content-length ceiling, so a
-   client can upload an arbitrarily large object. MAX_FILES_PER_JOB caps count,
-   not bytes.
+6. **Upload size limits.** Mostly closed: the processor refuses any file whose
+   ContentLength exceeds MAX_UPLOAD_BYTES (default 50 MB) as a per-file failure
+   before download, and the UI rejects oversize files client-side. What remains
+   open is the presigned PUT itself, which still has no byte ceiling at the S3
+   edge — stopping the bytes from landing at all needs a switch to
+   generate_presigned_post with a content-length-range condition (and a POST
+   CORS rule), a deliberate upload-contract change.
