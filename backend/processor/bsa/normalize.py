@@ -825,6 +825,37 @@ _BANK_PREFIX = re.compile(r"^(?:SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|IOB
                           r"SIBL|AIRP|YBL|PTSB)$", re.I)
 
 
+# "Bank names: ICICI, HDFC, etc." — rule 4 of the master's Party naming tab,
+# under "Avoid capturing these in the party names". A bank is the RAIL the
+# money moved on, not the counterparty, and letting one through poisons exactly
+# what the party column is for: the Top-10 lists came back led by "KARNATAKA
+# BANK LIMIT" at a 122.8% share, "ICICI BANK LIMITED" and "BANK OF BARODA",
+# which tells a lender nothing about who the business trades with.
+#
+# The test is the WORD "bank" anywhere in the name, plus the handful of brands
+# that get printed without it. Word-bounded on purpose: "BANKATLAL TEXTILES" is
+# a person's name and stays. The brands are matched only as the WHOLE name —
+# "AXIS" alone is a bank, but "AXIS MACHINE TOOLS" is a customer.
+_BANK_WORD = re.compile(r"\bBANKS?\b|\bBANKING\b", re.I)
+_BANK_BRANDS = {
+    "SBI", "STATE BANK", "HDFC", "ICICI", "AXIS", "KOTAK", "KOTAK MAHINDRA",
+    "CANARA", "PNB", "PUNJAB NATIONAL", "IOB", "INDIAN OVERSEAS", "IDBI",
+    "IDFC", "IDFC FIRST", "YES", "INDUSIND", "UNION", "UNION OF INDIA",
+    "BOB", "BARODA", "EQUITAS", "AU", "AU SMALL FINANCE", "FEDERAL",
+    "KARNATAKA", "CITY UNION", "DEUTSCHE", "RBL", "DBS", "HSBC", "CITI",
+    "CITIBANK", "STANDARD CHARTERED", "INDIAN", "CENTRAL", "UCO", "BANDHAN",
+}
+
+
+def _is_bank_name(up: str) -> bool:
+    """True when this "party" is really a bank."""
+    if _BANK_WORD.search(up):
+        return True
+    stripped = re.sub(r"\b(LTD|LIMITED|LIMIT|PVT|PRIVATE|INDIA|THE)\b", " ", up)
+    stripped = re.sub(r"[^A-Z ]", " ", stripped)
+    return " ".join(stripped.split()) in _BANK_BRANDS
+
+
 def _sanitise_party(p: str) -> str:
     p = re.sub(r"\s+", " ", p or "").strip(" -/*.:")
     if not p:
@@ -857,6 +888,8 @@ def _sanitise_party(p: str) -> str:
         return ""                                    # a channel/stamp/stop word
     if _IFSC_SHAPE.fullmatch(up.replace(" ", "")):
         return ""                                    # an IFSC is a bank, not a party
+    if _is_bank_name(up):
+        return ""                                    # nor is the bank itself
     return p
 
 

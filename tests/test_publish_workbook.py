@@ -75,11 +75,28 @@ def test_our_extra_sheets_come_after_the_template_never_inside_it(tmp_path):
 
 def test_transaction_sheets_use_the_templates_seven_columns(tmp_path):
     wb = _load(tmp_path)
-    for name in ("Xns", "Cash Deposit Xns", "EMI Xns", "SundayXns"):
+    for name in ("Cash Deposit Xns", "EMI Xns", "SundayXns"):
         got = [c.value for c in wb[name][1]]
         assert got == XN_HEADERS, f"{name} header drifted: {got}"
     # The two grouped sheets carry the party group first and nothing else new.
     assert [c.value for c in wb["Regular Debits"][1]] == GROUPED_HEADERS
+
+
+def test_the_xns_tab_carries_the_party_name_column(tmp_path):
+    """The customer added "Party Name" to the Xns tab of Output_Template,
+    between Category and Balance — "easy to verify everything in one sheet".
+    ONLY that tab: every other transaction sheet keeps the seven columns
+    (asserted above), and the grouped sheets already lead with the party."""
+    wb = _load(tmp_path)
+    got = [c.value for c in wb["Xns"][1]]
+    assert got == ["Sl. No. ", "Date", "Cheque No.", "Description", "Amount",
+                   "Category", "Party Name", "Balance"]
+    # And the column actually carries the party, not a blank spacer.
+    parties = {wb["Xns"].cell(row=r, column=7).value
+               for r in range(2, wb["Xns"].max_row + 1)}
+    assert any(p for p in parties), f"party column is empty: {parties}"
+    # Balance stayed last, so a reader's rightmost column is still the balance.
+    assert wb["Xns"].cell(row=2, column=8).value is not None
 
 
 def test_rows_route_to_their_category_sheets(tmp_path):
@@ -282,9 +299,15 @@ def test_money_and_date_columns_use_the_templates_formats(tmp_path):
     ws = _load(tmp_path)["Xns"]
     assert ws["B2"].number_format == "[$-409]dd\\-mmm\\-yy"
     # Amount and Balance show negatives in red parentheses; Category does not.
+    # On the Xns tab the Party Name column sits between Category and Balance,
+    # so Balance is H, not G.
     assert ws["E2"].number_format == "#,##0.00_);[Red](#,##0.00)"
     assert ws["F2"].number_format == "#,##0.00"
-    assert ws["G2"].number_format == "#,##0.00_);[Red](#,##0.00)"
+    assert ws["G2"].number_format == "General"
+    assert ws["H2"].number_format == "#,##0.00_);[Red](#,##0.00)"
+    # A sheet WITHOUT the party column keeps Balance in G.
+    other = _load(tmp_path)["Cash Deposit Xns"]
+    assert other["G2"].number_format == "#,##0.00_);[Red](#,##0.00)"
 
 
 def test_summary_and_grid_sheets_carry_their_own_header_colours(tmp_path):

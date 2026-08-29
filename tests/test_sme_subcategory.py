@@ -105,7 +105,7 @@ def test_the_tag_alone_decides_when_nothing_matches():
     assert sme_subcategory(_txn("XYZ", 5000, "cash deposit")) == \
         "Direct Cash Deposits"
     assert sme_subcategory(_txn("XYZ", -5000, "cash withdrawal")) == \
-        "Cash Withdrawals (High Value)"
+        "Cash Withdrawals"
     assert sme_subcategory(_txn("XYZ", -500, "inward bounce penal charges")) == \
         "Inward Cheque / Mandate Bounces"
     # An unknown tag yields nothing rather than an invented label.
@@ -121,9 +121,41 @@ def test_a_subcategory_cannot_cross_the_credit_debit_line():
 
 def test_every_subcategory_declares_a_group_from_the_masters_column_a():
     subs = subcategories()
-    assert len(subs) == 33
+    assert len(subs) == 35        # the master's 33, plus Misc. credit and Misc. debit
     for s in subs:
         assert s["group"], s["name"]
         assert group_of(s["name"]) == s["group"]
     # The master's two blocks: credit sub-categories and debit sub-categories.
     assert {s["side"] for s in subs} == {"credit", "debit"}
+
+
+# --- the two "Misc." lines, which the master identifies by SIZE -------------
+# "Credits such 1 for account verification; credits less than 10" and
+# "test transactions; deducting a token 1 or 2 while saving a card in a
+# merchant PG; debits less than 10". There is no narration to match on — the
+# payer is a real company and the words read like any other payment — so the
+# amount IS the rule.
+
+def test_a_penny_drop_credit_is_a_misc_credit_not_trade_income():
+    """A real case: UBER INDIA SYSTEMS and OpenAI LLC each crediting 1.00 were
+    landing in the trade line, which inflates the count of genuine receipts."""
+    assert sme_subcategory(
+        _txn("UPI/P2M/530718094408/UBER INDIA SYSTEMS PRIVATE L/", 1.00,
+             "Regular credit")) == "Misc. credit"
+
+
+def test_a_token_card_debit_is_a_misc_debit():
+    assert sme_subcategory(
+        _txn("UPI/P2M/1234/MERCHANT PG CARD SAVE/", -2.00,
+             "Regular debit")) == "Misc. debit"
+
+
+def test_the_ceiling_is_exclusive_so_ten_rupees_is_still_trade():
+    """"less than 10" — at the ceiling it stays where it was."""
+    assert sme_subcategory(_txn("UPI/P2A/395106793615/HEMALATHA/UTIB/", 10.00,
+                                "Regular credit")) == "Business income"
+
+
+def test_an_ordinary_payment_is_untouched_by_the_ceiling():
+    assert sme_subcategory(_txn("NEFT INVOICE 8891", 250000.0,
+                                "Regular credit")) == "Business income"

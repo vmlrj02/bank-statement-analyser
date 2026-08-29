@@ -107,13 +107,23 @@ GROUPED_WIDTHS = {"A": 7.29, "B": 7.43, "C": 10.86, "D": 11.43, "E": 46.71,
 # Sl. No., Date, Cheque No., Description, Amount, Category, Balance.
 XN_FORMATS = [GENERAL, DATE, INT, GENERAL, MONEY_RED, MONEY, MONEY_RED]
 GROUPED_FORMATS = [GENERAL] + XN_FORMATS
+# The Xns tab carries an extra "Party Name" column between Category and
+# Balance (see publish.PARTY_COLUMN_SHEETS), so its formats and widths take
+# the party column's shape from the grouped sheets' party column.
+PARTY_COL_FORMATS = XN_FORMATS[:-1] + [GENERAL, XN_FORMATS[-1]]
+PARTY_COL_WIDTHS = dict(XN_WIDTHS, G=24.0, H=16.43, I=9.0)
 
 
-def style_xn_sheet(ws, grouped: bool = False) -> None:
+def style_xn_sheet(ws, grouped: bool = False, party_col: bool = False) -> None:
     """A transaction sheet: navy header, thin box borders everywhere, and —
     on the ungrouped sheets only — pale cyan banding on odd data rows."""
-    fmts = GROUPED_FORMATS if grouped else XN_FORMATS
-    _widths(ws, GROUPED_WIDTHS if grouped else XN_WIDTHS)
+    if grouped:
+        fmts, widths = GROUPED_FORMATS, GROUPED_WIDTHS
+    elif party_col:
+        fmts, widths = PARTY_COL_FORMATS, PARTY_COL_WIDTHS
+    else:
+        fmts, widths = XN_FORMATS, XN_WIDTHS
+    _widths(ws, widths)
     ws.freeze_panes = "A2"
     ncols = len(fmts)
     for i in range(ncols):
@@ -122,9 +132,14 @@ def style_xn_sheet(ws, grouped: bool = False) -> None:
         c.font = HEAD_FONT
         c.border = BOX
         c.alignment = CENTER
-        # The template carries the money format on the last three header cells
-        # (Amount, Category, Balance) as well as on their data.
-        c.number_format = MONEY if i >= ncols - 3 else GENERAL
+        # The template carries the money format on the Amount, Category and
+        # Balance header cells as well as on their data. Those are the last
+        # three columns on a normal sheet, but not once the Xns tab gains a
+        # Party Name column between Category and Balance — so the money header
+        # cells are chosen by position from the RIGHT, skipping the party one.
+        money_cols = ({ncols - 4, ncols - 3, ncols - 1} if party_col
+                      else {ncols - 3, ncols - 2, ncols - 1})
+        c.number_format = MONEY if i in money_cols else GENERAL
     band = _f(CYAN)
     for r in range(2, ws.max_row + 1):
         for i in range(ncols):

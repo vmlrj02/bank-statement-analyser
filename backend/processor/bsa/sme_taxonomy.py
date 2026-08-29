@@ -66,6 +66,10 @@ def _load() -> dict:
                     "side": side,
                     "priority": int(e.get("priority", 0)),
                     "tags": set(e.get("tags") or []),
+                    # Optional size ceiling in rupees (see sme_subcategory).
+                    "max_abs_amount": (float(e["max_abs_amount"])
+                                       if e.get("max_abs_amount") is not None
+                                       else None),
                     # Longest pattern first, so a specific phrase wins over a
                     # fragment of itself.
                     "patterns": sorted(
@@ -105,9 +109,28 @@ def sme_subcategory(t) -> str:
     # the same trap as the bare "AMB"/"POS" keywords in category_rules.yaml.
     tokens = set(re.findall(r"[A-Z0-9]+", text.upper()))
 
+    amount = abs(float(getattr(t, "amount", 0) or 0))
+
     best_name, best_score = "", None
     for e in data["entries"]:
         if e["side"] != side:
+            continue
+        # An AMOUNT ceiling, for the two "Misc." lines the master defines by
+        # size rather than by wording: a ₹1 penny-drop credit that verifies an
+        # account, or the ₹1-2 a merchant gateway takes and returns to save a
+        # card. There is no narration that reliably marks these — the payer is
+        # a real company and the words look like any other payment — so the
+        # amount IS the rule. Deliberately a ceiling and nothing else: the
+        # founder asked for these to fire "less rarely and only for small
+        # amounts less than ₹10", so anything at or above the ceiling stays in
+        # the trade lines where it belongs.
+        if e["max_abs_amount"] is not None and amount >= e["max_abs_amount"]:
+            continue
+        if e["max_abs_amount"] is not None and not e["patterns"]:
+            # Size alone decided it; no pattern needs to match.
+            score = (e["priority"], 0)
+            if best_score is None or score > best_score:
+                best_name, best_score = e["name"], score
             continue
         # An empty tag set means "any row on this side" — the speculative and
         # high-risk groups, which are defined by who was paid, not by the tag.

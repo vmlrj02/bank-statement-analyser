@@ -15,7 +15,22 @@
 # punctuation squashed, so "ACH-D GST PMT" matches "GSTPMT".
 
 credit:
-  - name: B2B Trade Receipts
+  # Size, not wording, is what identifies these two. A ₹1 penny-drop credit
+  # verifying an account, and the ₹1-2 a merchant gateway takes to save a card,
+  # both come from real companies with ordinary-looking narration — there is no
+  # phrase to match on. The master's own identification column says exactly
+  # that: "Credits such ₹1 for account verification; credits less than ₹10".
+  # High priority so the ceiling wins over the trade-line default; the ceiling
+  # itself keeps them rare, which is what was asked for.
+  - name: Misc. credit
+    priority: 100
+    group: Misc. Credit
+    sheet: ""
+    tags: []
+    patterns: []
+    max_abs_amount: 10
+
+  - name: Business income
     priority: -10
     group: Operational Revenue
     sheet: Regular Credits
@@ -169,7 +184,17 @@ debit:
     tags: [Regular debit, ECS transaction]
     patterns: [EPFO, ESIC, PROVIDENT FUND, PF CHALLAN, ESI, LWF]
 
-  - name: Cash Withdrawals (High Value)
+  # The debit twin of Misc. credit — "test transactions; deducting a token ₹1
+  # or 2 while saving a card in a merchant PG; debits less than ₹10".
+  - name: Misc. debit
+    priority: 100
+    group: Misc. debit
+    sheet: ""
+    tags: []
+    patterns: []
+    max_abs_amount: 10
+
+  - name: Cash Withdrawals
     group: Cash & Non-Operating
     sheet: Cash Withdrawal Xns
     tags: [cash withdrawal]
@@ -245,12 +270,12 @@ debit:
 # For most tags this is DEFINITIONAL, not a guess — a cash deposit is a Direct
 # Cash Deposit, an inward bounce charge is an Inward Cheque / Mandate Bounce.
 # The two trade lines are genuine residuals: the SME taxonomy has no "other"
-# bucket, and the master describes B2B Trade Receipts and Supplier / Vendor
+# bucket, and the master describes Business income and Supplier / Vendor
 # Settlements as exactly the general trade cases ("other Credit transactions" /
 # "other Debit transactions" in the ABCL tab map to the same two sheets).
 defaults:
   cash deposit: Direct Cash Deposits
-  cash withdrawal: Cash Withdrawals (High Value)
+  cash withdrawal: Cash Withdrawals
   EMI transaction: Loan EMIs
   Interest / fee payments: OD / CC Interest & Renewal Fees
   Loan amount disbursal: Loan Disbursal
@@ -264,5 +289,5 @@ defaults:
   other penal charges: Bank Penalties & Non-Maintenance
   return / refund: Outward Cheque / Mandate Returns
   ECS transaction: Supplier / Vendor Settlements
-  Regular credit: B2B Trade Receipts
+  Regular credit: Business income
   Regular debit: Supplier / Vendor Settlements

@@ -128,6 +128,12 @@ TEMPLATE_SHEETS = [
 XN_HEADERS = ["Sl. No. ", "Date", "Cheque No.", "Description", "Amount",
               "Category", "Balance"]
 GROUPED_HEADERS = ["Group"] + XN_HEADERS
+# The customer added a "Party Name" column to the Xns tab of Output_Template,
+# between Category and Balance: "easy to verify everything in one sheet". Only
+# that tab — the other transaction sheets keep the seven columns, and the
+# grouped sheets already lead with the party as "Group".
+PARTY_COLUMN_SHEETS = {"Xns"}
+XN_HEADERS_PARTY = XN_HEADERS[:-1] + ["Party Name", XN_HEADERS[-1]]
 # The template's transaction sheets, in the order they appear above.
 XN_SHEETS = ["ECS Xns", "Cash Deposit Xns", "Cash Withdrawal Xns",
              "Loan Disbursed Xns", "EMI Xns", "Salary Paid Xns",
@@ -538,7 +544,8 @@ def write_workbook(result: JobResult, path: str) -> None:
     sheets["Other Xns"] = wb.create_sheet("Other Xns")
     for name in XN_SHEETS:
         _append(sheets[name],
-                GROUPED_HEADERS if name in GROUPED_SHEETS else XN_HEADERS)
+                GROUPED_HEADERS if name in GROUPED_SHEETS else
+                XN_HEADERS_PARTY if name in PARTY_COLUMN_SHEETS else XN_HEADERS)
     # Sl. No. restarts on every sheet: on a template sheet it numbers that
     # sheet's rows, which is what a reader counting cash deposits expects.
     seq: dict[str, int] = defaultdict(int)
@@ -546,9 +553,15 @@ def write_workbook(result: JobResult, path: str) -> None:
     def put(name: str, t: Txn) -> None:
         seq[name] += 1
         row = _xn_row(seq[name], t)
+        party = group_label.get(party_key(t.counterparty),
+                                t.counterparty or "unknown party")
         if name in GROUPED_SHEETS:
-            row = [group_label.get(party_key(t.counterparty),
-                                   t.counterparty or "unknown party")] + row
+            row = [party] + row
+        elif name in PARTY_COLUMN_SHEETS:
+            # Between Category and Balance, and using the GROUPED name so the
+            # Xns tab agrees with the party sheets rather than showing a second
+            # spelling of the same counterparty.
+            row = row[:-1] + [party, row[-1]]
         _append(sheets[name], row)
 
     for t in txns:
@@ -560,7 +573,8 @@ def write_workbook(result: JobResult, path: str) -> None:
     # Style the transaction sheets only after every row is on them, so the
     # banding and borders cover the rows that were actually written.
     for name in XN_SHEETS:
-        style_xn_sheet(sheets[name], grouped=name in GROUPED_SHEETS)
+        style_xn_sheet(sheets[name], grouped=name in GROUPED_SHEETS,
+                       party_col=name in PARTY_COLUMN_SHEETS)
 
     # --- sheets beyond the template, appended after it ----------------------
     # Credit Assessment is the lender-facing conclusion and the thing this

@@ -209,6 +209,31 @@ their own uploads and never the AI block.
     opt-in because the test needs a WIDE cell: see next-steps item 2 for why
     PNB's 64pt column defeats it while BoB's 172pt one does not.
 
+22. A BANK IS NEVER A PARTY. Rule 4 of the master's "Party naming" tab lists
+    what must not be captured: banking terminology (INFT, ACH, IMPS, NEFT),
+    SENDER TEXT REMARKS, and BANK NAMES. Letting a bank through poisons the
+    one thing the party column is for — the Top-10 lists came back led by
+    "KARNATAKA BANK LIMIT" at a 122.8% share, "ICICI BANK LIMITED" and "BANK
+    OF BARODA", which says nothing about who the business trades with.
+    normalize._is_bank_name is the test, applied in _sanitise_party so it
+    catches every extraction path: the WORD "bank" (word-bounded, so
+    "BANKATLAL TEXTILES" survives) plus a list of brands matched only as the
+    WHOLE name ("AXIS" is a bank, "AXIS MACHINE TOOLS" is a customer).
+    Finance companies are NOT banks and stay nameable — Bajaj Finance,
+    Kinara Capital — which is what makes an EMI row still say who was paid.
+23. The two "Misc." sub-categories are identified by SIZE, not wording. A ₹1
+    penny-drop that verifies an account, and the ₹1-2 a merchant gateway takes
+    to save a card, both come from real companies with ordinary narration —
+    there is no phrase to match. `max_abs_amount: 10` in
+    data/sme_subcategories.yaml is the whole rule, and the ceiling is
+    EXCLUSIVE ("credits less than ₹10"), so ₹10.00 itself stays trade income.
+24. A CREDIT NAMING A LOAN ACCOUNT is a disbursal even when the payer is a
+    plain bank rather than an NBFC in `lenders`. Do not add banks to
+    `lenders` — every NEFT from one would become a disbursal. Seen for real:
+    "NEFT/KKBK…/Kotak Mahindra Bank Ltd/… Pyt Loan A c CSG …" for ₹16.1 lakh
+    read as trade income, which overstates turnover by the size of the loan —
+    the circularity gotcha 18 exists to prevent.
+
 ## Workbook = the customer's template, sheet for sheet
 
 backend/processor/bsa/publish.py renders Output_Template-2.xlsx exactly: the
@@ -219,6 +244,14 @@ shifted column is a defect to them even when every number is right ("Xns sheet
 is missing" was a real bug report). TEMPLATE_SHEETS / XN_HEADERS /
 GROUPED_HEADERS in publish.py are that contract, and tests/
 test_publish_workbook.py pins it.
+
+One deviation is the CUSTOMER'S OWN, added 30 Aug: the **Xns** tab carries a
+"Party Name" column between Category and Balance ("easy to verify everything in
+one sheet"), and he added it to Output_Template himself. ONLY that tab —
+every other transaction sheet keeps the seven columns, and the two grouped
+sheets already lead with the party. publish.PARTY_COLUMN_SHEETS is the switch;
+the value is the GROUPED party name, so the Xns tab agrees with the party
+sheets instead of showing a second spelling of the same counterparty.
 
 Anything of ours beyond the template — Credit Assessment, Category Totals,
 Other Xns, the largest-single-transaction sheets — is APPENDED AFTER the

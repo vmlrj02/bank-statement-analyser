@@ -469,6 +469,19 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # required. The exception, per the reviewer (ID8), is a BBPS bill-pay
         # to a lender, which stays a non-EMI servicing payment. Rows whose
         # narration says interest were already resolved above.
+        # A credit that names a LOAN ACCOUNT is a disbursal even when the payer
+        # is a plain bank rather than one of the NBFCs in `lenders`. Reported
+        # by the reviewer: "NEFT/KKBK…/Kotak Mahindra Bank Ltd/… Pyt Loan A c
+        # CSG …" for ₹16.1 lakh was reading as trade income, which overstates
+        # turnover by the size of the loan — the exact circularity gotcha 18
+        # exists to prevent. Banks must NOT go in `lenders` (every NEFT from
+        # one would become a disbursal); the loan-account wording is the
+        # signal. "LOAN REPAY" is excluded — that is money going out — and this
+        # is credit-only anyway.
+        elif credit and re.search(
+                r"\bLOAN\s*A\s*/?\s*C\b|\bLOAN\s*ACCOUNT\b|\bLOAN\s*DISB"
+                r"|\bDISBURS", d, re.I):
+            tag = "Loan amount disbursal"
         elif credit and lender:
             tag = "Loan amount disbursal"
         elif not credit and lender:

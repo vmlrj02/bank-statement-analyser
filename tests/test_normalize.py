@@ -552,3 +552,36 @@ def test_a_bank_charge_still_has_no_counterparty(desc):
     from bsa.normalize import detect_mode, extract_counterparty
 
     assert extract_counterparty(desc, detect_mode(desc)) == ""
+
+
+# --- "bank names wont be parties" (master, Party naming tab, rule 4) ---------
+# The Top-10 party lists came back led by "KARNATAKA BANK LIMIT" at a 122.8%
+# share, "ICICI BANK LIMITED" and "BANK OF BARODA". A bank is the rail the
+# money moved on, not the counterparty.
+
+@pytest.mark.parametrize("name", [
+    "KARNATAKA BANK LIMIT", "ICICI BANK LIMITED", "BANK OF BARODA",
+    "Kotak Mahindra Bank Ltd", "CANARA BANK", "YES BANK LIMITED",
+    "State Bank of India",
+    # Brands that get printed with no "bank" word at all.
+    "HDFC", "ICICI", "AXIS", "IDFC FIRST",
+])
+def test_a_bank_is_never_a_party(name):
+    from bsa.normalize import _sanitise_party
+
+    assert _sanitise_party(name) == ""
+
+
+@pytest.mark.parametrize("name", [
+    # Word-bounded on purpose: a person, not a bank.
+    "BANKATLAL TEXTILES",
+    # A brand word only counts as the WHOLE name.
+    "AXIS MACHINE TOOLS",
+    # Lenders and finance companies are real, nameable counterparties.
+    "Bajaj Finance Ltd", "Kinara Capital", "ZERODHA BROKING LTD",
+    "SRI SUMUKHA ENTERPRISE", "MD ENTERPRISES", "Trupti Shetty",
+])
+def test_a_real_counterparty_survives_the_bank_filter(name):
+    from bsa.normalize import _sanitise_party
+
+    assert _sanitise_party(name) == name

@@ -228,3 +228,33 @@ def test_recurrence_never_overrides_an_explicit_rule():
         t.amount = 1500.0            # cash deposits, rule-tagged credits
     categorize(rows)
     assert all(t.category == "cash deposit" for t in rows)
+
+
+def test_a_loan_account_credit_is_a_disbursal_not_trade_income():
+    """Reported by the reviewer: "NEFT/KKBK…/Kotak Mahindra Bank Ltd/… Pyt Loan
+    A c CSG …" for 16.1 lakh was reading as trade income. Banks must not go in
+    the `lenders` list — every NEFT from one would become a disbursal — so the
+    loan-ACCOUNT wording is the signal. It matters beyond the label: a disbursal
+    is excluded from turnover, and counting borrowed money as capacity to repay
+    is exactly the circularity gotcha 18 exists to prevent."""
+    from bsa.categorize import categorize, is_business_credit
+    from bsa.models import Txn
+
+    t = Txn(date="2026-01-29", cheque_no="",
+            description="NEFT/KKBK260293146221/ Kotak Mahindra Bank Ltd/"
+                        "KOTAK MAHINDRA BANK /Pyt Loan A c CSG 156067819 dt",
+            amount=1614019.0, balance=0.0, mode="neft", counterparty="")
+    categorize([t])
+    assert t.category == "Loan amount disbursal"
+    assert is_business_credit(t) is False
+
+
+def test_a_plain_trade_credit_is_not_swept_up_by_the_loan_rule():
+    from bsa.categorize import categorize
+    from bsa.models import Txn
+
+    t = Txn(date="2026-01-29", cheque_no="",
+            description="NEFT/ACME STEELS/INVOICE 8891", amount=250000.0,
+            balance=0.0, mode="neft", counterparty="ACME STEELS")
+    categorize([t])
+    assert t.category == "Regular credit"
