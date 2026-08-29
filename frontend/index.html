@@ -878,8 +878,14 @@ function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigit
 /* Navigation is one card per UPLOAD + ACCOUNT: the same account uploaded
    twice shows twice, each card carrying its own dated, balance-verified
    report. Deliberate (user's choice) — do not re-merge across uploads. */
+/* WHEN THE REPORT ON SCREEN WAS MADE — not when the files were uploaded.
+   Re-generate replaces the report in place, so an upload from this morning
+   that was re-run just now has to read as "just now" wherever it is dated,
+   or the reader cannot tell the new report from the one it replaced. Older
+   reports have no generated_at and keep their upload time. */
+const reportTime = j => Number(j && (j.generated_at || j.created_at)) || 0;
 function jobLabel(j){
-  const d = new Date((j.created_at||0)*1000);
+  const d = new Date(reportTime(j)*1000);
   const when = d.toLocaleDateString(undefined,{day:'numeric',month:'short'})
              + ' ' + d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
   return when;
@@ -1224,11 +1230,16 @@ function render(){
   if(sel) loadDash(sel);
 
   const q = QUERY.trim().toLowerCase();
-  const shown = q ? accts.filter(e=>{
+  const shown = (q ? accts.filter(e=>{
       const a = e.latest.a;
       return ((a.holder||'')+' '+(a.bank||'')+' '+(a.account_no||'')+' '
               +(a.files||[]).join(' ')).toLowerCase().includes(q);
-    }) : accts;
+    }) : accts.slice())
+    // Ordered by REPORT time, the same clock the day dividers below use. The
+    // list arrives sorted by upload time; a re-generated report is dated today
+    // and would otherwise sit in yesterday's block, emitting a second "Today"
+    // divider further down the list.
+    .sort((x,y)=>reportTime(y.latest.j)-reportTime(x.latest.j));
   const busyN = jobs.filter(j=>BUSY.includes(j.status)).length;
   $('acctHead').textContent = accts.length
     ? `Accounts (${q ? shown.length+' of '+accts.length : accts.length})` : 'Accounts';
@@ -1239,7 +1250,7 @@ function render(){
         const a = e.latest.a;
         const [code, color] = bankBrand(a.bank);
         const ps = periodStats(a.periods);
-        const day = dayLabel(e.latest.j.created_at||0);
+        const day = dayLabel(reportTime(e.latest.j));
         const divider = day!==lastDay ? `<div class="h-day">${esc(day)}</div>` : '';
         lastDay = day;
         return divider + `<div class="h-card ${e.slug===selSlug?'sel':''}" onclick="selectAcct('${e.slug}')">
@@ -1252,7 +1263,7 @@ function render(){
           </div>
           <div class="h-cov">${ps?`<b>${esc(monYY(ps.start))} – ${esc(monYY(ps.end))}</b> · `:''}${nfmt(e.statements)} stmt${e.statements===1?'':'s'} · ${nfmt(e.pages)} pg</div>
           ${IS_ADMIN && e.latest.j.owner ? `<div class="h-own">${esc(e.latest.j.owner)}</div>`:''}
-          <div class="h-foot"><span class="tm">${esc(timeLabel(e.latest.j.created_at||0))}</span>
+          <div class="h-foot"><span class="tm">${esc(timeLabel(reportTime(e.latest.j)))}</span>
             <button class="ibtn" style="width:22px;height:22px;border-radius:6px"
               title="Download report" aria-label="Download report"
               onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${e.latest.a.slug}','xlsx')">${ICON_DOWNLOAD}</button></div>
