@@ -1383,27 +1383,37 @@ function drawDash(host, st){
   const catmix = catrows
     ? `<div class="catmix"><div class="ch">Category mix · by transaction count</div>${catrows}</div>`
     : '';
-  // Month-by-month table: the chart's data in full, one row per month.
-  // Linked to the chart (hover a row → crosshair on that month, and vice
-  // versa). OPEN by default — landing on an account should show the figures
-  // as well as their shape, and it is capped at 300px of scroll so it cannot
-  // run away with the page. Top-10 parties stays folded; it is a second
-  // question, not the first. Minimising sticks for the session.
-  const mtOpen = st.mtOpen !== false;
+  // Month-by-month table: the chart's data as figures, one row per month,
+  // linked to the chart (hover a row → crosshair on that month, and vice
+  // versa). It shows the MOST RECENT 10 months and no more — a two-year
+  // account otherwise put twenty-six rows on the landing view, which is a
+  // wall of numbers where the recent months are what gets read. The control
+  // sits BELOW the table, where a reader arrives at it having run out of
+  // rows, and it expands to every month and minimises back to ten. Top-10
+  // parties stays folded; it is a second question, not the first. The choice
+  // sticks for the session.
+  const MT_CAP = 10;
+  const mtAll = st.mtAll === true;
+  const mtFrom = mtAll ? 0 : Math.max(0, MO.length - MT_CAP);
+  const mtMore = MO.length - MT_CAP;
   const cell = (v,cls) => v==null ? '<td class="num">—</td>'
     : `<td class="num ${cls||''}">${inr0(v)}</td>`;
-  const monthTable = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
+  const monthTable = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:baseline;gap:10px">
       <span>Month by month</span>
-      <button class="ghost mt-tgl" style="font-size:11px;padding:2px 10px;text-transform:none;letter-spacing:0">${mtOpen?'Minimise':'Show'}</button></div>`
-    + (mtOpen?`<div class="mt-wrap" style="overflow:auto;max-height:300px"><table>
+      ${mtMore>0 && !mtAll
+        ? `<span class="meta" style="margin:0;font-size:11px">latest ${MT_CAP} of ${nfmt(MO.length)} months</span>`:''}</div>`
+    + `<div class="mt-wrap" style="overflow:auto;${mtAll?'max-height:300px':''}"><table>
     <thead><tr><th>Month</th><th class="num">Credits</th><th class="num">Debits</th>
       <th class="num">Net flow</th><th class="num">Turnover</th><th class="num">Cash dep</th>
       <th class="num">Cash wdl</th><th class="num">Closing balance</th></tr></thead>
-    <tbody>${MO.map((mo,i)=>`<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
+    <tbody>${MO.map((mo,i)=> i<mtFrom ? '' : `<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
         ${cell(SE['Credits'][i],'crn')}${cell(SE['Debits'][i],'drn')}
         ${cell(SE['Net flow'][i])}${cell(TU[i])}
         ${cell(SE['Cash deposits'][i],'crn')}${cell(SE['Cash withdrawals'][i],'drn')}
-        ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`:'');
+        ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`
+    + (mtMore>0 ? `<div style="margin:7px 0 0">
+        <button class="ghost mt-tgl" style="font-size:11px;padding:2px 10px;text-transform:none;letter-spacing:0">${
+          mtAll ? `Minimise to ${MT_CAP}` : `Show all ${nfmt(MO.length)} months`}</button></div>` : '');
   // Top 10 counterparties, credits and debits side by side — also minimised.
   const tpOpen = st.tpOpen === true;
   const ptable = (title, rows, base, cls) => `<div style="min-width:240px;flex:1">
@@ -1451,7 +1461,7 @@ function drawDash(host, st){
     drawDash(host, st);
   });
   const tgl = body.querySelector('.mt-tgl');
-  if(tgl) tgl.onclick = ()=>{ st.mtOpen = !mtOpen; drawDash(host, st); };
+  if(tgl) tgl.onclick = ()=>{ st.mtAll = !mtAll; drawDash(host, st); };
   const ptgl = body.querySelector('.tp-tgl');
   if(ptgl) ptgl.onclick = ()=>{ st.tpOpen = !tpOpen; drawDash(host, st); };
   const svgEl=body.querySelector('svg'), tip=body.querySelector('.dash-tip'),
