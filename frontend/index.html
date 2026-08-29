@@ -575,7 +575,10 @@ function showGate(msg){
 function showApp(){
   $('gate').hidden = true; $('app').hidden = false;
   $('whoami').textContent = WHO;
-  $('role').hidden = false; $('role').textContent = IS_ADMIN ? 'admin' : 'customer';
+  // The badge is shown to ADMINS only. A customer has no other role to be in,
+  // so labelling them "customer" told them nothing and read as a rank; an
+  // admin does need to see which mode they are working in.
+  $('role').hidden = !IS_ADMIN; $('role').textContent = 'admin';
   $('cat').hidden = !IS_ADMIN;
   refresh();
 }
@@ -830,6 +833,21 @@ function genStamp(j){
   // Two lines, label over date, as drawn in the reviewer's mockup.
   return `<div class="genstamp"><span>Report generated on:</span><b>${esc(stamp)}</b></div>`;
 }
+/* Is the calendar month `mk` ("YYYY-MM") COVERED END TO END by the statements?
+   A month with five days of data is not comparable with the eleven full months
+   before it, so the range chips leave it out. Coverage that starts on or before
+   the 1st and ends on or after the last day counts as full; with no coverage
+   dates known (an older report) every month is treated as full, because
+   guessing would hide real data. */
+function isFullMonth(mk, covStart, covEnd){
+  if(!mk || !covStart || !covEnd) return true;
+  const [y, m] = mk.split('-').map(Number);
+  if(!y || !m) return true;
+  const last = new Date(y, m, 0).getDate();          // day 0 of next month
+  const first = `${mk}-01`;
+  const lastD = `${mk}-${String(last).padStart(2,'0')}`;
+  return covStart <= first && covEnd >= lastD;
+}
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function shortDate(iso){
   if(!iso || iso.length<10) return iso||'';
@@ -877,8 +895,15 @@ function validationChip(v){
   if(v==='failed') return '<span class="chip fail">Balance FAILED</span>';
   return '<span class="chip warn">Balance warnings</span>';
 }
+/* PDF integrity is an UNDERWRITER's prompt, not a customer-facing verdict.
+   It is deliberately conservative and false-positive-tolerant — a genuine
+   export re-saved through Preview trips it — so showing "Integrity: review"
+   to the person who uploaded the statement reads as an accusation we did not
+   make and cannot support. Admin only; the reasons are in the workbook and
+   the API for whoever is underwriting. Balance validation is different and
+   stays visible to everyone: that one is arithmetic, not suspicion. */
 function integrityChip(intg){
-  if(!intg || intg.assessment==='verified') return '';
+  if(!IS_ADMIN || !intg || intg.assessment==='verified') return '';
   return '<span class="chip warn">Integrity: review</span>';
 }
 function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
@@ -1380,7 +1405,17 @@ async function loadDash(e){
       const top = k => [...parties.entries()]
         .filter(([,v])=>v[k]>0).sort((x,y)=>y[1][k]-x[1][k]).slice(0,10)
         .map(([nm,v])=>[nm, v[k]]);
-      DASH[key] = {months, series, turnover,
+      // What the statements actually COVER, so a range chip can drop a month
+      // the data only half-covers. The account's own periods are the honest
+      // source (they come from the statement header); transaction dates are
+      // the fallback when a report predates them.
+      const per = (e.latest.a.periods||[]).filter(p=>p && p[0] && p[1]);
+      const dts = (d.transactions||[]).map(t=>String(t.date||''))
+                    .filter(s=>s.length>=10).sort();
+      const covStart = per.length ? per.map(p=>p[0]).sort()[0] : dts[0] || '';
+      const covEnd = per.length ? per.map(p=>p[1]).sort().pop()
+                                : dts[dts.length-1] || '';
+      DASH[key] = {months, series, turnover, covStart, covEnd,
         topCr: top('c'), topDr: top('d'),
         visible: new Set(DASH_SERIES.filter(s=>s[2]).map(s=>s[0]))};
       // Only aggregates are kept — the full transaction list is dropped with
@@ -1411,12 +1446,25 @@ function drawDash(host, st){
   // month table — is computed over the sliced view, so the range chips act
   // like a dashboard-wide filter. Top-10 parties stay whole-period (their
   // per-month detail lives in the Excel MoM sheets).
+  // A range chip means "the last N FULL months". A month the statements only
+  // half-cover — five days of August — is not a month a lender can compare
+  // against the eleven before it, and plotting it draws a cliff that is an
+  // artefact of the upload date, not of the business. Only the first and last
+  // month can be partial (the series runs contiguously between them), so
+  // dropping them keeps this a plain slice. "All" still shows everything:
+  // there the reader has asked for the whole record, edges included.
   const n0 = st.months.length;
-  const win = (st.range && st.range!=='all') ? Math.min(n0, st.range) : n0;
-  const i0 = n0 - win;
-  const MO = st.months.slice(i0);
-  const SE = {}; for(const [snm] of DASH_SERIES) SE[snm] = st.series[snm].slice(i0);
-  const TU = st.turnover.slice(i0);
+  let mLo = 0, mHi = n0;
+  if(st.range && st.range!=='all'){
+    if(mHi>mLo && !isFullMonth(st.months[mHi-1], st.covStart, st.covEnd)) mHi--;
+    if(mHi>mLo && !isFullMonth(st.months[mLo], st.covStart, st.covEnd)) mLo++;
+  }
+  const win = (st.range && st.range!=='all')
+    ? Math.min(mHi-mLo, st.range) : mHi-mLo;
+  const i0 = mHi - win, i1 = mHi;
+  const MO = st.months.slice(i0, i1);
+  const SE = {}; for(const [snm] of DASH_SERIES) SE[snm] = st.series[snm].slice(i0, i1);
+  const TU = st.turnover.slice(i0, i1);
   // Height was 280 and the KPI tiles under it started below the fold on a
   // laptop, so the two halves of the same answer — the shape and the numbers —
   // could never be seen together. 210 keeps the line readable and buys back
@@ -1534,7 +1582,10 @@ function drawDash(host, st){
     : aa && aa.validation==='failed'
       ? `<b>${nfmt(aa.issues||0)}</b> balance break${(aa.issues||0)===1?'':'s'} — the running-balance chain does not reconcile.`
     : aa && aa.validation ? 'Balance warnings on this statement.' : '';
-  const intgBit = (aa && aa.integrity && aa.integrity.assessment!=='verified')
+  // Admin only, for the same reason as the chip: it is a prompt to an
+  // underwriter, not a verdict to hand the customer who supplied the file.
+  const intgBit = (IS_ADMIN && aa && aa.integrity
+                   && aa.integrity.assessment!=='verified')
       ? ' PDF integrity is flagged for a human look.' : '';
   const blurb = `<div class="blurb">
     Over <b>${esc(span)}</b>, money in <b>${inr0(totC)}</b>
@@ -1653,7 +1704,7 @@ function drawDash(host, st){
   // st.pinAbs holds a PINNED month (absolute index): click a month on the
   // chart or in the table to hold the crosshair while comparing; click the
   // same month again to release. Survives range switches when still visible.
-  const pinView = ()=> (st.pinAbs!=null && st.pinAbs>=i0 && st.pinAbs<n0) ? st.pinAbs-i0 : null;
+  const pinView = ()=> (st.pinAbs!=null && st.pinAbs>=i0 && st.pinAbs<i1) ? st.pinAbs-i0 : null;
   const hoverAt=(i,pinned)=>{
     const x=X(i);
     let h=`<line x1="${x}" x2="${x}" y1="${MT}" y2="${MT+ih}" stroke="${pinned?'#b9902e':'#aab2c2'}"
