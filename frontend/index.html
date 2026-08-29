@@ -85,13 +85,22 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .job .nm{font-weight:700;font-size:15.5px;margin-right:auto;letter-spacing:-.01em}
 .job .acctline{color:var(--mut);font-size:12.5px;margin-top:3px;font-variant-numeric:tabular-nums}
 .job .acctline b{color:var(--fg);font-weight:600}
-.bklogo{display:inline-flex;align-items:center;justify-content:center;height:16px;
-  padding:0 5px;border-radius:4px;color:#fff;font-size:8.5px;font-weight:800;
-  letter-spacing:.04em;vertical-align:-3px;margin-right:5px}
-/* Monthly trends dashboard */
-.dash{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
+/* The account card body: chart, then numbers, then categorisation, then the
+   written description. No inner box — the card itself is the frame. */
+.dash{margin-top:14px}
 .dash .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
   font-weight:700;margin-bottom:9px}
+/* Each band of the card, separated by a rule rather than nested borders, so
+   the eye travels straight down: chart → numbers → categories → description. */
+.dsec{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.dsec:first-child{margin-top:0;padding-top:0;border-top:0}
+.dash-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.lchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;
+  padding:3px 11px;font-size:11.5px;cursor:pointer;color:var(--mut);background:var(--bg);font-family:inherit}
+.lchip input{accent-color:var(--navy);margin:0;cursor:pointer}
+.lchip .sw{width:9px;height:9px;border-radius:50%;flex:none}
+.lchip.off{opacity:.4}
+.lchip:hover{border-color:var(--line2)}
 .dash-body{position:relative}
 .dash-tip{position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--line2);
   border-radius:6px;padding:7px 10px;font-size:11.5px;line-height:1.6;display:none;z-index:5;
@@ -242,8 +251,6 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   color:var(--mut);margin-right:7px}
 .rv-issue code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
   white-space:pre-wrap;word-break:break-word}
-.rv-foot{padding:13px 17px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
-.rv-foot input{flex:1;min-width:200px}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
 th{position:sticky;top:0;background:var(--bg);text-align:left;font-weight:700;padding:9px 11px;
   border-bottom:2px solid var(--fg);white-space:nowrap;font-size:10.5px;
@@ -279,10 +286,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 .factline{margin-top:12px;font-size:11.5px;color:var(--mut);line-height:1.8}
 .factline b{color:var(--fg);font-weight:600}
 @media(max-width:700px){.tiles{grid-template-columns:1fr 1fr}}
-/* Category mix bars */
-.catmix{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
-.catmix .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
-  font-weight:700;margin-bottom:8px}
+/* Category mix bars — a band of the account card, not its own box */
 .catrow{display:flex;align-items:center;gap:9px;font-size:11.5px;margin-top:5px}
 .catrow .cl{flex:0 0 44%;min-width:0;color:var(--mut);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -409,7 +413,7 @@ tbody tr:hover td{background:var(--sunk)}
 </dialog>
 
 <dialog id="rv">
-  <div class="dh"><b id="rvTitle">Review</b>
+  <div class="dh"><b id="rvTitle">Reconciliation</b>
     <span style="margin-left:auto"><button class="ghost" onclick="rv.close()">Close</button></span></div>
   <div class="db" id="rvBody"></div>
 </dialog>
@@ -743,38 +747,16 @@ function shortDate(iso){
   const [y,m,d] = iso.split('-');
   return `${Number(d)}-${MON[Number(m)-1]}-${y.slice(2)}`;
 }
+/* Only the two states a notice can be in. A job's needs_review / reviewed
+   status is deliberately NOT shown: review is an upload-wide flag, so it
+   appeared above every account card including the clean ones. Balance state
+   belongs to an ACCOUNT and is described in that account's card instead. */
 function statusChip(st){
-  if(st==='done')      return '<span class="chip done">Processed</span>';
-  if(st==='reviewed')  return '<span class="chip done">Reviewed</span>';
-  if(st==='needs_review') return '<span class="chip warn">Needs review</span>';
   if(st==='failed' || st==='password_required')
     return `<span class="chip fail">${st==='failed'?'Failed':'Password required'}</span>`;
   return `<span class="chip busy">${esc(String(st).replace(/_/g,' '))}…</span>`;
 }
-/* The account card's attestation, in reconciliation language: what was
-   verified, by what method, over what population. Always rendered — a desk
-   must never have to infer a check from the absence of an error. */
-function verifStrip(a){
-  const v = a.validation;
-  const bal = v==='passed'
-    ? `<span class="vseg"><span class="chip done">Reconciled</span>
-       running balance agrees on all ${nfmt(a.rows||0)} rows</span>`
-    : v==='failed'
-    ? `<span class="vseg"><span class="chip fail">Does not reconcile</span>
-       the running balance breaks — detail in Review</span>`
-    : v
-    ? `<span class="vseg"><span class="chip warn">Reconciled with exceptions</span>
-       ${esc(String(v).replace(/_/g,' '))}</span>`
-    : '';
-  const ig = a.integrity;
-  const integ = !ig ? ''
-    : ig.assessment==='verified'
-    ? `<span class="vseg"><span class="chip done">Integrity</span> no tamper signals</span>`
-    : `<span class="vseg"><span class="chip warn">Integrity — review</span></span>`;
-  const flags = (ig && ig.assessment!=='verified' && (ig.flags||[]).length)
-    ? `<div class="flags">${ig.flags.map(f=>`· ${esc(f)}`).join('<br>')}</div>` : '';
-  return (bal || integ) ? `<div class="verif">${bal}${integ}${flags}</div>` : '';
-}
+function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
 
 /* Navigation is one card per UPLOAD + ACCOUNT: the same account uploaded
    twice shows twice, each card carrying its own dated, balance-verified
@@ -814,6 +796,45 @@ function confLine(c){
     <span class="cbar"><i style="width:${100*(c.high||0)/tot}%"></i><i class="m" style="width:${100*(c.medium||0)/tot}%"></i></span>
     <span>${conf}% confident${low?` · <b>${nfmt(low)}</b> flagged for review`:' · none flagged'}</span></div>`;
 }
+/* The account card's attestation, in reconciliation language: what was
+   verified, by what method, over what population. Always rendered — a desk
+   must never have to infer a check from the absence of an error. This is
+   per-ACCOUNT, which is why it survives the move to account-first cards: what
+   it says is true of this account, not of the upload it arrived in. */
+function verifStrip(a){
+  const v = a.validation;
+  const bal = v==='passed'
+    ? `<span class="vseg"><span class="chip done">Reconciled</span>
+       running balance agrees on all ${nfmt(a.rows||0)} rows</span>`
+    : v==='failed'
+    ? `<span class="vseg"><span class="chip fail">Does not reconcile</span>
+       the running balance breaks — detail below</span>`
+    : v
+    ? `<span class="vseg"><span class="chip warn">Reconciled with exceptions</span>
+       ${esc(String(v).replace(/_/g,' '))}</span>`
+    : '';
+  const ig = a.integrity;
+  const integ = !ig ? ''
+    : ig.assessment==='verified'
+    ? `<span class="vseg"><span class="chip done">Integrity</span> no tamper signals</span>`
+    : `<span class="vseg"><span class="chip warn">Integrity — review</span></span>`;
+  const flags = (ig && ig.assessment!=='verified' && (ig.flags||[]).length)
+    ? `<div class="flags">${ig.flags.map(f=>`· ${esc(f)}`).join('<br>')}</div>` : '';
+  return (bal || integ) ? `<div class="verif">${bal}${integ}${flags}</div>` : '';
+}
+
+/* Party quality: how many rows name a real counterparty, vs a machine handle
+   (account number / VPA), vs none at all. Same bar as confidence: solid fill
+   = named, grey = handle, empty = none. Old jobs lack the key — hide. */
+function partyLine(pq){
+  if(!pq) return '';
+  const tot=(pq.named||0)+(pq.handle||0)+(pq.none||0); if(!tot) return '';
+  const pc=k=>Math.round(100*(pq[k]||0)/tot);
+  return `<div class="conf"><span class="clabel">Party quality</span>
+    <span class="cbar"><i style="width:${100*(pq.named||0)/tot}%"></i><i class="m" style="width:${100*(pq.handle||0)/tot}%"></i></span>
+    <span>names: ${pc('named')}% named · ${pc('handle')}% handle · ${pc('none')}% none</span></div>`;
+}
+
 /* Display at most the LAST 4 digits of an account number, whatever shape the
    stored value has (XXXXXX1234, unmasked legacy, etc.). */
 const acctNo = n => n ? 'xx'+String(n).slice(-4) : '';
@@ -830,11 +851,6 @@ const BANK_BRAND = [
 function bankBrand(bank){
   const hit = BANK_BRAND.find(([re])=>re.test(bank||''));
   return hit ? hit[1] : [(bank||'?').trim().slice(0,2).toUpperCase(), '#16294f'];
-}
-function bankBadge(bank){
-  if(!bank) return '';
-  const [code, color] = bankBrand(bank);
-  return `<span class="bklogo" style="background:${color}">${esc(code)}</span>`;
 }
 const monYY = iso => { const [y,m]=String(iso).split('-'); return MON[+m-1]+' '+y.slice(2); };
 /* Compact bank names for narrow spots (sidebar), so the last-4 digits never
@@ -864,15 +880,23 @@ function periodStats(ps){
    "Business credit/debit" in the UI. Corrections still send the raw tag. */
 const catLabel = c => c==='Regular credit' ? 'Business credit'
                     : c==='Regular debit'  ? 'Business debit' : c;
+/* Category mix as a compact bar list — the data is already in the job summary,
+   so this costs no extra fetch. Rendered inside the card body (see drawDash)
+   rather than here, so the card's bands stay in one fixed order. */
+function catMix(a){
+  const catT = Object.values(a.categories||{}).reduce((s,v)=>s+v,0);
+  if(!catT) return '';
+  return Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,8)
+      .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(catLabel(k))}</span>
+        <span class="cbarr"><i style="width:${(100*v/catT).toFixed(1)}%"></i></span>
+        <span class="cn">${nfmt(v)}</span></div>`).join('');
+}
+/* The account card is a hero header plus ONE body, filled by drawDash in a
+   fixed order: chart, then the numbers, then categorisation, then the written
+   description. Nothing about upload-level review appears here — an upload's
+   review flag covered every account in it, including the clean ones. */
 function accountCard(e){
   const j = e.latest.j, a = e.latest.a;
-  // Category mix as a compact bar list — data is already in the summary,
-  // so this costs no extra fetch.
-  const catT = Object.values(a.categories||{}).reduce((s,v)=>s+v,0);
-  const cats = Object.entries(a.categories||{}).sort((x,y)=>y[1]-x[1]).slice(0,6)
-      .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(catLabel(k))}</span>
-        <span class="cbarr"><i style="width:${catT?(100*v/catT).toFixed(1):0}%"></i></span>
-        <span class="cn">${nfmt(v)}</span></div>`).join('');
   // Hero header: bank avatar, holder over bank · last-4, action on the right.
   // Old jobs may predate the holder field — fall back to the composed title.
   const nm = a.holder || a.bank || a.title || 'Account';
@@ -892,36 +916,34 @@ function accountCard(e){
         onclick="dl('${j.job_id}','${jsq(a.slug)}','xlsx',this)">Download workbook (XLSX)</button></div>
     ${verifStrip(a)}
     <div class="dash" id="dash-${esc(e.slug)}">
-      <div class="ch">Credit assessment</div>
       <div class="dash-body">
         <div class="skel" style="height:24px;width:60%"></div>
         <div class="skel" style="height:200px;margin-top:10px"></div>
         <div class="skel" style="height:70px;margin-top:10px"></div>
       </div>
     </div>
-    <details class="meta"><summary style="cursor:pointer">Source: ${e.files.length} file${e.files.length===1?'':'s'}</summary>
-      <div style="margin-top:4px">${esc(e.files.join(', '))}</div></details>
-    ${a.unreadable_pages ? `<div class="err"><b>${nfmt(a.unreadable_pages)} page(s) had no readable text</b>
-      — scanned or image-only pages. Any transactions printed on them are missing from
-      this report, which is the usual cause of a balance break.</div>` : ''}
-    ${a.validation==='failed' && (a.issue_sample||[]).length
-      ? `<div class="err"><b>Where the balance chain breaks:</b>
-        ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
-    ${cats?`<div class="catmix"><div class="ch">Category mix · by transaction count</div>${cats}</div>`:''}
-    ${confLine(a.confidence)}
     <div class="acts">
-      ${a.validation && a.validation!=='passed'
-        ? `<button class="ghost" onclick="review('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} balance break${(a.issues||0)===1?'':'s'}</button>`
-        : ''}
       ${IS_ADMIN?`
-      <button class="ghost" onclick="preview('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}','${jsq(a.bank||'')}',${(j.corrections||[]).length})">Preview</button>`:''}
+      <button class="ghost" onclick="preview('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}','${jsq(a.bank||'')}',${(j.corrections||[]).length})">Preview</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${jsq(a.slug)}','csv',this)">CSV</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${jsq(a.slug)}','json',this)">JSON</button>
+      ${a.validation && a.validation!=='passed'
+        ? `<button class="ghost" onclick="reconciliation('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}')">Reconciliation detail</button>`
+        : ''}`:''}
+      ${IS_ADMIN && (j.corrections||[]).length
+        ? `<button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>`:''}
     </div></div>`;
 }
 
-/* Operational notices for uploads that need attention: still processing,
-   failed files, needs-review, plus the admin-only AI accounting when AI was
-   actually used. Settled, clean uploads produce no notice — their substance
-   lives in the account cards. */
+/* Operational notices, for the only things an account card CANNOT say: an
+   upload still running, and files that produced no account at all because
+   they could not be read. Everything about an account — balance, coverage,
+   categories — belongs to that account's card.
+
+   A needs-review notice deliberately does NOT appear here. Review is an
+   upload-wide status (one bad account marks the whole upload), and these
+   notices render above whichever account is selected, so a clean account
+   still carried the banner of an unrelated one in the same upload. */
 function uploadNotices(){
   const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
   // Admin-only operator hint, rendered once per notice at most.
@@ -935,7 +957,7 @@ function uploadNotices(){
     const failed = s.failed_files || [];
     const ai = s.ai;
     const notable = busy || j.error || failed.length ||
-      ['failed','password_required','needs_review'].includes(j.status) ||
+      ['failed','password_required'].includes(j.status) ||
       (IS_ADMIN && ai && ai.used);
     if(!notable) continue;
     if(IS_ADMIN && !jobMatches(j)) continue;
@@ -956,11 +978,12 @@ function uploadNotices(){
             <td class="num">${f.ai?money(f.cost_usd):'free'}</td></tr>`).join('')+
           `</tbody></table>`:''}</div>` : '';
     out.push(`<div class="upnote">
-      <div class="top"><span class="nm">Upload · ${esc(jobLabel(j))}</span>${statusChip(j.status)}</div>
-      ${busy?`<div class="meta">Processing ${nfmt(s.files||(s.filenames||[]).length||0)}
-        file${(s.files||(s.filenames||[]).length||0)===1?'':'s'} —
-        accounts appear here when done.</div>`:''}
-      ${failed.length?`<div class="err"><b>${failed.length} file${failed.length===1?'':'s'} could not be read</b>`+
+      <div class="top"><span class="nm">Upload · ${esc(jobLabel(j))}</span>${
+        busy || ['failed','password_required'].includes(j.status)
+          ? statusChip(j.status) : ''}</div>
+      ${busy?`<div class="meta">Processing ${nfmt(s.files||(s.filenames||[]).length||0)} file(s) —
+        accounts appear below when this finishes.</div>`:''}
+      ${failed.length?`<div class="err"><b>${failed.length} file(s) could not be read</b>`+
         failed.map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}${
           IS_ADMIN && /no layout/i.test(f.error||'')
             ? ' <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>':''}</div>`).join('')
@@ -971,22 +994,9 @@ function uploadNotices(){
         +`</div>`:''}
       ${j.error?`<div class="err">${esc(j.error)}${
         IS_ADMIN && !failed.length && jobNeedsLayout(j)
-          ? ` <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>${LQ_HINT}`:''}</div>`:''}
-      ${j.status==='needs_review'
-        ? ((s.accounts||[]).filter(a=>a.validation && a.validation!=='passed').map(a=>
-            `<div class="meta" style="margin-top:7px">${bankBadge(a.bank)}<b>${esc(a.holder||a.bank||'Account')}</b>
-               ${esc(acctNo(a.account_no))} — balance ${esc(String(a.validation).replace(/_/g,' '))}${
-               a.unreadable_pages?`, ${nfmt(a.unreadable_pages)} unreadable page${a.unreadable_pages===1?'':'s'}`:''},
-               <b>${nfmt(a.issues||0)}</b> balance break${(a.issues||0)===1?'':'s'}
-               <button class="ghost sm" style="margin-left:5px"
-                 onclick="review('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}')">Review breaks</button>
-               <button class="ghost sm"
-                 onclick="selectAcct('${j.job_id}/${jsq(a.slug)}')">Open account</button></div>`).join('')
-          + `<div class="rv-foot" style="padding-left:0;padding-right:0">
-             <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
-             <button class="go" onclick="markReviewed('${j.job_id}',this)">Mark reviewed</button>
-           </div>`)
-        : ''}
+          ? ` <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>
+            <div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
+            <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code></div>`:''}</div>`:''}
       ${aiPanel}
     </div>`);
   }
@@ -994,7 +1004,7 @@ function uploadNotices(){
   if(IS_ADMIN && AFILTER==='all' && out.length>4){
     const extra = out.length-4;
     return out.slice(0,4).join('')
-      + `<div class="meta" style="margin-bottom:10px">…and ${extra} more notice${extra===1?'':'s'} — use the Review / Issues / Layout filters to see them all.</div>`;
+      + `<div class="meta" style="margin-bottom:10px">…and ${extra} more notice${extra===1?'':'s'} — use the Issues / Layout filters to see them all.</div>`;
   }
   return out.join('');
 }
@@ -1029,7 +1039,6 @@ const jobHasIssue = j => !!(j.error || ((j.summary||{}).failed_files||[]).length
     || ['failed','password_required'].includes(j.status));
 const jobMatches = j =>
     AFILTER==='all' ? true
-  : AFILTER==='review' ? j.status==='needs_review'
   : AFILTER==='issues' ? jobHasIssue(j)
   : AFILTER==='layout' ? jobNeedsLayout(j) : true;
 
@@ -1049,16 +1058,11 @@ function render(){
     // count is live, and the whole strip disappears on a clean board.
     const chip=(f,lbl,n)=>`<button class="rchip ${AFILTER===f?'act':''}"
         onclick="setFilter('${f}')">${lbl}${n?` · ${n}`:''}</button>`;
-    const nR = jobs.filter(j=>j.status==='needs_review').length,
-          nI = jobs.filter(jobHasIssue).length,
-          nL = jobs.filter(jobNeedsLayout).length;
-    const parts = [];
-    if(nR) parts.push(chip('review','Review',nR));
-    if(nI) parts.push(chip('issues','Issues',nI));
-    if(nL) parts.push(chip('layout','Layout',nL));
-    if(AFILTER!=='all' && !{review:nR,issues:nI,layout:nL}[AFILTER]) AFILTER='all';
-    $('afilters').hidden = !parts.length;
-    $('afilters').innerHTML = parts.length ? chip('all','All')+parts.join('') : '';
+    $('afilters').hidden = false;
+    $('afilters').innerHTML =
+        chip('all','All')
+      + chip('issues','Issues', jobs.filter(jobHasIssue).length)
+      + chip('layout','Layout', jobs.filter(jobNeedsLayout).length);
   }
   if(!accts.some(e=>e.slug===selSlug)) selSlug = accts.length ? accts[0].slug : null;
   // Skip the DOM rewrite when nothing changed — the 15s poll was resetting
@@ -1339,31 +1343,60 @@ function drawDash(host, st){
     ${aps?` · <b>${esc(shortDate(aps.start))}</b> to <b>${esc(shortDate(aps.end))}</b>
       (${nfmt(aps.days)} days) · ${aps.gaps.length?`gaps: ${esc(aps.gaps.join('; '))}`:'no gaps in coverage'}`:''}
   </div>` : '';
-  const sumTable = heroRow + smallRow + obs + factline;
-  // Detail tables are ALWAYS rendered and toggled via [hidden], so opening one
-  // keeps scroll state, and @media print can reveal them all for the file copy.
-  // Sign notation and the (₹) header carry the ledger; per-cell colour is
-  // reserved for the tiles and the chart, where sign is the message.
-  const cell = v => v==null ? '<td class="num">—</td>'
-    : `<td class="num">${cellNum(v)}</td>`;
+  // Band 2 — the numbers the chart is a picture of.
+  const numbers = `<div class="dsec"><div class="ch">Key numbers</div>${heroRow}${smallRow}</div>`;
+  // Band 3 — how the rows were categorised, and how sure the engine is about
+  // it. Confidence and party quality belong here: both describe the quality of
+  // the categorisation, not of the extraction.
+  const catBody = aa ? catMix(aa) + confLine(aa.confidence) + partyLine(aa.party_quality) : '';
+  const catBlock = catBody
+    ? `<div class="dsec"><div class="ch">Categorisation</div>${catBody}</div>` : '';
+  // Band 4 — the account in words: what the statements cover, anything that
+  // would make a number untrustworthy, and the credit reads.
+  const notes = aa ? [
+    aa.unreadable_pages ? `<div class="err"><b>${nfmt(aa.unreadable_pages)} page(s) had no readable text</b>
+      — scanned or image-only pages. Any transactions printed on them are missing from
+      this report, which is the usual cause of a balance break.</div>` : '',
+    aa.validation==='failed' && (aa.issue_sample||[]).length
+      ? `<div class="err"><b>Where the balance chain breaks:</b>
+        ${esc(aa.issue_sample[0].detail||'')}</div>` : '',
+  ].filter(Boolean).join('') : '';
+  const source = ae && ae.files.length
+    ? `<div class="meta">From: ${esc(ae.files.join(', '))}</div>` : '';
+  const descBody = factline + source + notes + (reads?`<ul class="creads">${reads}</ul>`:'');
+  const descBlock = descBody.trim()
+    ? `<div class="dsec"><div class="ch">Description</div>${descBody}</div>` : '';
+  // Month-by-month table: the chart's data in full, one row per month.
+  // Linked to the chart (hover a row → crosshair on that month, and vice
+  // versa). MINIMISED by default — the end user sees chart + totals; the
+  // detail tables open on demand.
+  // Open by default when the reviewer is being asked to judge the period
+  // (validation not passed); otherwise it opens on demand.
+  const mtOpen = st.mtOpen!=null ? st.mtOpen===true
+    : !!(aa && aa.validation && aa.validation!=='passed');
+  const mtShowLbl = `Show ${MO.length} month${MO.length===1?'':'s'}`;
+  const cell = (v,cls) => v==null ? '<td class="num">—</td>'
+    : `<td class="num ${cls||''}">${inr0(v)}</td>`;
+  // Section header with its own show/hide toggle, shared by all three detail
+  // tables so they open and close the same way.
   const secHead = (title, cls, open, openLbl) =>
     `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
       <span>${title}</span>
       <button class="ghost sm ${cls}" style="text-transform:none;letter-spacing:0">${open?'Hide':openLbl}</button></div>`;
-  // Month by month opens itself when the reviewer is being asked to judge the
-  // period (validation not passed); otherwise it opens on demand.
-  const mtOpen = st.mtOpen!=null ? st.mtOpen===true
-    : !!(aa && aa.validation && aa.validation!=='passed');
-  const mtShowLbl = `Show ${MO.length} month${MO.length===1?'':'s'}`;
+  // Rendered ALWAYS and toggled via [hidden], never conditionally: opening
+  // keeps scroll state, the chart's row-hover linking needs these rows in the
+  // DOM, and @media print can reveal every table for the file copy.
+  // No "Net flow" column — that series was deliberately dropped from
+  // DASH_SERIES as derivable, so SE has no such key to read.
   const monthTable = secHead('Month by month','mt-tgl',mtOpen,mtShowLbl)
     + `<div class="mt-wrap print-force" style="overflow:auto;max-height:300px" ${mtOpen?'':'hidden'}><table>
     <thead><tr><th>Month</th><th class="num">Credits (₹)</th><th class="num">Debits (₹)</th>
       <th class="num">Turnover (₹)</th><th class="num">Cash dep (₹)</th>
       <th class="num">Cash wdl (₹)</th><th class="num">Closing (₹)</th></tr></thead>
     <tbody>${MO.map((mo,i)=>`<tr data-i="${i}"><td style="white-space:nowrap">${mlabel(mo)}</td>
-        ${cell(SE['Credits'][i])}${cell(SE['Debits'][i])}
+        ${cell(SE['Credits'][i],'crn')}${cell(SE['Debits'][i],'drn')}
         ${cell(TU[i])}
-        ${cell(SE['Cash deposits'][i])}${cell(SE['Cash withdrawals'][i])}
+        ${cell(SE['Cash deposits'][i],'crn')}${cell(SE['Cash withdrawals'][i],'drn')}
         ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>`;
   // Existing obligations: the schedule an underwriter cross-checks against the
   // bureau report, obligation by obligation. Computed server-side already.
@@ -1394,15 +1427,26 @@ function drawDash(host, st){
       ${ptable('Debits', st.topDr, totD)}</div>`;
   const RANGES = [['3',3],['6',6],['12',12],['All','all']];
   const curRange = st.range || 'all';
-  // The end-of-line labels are the chart's legend; the tiles are its toggles.
-  const trendHead = `<div class="ch" style="margin:14px 0 6px;display:flex;align-items:center;gap:10px">
-      <span>Monthly trend</span>
-      <span style="margin-left:auto;display:inline-flex;gap:5px">`
+  // Band 1 — the chart, with its own legend and range control.
+  const chart = `<div class="dsec"><div class="dash-legend">`+DASH_SERIES.map(([nm,col])=>
+      `<label class="lchip ${st.visible.has(nm)?'':'off'}">
+         <input type="checkbox" data-s="${esc(nm)}" ${st.visible.has(nm)?'checked':''}>
+         <span class="sw" style="background:${col}"></span>${esc(nm)}</label>`).join('')
+    + `<span style="margin-left:auto;display:inline-flex;gap:5px">`
     + RANGES.map(([lbl,val])=>`<button class="rchip ${String(curRange)===String(val)?'act':''}"
-         data-r="${val}">${lbl==='All'?'All':lbl+'M'}</button>`).join('')+`</span></div>`;
-  body.innerHTML = sumTable
-    + trendHead + svg + `<div class="dash-tip"></div>`
-    + emiTable + monthTable + partyTables;
+         data-r="${val}">${lbl==='All'?'All':lbl+'M'}</button>`).join('')+`</span></div>`
+    + svg + `<div class="dash-tip"></div></div>`;
+  // The two drill-down tables are the working behind the description, so they
+  // close the card — both collapsed until asked for.
+  const detail = `<div class="dsec">${emiTable}${monthTable}${partyTables}</div>`;
+  // Fixed reading order: chart, numbers, categorisation, description, detail.
+  body.innerHTML = chart + numbers + catBlock + descBlock + detail;
+  body.querySelectorAll('.lchip input').forEach(cb=>cb.onchange=()=>{
+    const nm=cb.dataset.s;
+    if(cb.checked) st.visible.add(nm);
+    else if(st.visible.size>1) st.visible.delete(nm);
+    drawDash(host, st);
+  });
   body.querySelectorAll('.rchip').forEach(b=>b.onclick=()=>{
     st.range = b.dataset.r==='all' ? 'all' : +b.dataset.r;
     drawDash(host, st);
@@ -1501,11 +1545,12 @@ async function dl(id, acct, fmt, btn){
   }catch(e){ if(btn) btn.textContent = 'Failed — retry'; }
   finally{ if(btn) btn.disabled = false; }
 }
-/* Review. The reconciliation detail the pipeline produced, unedited: which
-   row broke the chain, what the statement said, and what the arithmetic
-   required. Marking an upload reviewed records that a person looked — it
-   never rewrites the validation result, so a failed chain still reads failed. */
-let RVC = null;                              // review context: {id, acct}
+/* Reconciliation detail, admin only: the report the pipeline produced,
+   unedited — which row broke the chain, what the statement said, and what the
+   arithmetic required. It is a drill-down on ONE account, reached from that
+   account's card. There is no upload-level "mark reviewed" workflow: that flag
+   covered every account in an upload, so it said nothing about any of them. */
+let RVC = null;                              // reconciliation context: {id, acct}
 /* Admin feedback on a reconciliation issue: "how this should be handled",
    recorded through the same corrections endpoint as row relabels — one
    training pipeline, one export. */
@@ -1513,7 +1558,7 @@ function issueFeedback(el){
   if(!RVC) return;
   openFix('feedback', {id:RVC.id, acct:RVC.acct, desc:el.dataset.detail||'', el});
 }
-async function review(id, acct, name){
+async function reconciliation(id, acct, name){
   RVC = {id, acct};
   $('rvTitle').textContent = `${name} — reconciliation`;
   $('rvBody').innerHTML = '<div class="rv-note">Loading…</div>';
@@ -1548,19 +1593,6 @@ async function review(id, acct, name){
       </div>`).join('');
   }catch(e){
     $('rvBody').innerHTML = `<div class="rv-note">Could not load the detail: ${esc(e.message)}</div>`;
-  }
-}
-
-async function markReviewed(id, btn){
-  const note = ($('rvNote-'+id)||{}).value || '';
-  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
-  try{
-    await api(`/jobs/${id}/review`, {method:'POST',
-      headers:{'content-type':'application/json'}, body: JSON.stringify({note})});
-    LAST_FP = '';
-    refresh();
-  }catch(e){
-    if(btn){ btn.disabled = false; btn.textContent = 'Could not save — retry'; }
   }
 }
 
