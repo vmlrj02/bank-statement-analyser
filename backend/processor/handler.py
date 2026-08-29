@@ -661,9 +661,12 @@ def lambda_handler(event, _ctx):
                 "cost_usd": (f"{cost:.6f}" if cost_known and calls else ""),
                 "files": parts,
             }
-            failed_list = [{"filename": v.get("filename", ""),
+            # idx travels with the failure so the UI can target THAT file —
+            # it is what "unlock and retry" posts back to re-drive one key.
+            failed_list = [{"idx": str(k),
+                            "filename": v.get("filename", ""),
                             "error": str(v.get("error", ""))[:300]}
-                           for v in failed.values()]
+                           for k, v in failed.items()]
             _update(job_id, **{
                 "status": ("needs_review" if (failed_list or worst != "passed")
                            else "done"),

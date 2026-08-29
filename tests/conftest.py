@@ -176,7 +176,18 @@ def _apply_update(item, expr, names, values):
                     item[_resolve(lhs, names, values)] = val
         elif verb == "REMOVE":
             for name in body.split(","):
-                item.pop(_resolve(name, names, values), None)
+                name = name.strip()
+                # Real DynamoDB removes a single key from a nested map with
+                # `REMOVE failed_files.#i`, which is how a file's failure is
+                # cleared when its password is supplied. Dropping the whole
+                # map instead would have made the fake agree with a bug.
+                if "." in name:
+                    outer, inner = name.split(".", 1)
+                    tgt = item.get(_resolve(outer, names, values))
+                    if isinstance(tgt, dict):
+                        tgt.pop(_resolve(inner, names, values), None)
+                else:
+                    item.pop(_resolve(name, names, values), None)
         elif verb == "ADD":
             name, ref = body.split()
             key = _resolve(name, names, values)

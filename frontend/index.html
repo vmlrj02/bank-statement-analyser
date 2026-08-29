@@ -203,6 +203,10 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   padding:10px 14px;margin-bottom:10px;font-size:13px}
 .upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .upnote .nm{font-weight:700;margin-right:auto}
+/* Unlock-and-retry sits inside the failure it fixes, so the password is typed
+   where the problem is stated rather than back in the upload dialog. */
+.pwfix{display:flex;gap:7px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.pwfix input{flex:1;min-width:170px;font-size:13px;padding:6px 10px}
 /* The attention row lives in the SIDEBAR, with the uploads it talks about —
    not across the top of the main column, where it stole a band of width from
    the account and pushed the chart down. One quiet line; the detail opens in
@@ -679,13 +683,19 @@ async function stage(files){
   for(const f of files){
     if(!/\.pdf$/i.test(f.name)) continue;
     if(staged.length >= 20){ alert('Up to 20 statements per upload.'); break; }
-    const it = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
+    const it = {file:f, name:f.name, size:f.size, locked:false, askpw:false, pw:'', id:++seq};
     staged.push(it); renderTray();
     it.locked = await isEncrypted(f); renderTray();
   }
 }
 function removeFile(id){ staged = staged.filter(s=>s.id!==id); renderTray(); }
 function setPw(id,v){ const s = staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
+/* Detection is a HINT, never the gate. isEncrypted() scans the raw bytes for
+   "/Encrypt", which a PDF 1.5+ file hides inside a compressed cross-reference
+   stream — so a genuinely protected statement can arrive looking unprotected
+   and, before this, offered nowhere to type its password. Every file now has
+   the field one click away whatever detection thought. */
+function askPw(id){ const s = staged.find(x=>x.id===id); if(s) s.askpw = true; renderTray(); }
 function renderTray(){
   const t = $('tray');
   if(!staged.length){ t.innerHTML=''; $('controls').hidden = true; return; }
@@ -695,10 +705,12 @@ function renderTray(){
     ${staged.map(s=>`<div class="f">
       <div class="doc">${s.locked?'LOCK':'PDF'}</div>
       <div class="info"><div class="nm">${esc(s.name)}</div>
-        <div class="sz">${kb(s.size)}${s.locked?' · may be protected':''}</div>
-        ${s.locked&&!s.pw?'<div class="lockmsg">Add a password only if it is protected</div>':''}</div>
-      ${s.locked?`<input type="password" placeholder="Password (if protected)" value="${esc(s.pw)}"
-         oninput="setPw(${s.id},this.value)">`:''}
+        <div class="sz">${kb(s.size)}${s.locked?' · protected':''}</div>
+        ${s.locked&&!s.pw?'<div class="lockmsg">This file is protected — type its password</div>':''}</div>
+      ${(s.locked||s.askpw)?`<input type="password" placeholder="Password" value="${esc(s.pw)}"
+         oninput="setPw(${s.id},this.value)">`
+        :`<button class="ghost" style="font-size:11px;padding:2px 9px;text-transform:none;letter-spacing:0"
+            onclick="askPw(${s.id})">Add password</button>`}
       <button class="x" title="Remove" onclick="removeFile(${s.id})">&times;</button>
     </div>`).join('')}</div>`;
   updateGo();
@@ -712,7 +724,8 @@ function updateGo(){
   $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
   const maybe = staged.filter(s=>s.locked && !s.pw).length;
   $('hint').textContent = maybe
-    ? `If a file is password-protected, add its password — otherwise just continue.`
+    ? `${maybe} file${maybe===1?' looks':'s look'} protected — type the password, `
+      + `or continue and add it after if the file fails.`
     : (staged.length>1 ? 'Grouped by account — one report per account.' : '');
 }
 $('go').onclick = async () => {
@@ -1029,7 +1042,14 @@ function uploadNotices(){
       ${failed.length?`<div class="err"><b>${failed.length} file(s) could not be read</b>`+
         failed.map(f=>`<div style="margin-top:5px">${esc(f.filename)} — ${esc(f.error)}${
           IS_ADMIN && /no layout/i.test(f.error||'')
-            ? ' <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>':''}</div>`).join('')
+            ? ' <span class="chip warn" style="font-size:9px;padding:1px 7px">needs layout</span>':''}${
+          /password/i.test(f.error||'')
+            ? `<div class="pwfix">
+                 <input type="password" id="pwfix-${j.job_id}-${esc(String(f.idx))}"
+                   placeholder="Password for this file">
+                 <button class="go" style="padding:4px 12px;font-size:12px"
+                   onclick="retryPassword('${j.job_id}','${esc(String(f.idx))}')">Unlock &amp; retry</button>
+               </div>` : ''}</div>`).join('')
         +((IS_ADMIN && failed.some(f=>/no layout/i.test(f.error||'')))
             ? `<div style="margin-top:7px;font-size:11.5px;color:var(--mut)">Layout queue:
                <code style="font-family:ui-monospace,Menlo,monospace">python scripts/layout_queue.py list</code>
@@ -1614,6 +1634,22 @@ function drawDash(host, st){
   const mtw=body.querySelector('.mt-wrap');
   if(mtw) mtw.addEventListener('mouseleave',restore);
   restore();                            // re-show a surviving pin after redraw
+}
+
+/* Supply a password for a file that failed for want of one. The PDF is
+   already in S3, so nothing is re-uploaded — the API stores the password on
+   that file's entry and re-drives the processor for that one key. */
+async function retryPassword(jobId, idx){
+  const el = $(`pwfix-${jobId}-${idx}`);
+  const pw = el ? el.value : '';
+  if(!pw){ alert('Type the password for this file first.'); return; }
+  try{
+    await api(`/jobs/${jobId}/password`, {method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({idx: idx, password: pw})});
+    if(el) el.value = '';
+    refresh();
+  }catch(e){ alert('Could not retry: ' + (e.message||'failed')); }
 }
 
 async function refresh(){

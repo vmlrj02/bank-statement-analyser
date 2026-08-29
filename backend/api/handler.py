@@ -6,6 +6,8 @@ Routes (HTTP API v2 routeKey):
   POST /auth/password       : {current_password, new_password}
   GET  /auth/me             : who the bearer token belongs to
   POST /jobs                : {filename, password?, related_parties?[]}
+  POST /jobs/{id}/password  : {idx|filename, password} — unlock a protected
+                              file that failed, and re-drive just that file
                               -> {job_id, upload_url}
   GET  /jobs                : recent jobs (newest first; own only unless admin)
   GET  /jobs/{id}           : job record incl. summary
@@ -502,6 +504,70 @@ def _handle(event):
                 ":t": int(time.time())},
         )
         return _resp(200, {"ok": True, "status": "reviewed"})
+
+    # A password-protected statement that failed for want of its password is
+    # RECOVERABLE without re-uploading: the PDF bytes are already in S3, and
+    # the only thing missing is the password. This stores it on the file entry
+    # and re-drives the processor for that one key, through the same synthetic
+    # S3 event the sweeper uses — so there is still exactly one extraction
+    # path. Re-uploading a large statement just to supply a password was the
+    # only route before, and on a 60-page file over a phone tether that is a
+    # real cost for a typo.
+    if route == "POST /jobs/{id}/password" and path_id:
+        it = TABLE.get_item(Key={"job_id": path_id}).get("Item")
+        if not it or not _owned(it):
+            return _resp(404, {"error": "not found"})
+        body = json.loads(event.get("body") or "{}")
+        password = str(body.get("password") or "")
+        if not password:
+            return _resp(400, {"error": "password required"})
+        want = body.get("idx")
+        name = str(body.get("filename") or "")
+        entry = None
+        for i, f in enumerate(it.get("files") or []):
+            if not isinstance(f, dict):
+                continue
+            if (want is not None and str(f.get("idx", i)) == str(want)) or \
+               (want is None and name and f.get("filename") == name):
+                entry, pos = f, i
+                break
+        if entry is None:
+            return _resp(404, {"error": "no such file on this upload"})
+        idx = str(entry.get("idx", pos))
+        # Only offer this where a password is actually the problem. Re-driving
+        # a file that failed for an unreadable scan or a missing layout would
+        # burn an extraction and fail again in exactly the same way.
+        failed = (it.get("failed_files") or {}).get(idx) or {}
+        reason = str(failed.get("error") or "")
+        if "password" not in reason.lower() and it.get("status") != "password_required":
+            return _resp(409, {"error": "this file did not fail for a password"})
+        key = entry.get("key", f"uploads/{path_id}/{idx}.pdf")
+        now = int(time.time())
+        # The password is stored the same way it is at upload — on the file
+        # entry, and cleared by the processor once extraction is over.
+        # The whole files list is rewritten rather than files[n].password, the
+        # same read-modify-write the processor uses to CLEAR passwords. Only
+        # this route and that one ever touch `files` after creation, so there
+        # is nothing here to clobber; per-file failures live in failed_files,
+        # which is updated by key and is untouched by this write.
+        entries = [dict(f) if isinstance(f, dict) else f
+                   for f in (it.get("files") or [])]
+        entries[pos]["password"] = password
+        TABLE.update_item(
+            Key={"job_id": path_id},
+            UpdateExpression=("SET files = :f, #s = :s, updated_at = :t "
+                              "REMOVE failed_files.#i"),
+            ExpressionAttributeNames={"#s": "status", "#i": idx},
+            ExpressionAttributeValues={":f": entries, ":s": "processing",
+                                       ":t": now},
+        )
+        if PROCESSOR_FUNCTION:
+            lam.invoke(
+                FunctionName=PROCESSOR_FUNCTION, InvocationType="Event",
+                Payload=json.dumps({"Records": [
+                    {"s3": {"object": {"key": key}}}]}).encode())
+        return _resp(200, {"ok": True, "status": "processing",
+                           "filename": entry.get("filename", "")})
 
     # Reviewer corrections — captured training data. A correction is one row
     # the reviewer relabelled (right category and/or party), appended to the

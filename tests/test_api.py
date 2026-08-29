@@ -656,3 +656,111 @@ def test_an_unexpected_error_returns_a_json_500_with_cors(api, jobs_table,
     assert _body(r) == {"error": "something went wrong — try again"}
     assert r["headers"]["access-control-allow-origin"] == "*"
     assert "kaboom" in capsys.readouterr().err
+
+
+# --- unlock a password-protected file without re-uploading -------------------
+#
+# A protected statement that failed for want of its password used to mean
+# re-uploading the whole PDF. The bytes are already in S3, so the fix is to
+# store the password on that file's entry and re-drive the processor for that
+# one key — the same synthetic S3 event the sweeper uses, so there is still
+# exactly one extraction path.
+
+def _locked_job(jobs_table, owner, job_id="j-pw"):
+    jobs_table.put_item(Item={
+        "job_id": job_id, "owner": owner, "status": "needs_review",
+        "filename": "hdfc.pdf", "created_at": 1, "expected": 1, "uploaded": 1,
+        "files": [{"idx": 0, "key": f"uploads/{job_id}/0.pdf",
+                   "filename": "hdfc.pdf"}],
+        "failed_files": {"0": {"filename": "hdfc.pdf",
+                               "error": "this PDF is password-protected — "
+                                        "re-upload with the correct password"}},
+    })
+    return job_id
+
+
+def test_unlock_stores_the_password_and_redrives_that_file(api, jobs_table,
+                                                           signed_in):
+    token, email = signed_in()
+    job_id = _locked_job(jobs_table, email)
+    r = api.lambda_handler(_ev("POST /jobs/{id}/password", token,
+                               body={"idx": 0, "password": "s3cret"},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 200, r["body"]
+    assert _body(r)["status"] == "processing"
+
+    it = jobs_table.get_item(Key={"job_id": job_id})["Item"]
+    # The password rides on the file entry, exactly as it does at upload time,
+    # and the processor clears it when extraction is over.
+    assert it["files"][0]["password"] == "s3cret"
+    # The failure is cleared, or the job would still report the file as dead.
+    assert "0" not in (it.get("failed_files") or {})
+    assert it["status"] == "processing"
+
+    # And the processor was re-driven for THAT key, not the whole job.
+    fn, payload = api._fake_lambda.invocations[-1]
+    assert fn == "proc-fn"
+    key = json.loads(payload)["Records"][0]["s3"]["object"]["key"]
+    assert key == f"uploads/{job_id}/0.pdf"
+
+
+def test_unlock_refuses_a_file_that_failed_for_any_other_reason(api, jobs_table,
+                                                                signed_in):
+    """Re-driving an image-only scan or a bank with no layout would burn an
+    extraction and fail again identically, so it is refused."""
+    token, email = signed_in()
+    jobs_table.put_item(Item={
+        "job_id": "j-scan", "owner": email, "status": "needs_review",
+        "filename": "scan.pdf", "created_at": 1, "expected": 1, "uploaded": 1,
+        "files": [{"idx": 0, "key": "uploads/j-scan/0.pdf",
+                   "filename": "scan.pdf"}],
+        "failed_files": {"0": {"filename": "scan.pdf",
+                               "error": "no readable text in this PDF"}},
+    })
+    r = api.lambda_handler(_ev("POST /jobs/{id}/password", token,
+                               body={"idx": 0, "password": "x"},
+                               path_id="j-scan"), None)
+    assert r["statusCode"] == 409
+
+
+def test_unlock_needs_a_password(api, jobs_table, signed_in):
+    token, email = signed_in()
+    job_id = _locked_job(jobs_table, email, "j-pw2")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/password", token,
+                               body={"idx": 0, "password": ""},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 400
+
+
+def test_unlock_needs_authentication(api, jobs_table, signed_in):
+    _token, email = signed_in()
+    job_id = _locked_job(jobs_table, email, "j-pw3")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/password",
+                               body={"idx": 0, "password": "x"},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 401
+
+
+def test_unlock_cannot_touch_another_tenants_upload(api, jobs_table, signed_in,
+                                                    user):
+    """The password is a credential for someone else's bank statement — a
+    customer must not be able to post one at a job they do not own, and must
+    not learn that the job exists."""
+    user("other@x.com")
+    _locked_job(jobs_table, "other@x.com", "j-theirs")
+    token, _ = signed_in(email="mine@x.com")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/password", token,
+                               body={"idx": 0, "password": "x"},
+                               path_id="j-theirs"), None)
+    assert r["statusCode"] == 404
+    it = jobs_table.get_item(Key={"job_id": "j-theirs"})["Item"]
+    assert "password" not in it["files"][0]
+
+
+def test_unlock_reports_an_unknown_file(api, jobs_table, signed_in):
+    token, email = signed_in()
+    job_id = _locked_job(jobs_table, email, "j-pw4")
+    r = api.lambda_handler(_ev("POST /jobs/{id}/password", token,
+                               body={"idx": 7, "password": "x"},
+                               path_id=job_id), None)
+    assert r["statusCode"] == 404

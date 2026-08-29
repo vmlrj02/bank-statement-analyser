@@ -409,6 +409,9 @@ class BsaStack(Stack):
             ("/jobs/{id}", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/download", [apigw.HttpMethod.GET]),
             ("/jobs/{id}/review", [apigw.HttpMethod.POST]),
+            # Supply the password for a protected file that failed for want of
+            # one; the PDF is already in S3, so this re-drives that one key.
+            ("/jobs/{id}/password", [apigw.HttpMethod.POST]),
             ("/jobs/{id}/corrections",
              [apigw.HttpMethod.POST, apigw.HttpMethod.GET]),  # admin training data
             ("/admin/try-categorize", [apigw.HttpMethod.POST]),  # admin beta
