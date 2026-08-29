@@ -390,8 +390,20 @@ def _avg_balances_sheet(ws, txns: list[Txn], bold) -> None:
 
 
 def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
-    """Monthwise top-10 parties, one block per month, starting in column B —
-    the template leaves column A empty on these two sheets."""
+    """Monthwise top-10 parties: one block per calendar month, most recent
+    first, starting in column B — the template leaves column A empty on these
+    two sheets.
+
+    The block geometry is the template's and is FIXED: month row, header row,
+    then exactly ten party rows whether or not there are ten parties, so every
+    month begins on the same 12-row stride (B2, B14, B26, ...). A variable
+    stride would look the same to the eye and break any formula or eye-scan
+    anchored to a row — and this is a sheet people read by scrolling to the
+    month they care about. The month itself is a real date merged across B:C
+    and formatted mmm-yyyy, as in the template, so it sorts and filters as a
+    date rather than as the text "Feb-2026".
+    """
+    PER_MONTH = 10
     _append(ws, ["", title])
     ws["B1"].font = bold
     per_month: dict[str, dict[str, float]] = {}
@@ -401,16 +413,25 @@ def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
         label = group_label.get(party_key(t.counterparty), t.counterparty)
         mk = t.date[:7]
         per_month.setdefault(mk, defaultdict(float))[label] += abs(t.amount)
+    # The row is tracked explicitly rather than read back from ws.max_row:
+    # a padding row holds no cells, so max_row does not count it and the
+    # stride would silently drift on any month with fewer than ten parties.
+    r = 2
     for mk in sorted(per_month, reverse=True):
-        _append(ws, ["", _month_label(mk)])
-        ws[ws.max_row][1].font = bold
-        _append(ws, ["", "Party", "Amount"])
-        for c in ws[ws.max_row]:
-            c.font = bold
-        ranked = sorted(per_month[mk].items(), key=lambda kv: -kv[1])[:10]
-        for party, amt in ranked:
-            _append(ws, ["", party, round(amt, 2)])
-        _append(ws, [])
+        y, m = mk.split("-")
+        cell = ws.cell(row=r, column=2, value=date(int(y), int(m), 1))
+        cell.font = bold
+        cell.number_format = "mmm-yyyy"
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
+        for col, val in ((2, "Party"), (3, "Amount")):
+            h = ws.cell(row=r + 1, column=col, value=val)
+            h.font = bold
+        ranked = sorted(per_month[mk].items(), key=lambda kv: -kv[1])[:PER_MONTH]
+        for i, (party, amt) in enumerate(ranked):
+            ws.cell(row=r + 2 + i, column=2, value=_xl(party))
+            ws.cell(row=r + 2 + i, column=3, value=round(amt, 2))
+        # Fixed stride: month + header + ten party slots, filled or not.
+        r += 2 + PER_MONTH
 
 
 def _party_annual_sheet(ws, txns, want_credit, group_label, title, bold) -> None:

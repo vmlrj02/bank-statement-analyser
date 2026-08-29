@@ -164,14 +164,55 @@ def test_avg_balances_carries_the_templates_columns(tmp_path):
 
 
 def test_top_10_party_sheets_follow_the_templates_shape(tmp_path):
+    import datetime
+
     wb = _load(tmp_path)
     ws = wb["Top 10 Party Credits"]
     # Column A is empty on this sheet in the template; the title sits in B.
     assert ws["A1"].value is None
     assert ws["B1"].value == "Monthwise Top 10 Party Credits"
-    assert ws["B2"].value == "Jan-2026"
+    # The month is a real DATE merged across B:C and shown as mmm-yyyy, as in
+    # the template — so it sorts and filters as a date, not as text.
+    assert ws["B2"].value == datetime.datetime(2026, 1, 1)
+    assert ws["B2"].number_format == "mmm-yyyy"
+    assert "B2:C2" in [str(r) for r in ws.merged_cells.ranges]
     assert [ws["B3"].value, ws["C3"].value] == ["Party", "Amount"]
     assert ws["B4"].value == "ACME TRADERS"
+
+
+def test_top_10_party_months_sit_on_the_templates_fixed_stride(tmp_path):
+    """Every month block is month row + header + exactly ten party rows,
+    whether or not there are ten parties — so months begin at B2, B14, B26 …
+    just as the template does. A variable stride looks identical but breaks
+    any formula or eye-scan anchored to a row."""
+    import datetime
+
+    meta = StatementMeta(bank="HDFC Bank", layout="hdfc", account_no="XX1234",
+                         account_name="M/S STEEL", period_from="2026-01-01",
+                         period_to="2026-02-28", source_file="s.pdf")
+    # Two months, each with a single credit party — far fewer than ten.
+    txns = [_txn("NEFT IN", 500.0, 1400.0, "Regular credit", "2026-01-05",
+                 party="ACME TRADERS"),
+            _txn("NEFT IN", 700.0, 2100.0, "Regular credit", "2026-02-05",
+                 party="BETA STEELS")]
+    out = str(tmp_path / "stride.xlsx")
+    write_workbook(JobResult(meta=meta, txns=txns,
+                             validation=ValidationReport(status="passed",
+                                                         checked_rows=2,
+                                                         issues=[])), out)
+    ws = load_workbook(out)["Top 10 Party Credits"]
+    # Most recent month first, and the second block starts twelve rows later.
+    assert ws["B2"].value == datetime.datetime(2026, 2, 1)
+    assert ws["B4"].value == "BETA STEELS"
+    assert ws["B14"].value == datetime.datetime(2026, 1, 1)
+    assert [ws["B15"].value, ws["C15"].value] == ["Party", "Amount"]
+    assert ws["B16"].value == "ACME TRADERS"
+
+
+def test_annual_top_10_sheets_carry_the_templates_titles(tmp_path):
+    wb = _load(tmp_path)
     annual = wb["Top 10 Credits (Annual)"]
     assert annual["A1"].value == "Top 10 Funds Received(Party Wise)"
     assert [annual["A2"].value, annual["B2"].value] == ["Description", "Amount"]
+    debits = wb["Top 10 Debits (Annual)"]
+    assert debits["A1"].value == "Top 10 Funds Remittance(Party Wise)"

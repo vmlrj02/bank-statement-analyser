@@ -977,14 +977,16 @@ function accountCard(e){
     ${a.validation==='failed' && (a.issue_sample||[]).length
       ? `<div class="err"><b>Where the balance chain breaks:</b>
         ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
+    <!-- The admin Preview / CSV / JSON buttons were removed from the foot of
+         the card: the Excel report is the deliverable and three more download
+         verbs beside it were clutter on every account. preview() and the
+         correction-capture flow it opens are still in this file, unreferenced,
+         so re-exposing them somewhere admin-only is a one-line change rather
+         than a rebuild. -->
     <div class="acts">
       ${a.validation && a.validation!=='passed'
         ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} balance break${(a.issues||0)===1?'':'s'}</button>`
         : ''}
-      ${IS_ADMIN?`
-      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}')">Preview</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>`:''}
       ${IS_ADMIN && (j.corrections||[]).length
         ? `<button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>`:''}
     </div></div>`;
