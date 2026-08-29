@@ -383,7 +383,9 @@ def lambda_handler(event, _ctx):
         # with it. Results are persisted, so a retry only redoes what is missing.
         entry = next((f for f in files if f.get("key") == key), files[0])
         idx = int(entry.get("idx", 0))
-        workdir = f"/tmp/{job_id}_{idx}"
+        # PID suffix: unique per process, so concurrent test runs (or any two
+        # processes sharing this /tmp) cannot delete each other's scratch dirs.
+        workdir = f"/tmp/{job_id}_{idx}_{os.getpid()}"
         os.makedirs(workdir, exist_ok=True)
         try:
             if not _work_exists(job_id, idx):
@@ -458,7 +460,7 @@ def lambda_handler(event, _ctx):
                 groups[key]["lists"].append(txns)
                 groups[key]["files"].append(f.get("filename", ""))
 
-            outroot = f"/tmp/{job_id}_merge"
+            outroot = f"/tmp/{job_id}_merge_{os.getpid()}"
             accounts_out, worst = [], "passed"
             for key in order:
                 g = groups[key]
@@ -686,5 +688,5 @@ def lambda_handler(event, _ctx):
                                "error": f"merge: {str(e)[:380]}"})
         finally:
             _clear_password(job_id)
-            shutil.rmtree(f"/tmp/{job_id}_merge", ignore_errors=True)
+            shutil.rmtree(f"/tmp/{job_id}_merge_{os.getpid()}", ignore_errors=True)
     return {"ok": True}

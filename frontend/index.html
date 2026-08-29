@@ -521,7 +521,7 @@ $('pwGo').onclick = async () => {
       body: JSON.stringify({current_password:$('pwOld').value,
                             new_password:$('pwNew').value})});
     $('pwMsg').hidden = false;
-    $('pwMsg').textContent = 'Password changed. Other devices stay signed in until their session expires.';
+    $('pwMsg').textContent = 'Password changed. Any other devices have been signed out.';
     $('pwOld').value=''; $('pwNew').value='';
   }catch(e){ $('pwMsg').hidden = false; $('pwMsg').textContent = e.message; }
   finally{ b.disabled = false; }
