@@ -1487,7 +1487,7 @@ function drawDash(host, st){
       .map(([k,v])=>`<div class="catrow"><span class="cl">${esc(catLabel(k))}</span>
         <span class="cbarr"><i style="width:${catT?(100*v/catT).toFixed(1):0}%"></i></span>
         <span class="cn">${nfmt(v)}</span></div>`).join('');
-  const cmOpen = st.cmOpen !== false;
+  const cmOpen = st.cmOpen === true;
   const catmix = catrows
     ? `<div class="catmix"><div class="sechead" style="margin-bottom:9px">
          <span class="ch">Category mix · by transaction count</span>
@@ -1495,14 +1495,16 @@ function drawDash(host, st){
     : '';
   /* Month-by-month table: the chart's data as figures, one row per month,
      linked to the chart (hover a row → crosshair on that month, and vice
-     versa). Open by default, and the minimise control is BINARY — every month
+     versa). CLOSED by default — the chart and the headline numbers are what a
+     reader lands on, and the three tables under them are detail they open
+     when they want it. The minimise control is BINARY — every month
      or nothing at all. A partial "latest ten" state was worse than either:
      the reader cannot tell whether the table is short because the account is
      short or because it was truncated, and a number they are looking for may
      simply not be on the page. The only table that shows a subset is Top 10
      parties, where the top ten IS the question. The choice sticks for the
      session. */
-  const mtOpen = st.mtOpen !== false;
+  const mtOpen = st.mtOpen === true;
   const cell = (v,cls) => v==null ? '<td class="num">—</td>'
     : `<td class="num ${cls||''}">${inr0(v)}</td>`;
   const monthTable = `<div class="sechead" style="margin:14px 0 6px">
@@ -1519,7 +1521,7 @@ function drawDash(host, st){
         ${cell(SE['Cash deposits'][i],'crn')}${cell(SE['Cash withdrawals'][i],'drn')}
         ${cell(SE['Closing balance'][i])}</tr>`).join('')}</tbody></table></div>` : '');
   // Top 10 counterparties, credits and debits side by side — also minimised.
-  const tpOpen = st.tpOpen !== false;
+  const tpOpen = st.tpOpen === true;
   const ptable = (title, rows, base, cls) => `<div style="min-width:240px;flex:1">
     <div class="ch" style="margin:0 0 6px">${title}</div>
     ${rows.length?`<table><thead><tr><th>Party</th><th class="num">Total</th>
