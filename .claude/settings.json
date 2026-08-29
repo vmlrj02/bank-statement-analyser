@@ -5,7 +5,8 @@
       "Bash(cdk deploy:*)",
       "Bash(cdk diff:*)",
       "Bash(cdk synth:*)",
-      "Bash(cdk ls:*)"
+      "Bash(cdk ls:*)",
+      "Bash(git push:*)"
     ]
   }
 }
