@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Statement Analyser</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2316294f'/><text x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-size='19' font-weight='700' fill='%23b9902e'>G</text></svg>">
 <style>
 /* Get It Right brand: deep navy + gold on white, after the company logo.
    Status still reads without colour alone — explicit words plus fill and
    border weight — and debits keep accounting parentheses, matching the CSV. */
 :root{
-  --bg:#ffffff; --fg:#16294f; --mut:#5a6478; --faint:#8b93a5;
+  --bg:#ffffff; --fg:#16294f; --mut:#5a6478; --faint:#6b7385;
   --line:#dce0e8; --line2:#aab2c2; --sunk:#f5f6fa;
   --navy:#16294f; --gold:#b9902e; --golddark:#8a6a1d; --goldpale:#f7f0dd;
   --radius:10px;
@@ -340,6 +341,9 @@ tbody tr:hover td{background:var(--sunk)}
     <input id="pw" type="password" autocomplete="current-password">
     <button class="go" id="signin">Sign in</button>
     <div class="msg" id="gmsg" role="alert" hidden></div>
+    <!-- There is no self-service reset yet, so say who can actually help
+         rather than leaving the dead end unexplained. -->
+    <p class="sub" style="margin:16px 0 0;font-size:12.5px">Forgotten your password? Contact your administrator.</p>
   </div>
 </div>
 
@@ -379,9 +383,11 @@ tbody tr:hover td{background:var(--sunk)}
   <div class="dh"><b>Upload statements</b>
     <span style="margin-left:auto"><button class="ghost" onclick="up.close()">Close</button></span></div>
   <div class="db" style="padding:17px">
-    <div class="drop" id="drop">
+    <div class="drop" id="drop" tabindex="0" role="button"
+      aria-label="Choose PDF statements to upload">
       <div class="t">Drop PDFs here, or click to choose</div>
       <div class="s">Up to 20 at once — grouped by account, one report each</div>
+      <div class="s">Supports Axis, HDFC, ICICI, SBI, Equitas and other Indian banks</div>
       <input type="file" id="file" accept="application/pdf" multiple hidden>
     </div>
     <div id="tray"></div>
@@ -444,16 +450,27 @@ tbody tr:hover td{background:var(--sunk)}
 <script>
 const API = window.BSA_API;
 const $ = id => document.getElementById(id);
-const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* Escapes quotes and backticks too: escaped values (holder, bank names) come
+   from uploaded PDF text and are interpolated into single-quoted onclick
+   handlers, so leaving ' unescaped was a stored-XSS route to the admin. */
+const esc = s => String(s==null?'':s).replace(/[&<>"'`]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
+/* For values inside single-quoted JS strings in onclick attributes. HTML
+   entities are DECODED before the handler runs, so esc() alone still hands
+   the JS a raw quote — backslash-escape for the JS context first, then esc()
+   so the value cannot break out of the attribute either. */
+const jsq = s => esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
 const nfmt = n => Number(n||0).toLocaleString('en-IN');
 const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
 const TKEY = 'bsa.token';
 let IS_ADMIN = false, WHO = '', jobs = [];
 let staged = [], seq = 0;
+let pollT = null;        // the ONE polling timer — refresh() reschedules itself
 
 /* ---------- auth: session token from our own API, no external service ---------- */
 function token(){ return localStorage.getItem(TKEY) || null; }
 function showGate(msg){
+  // A modal dialog paints above the fixed gate — close any before showing it.
+  document.querySelectorAll('dialog').forEach(d=>d.open&&d.close());
   $('app').hidden = true; $('gate').hidden = false;
   $('gmsg').hidden = !msg; if(msg) $('gmsg').textContent = msg;
 }
@@ -478,7 +495,11 @@ $('signin').onclick = async () => {
     localStorage.setItem(TKEY, j.token);
     IS_ADMIN = j.role === 'admin'; WHO = j.email; $('pw').value = '';
     showApp();
-  }catch(e){ showGate(e.message); }
+  }catch(e){
+    showGate((e instanceof TypeError || /failed to fetch/i.test(e.message||''))
+      ? 'Could not reach the server — check your connection and try again.'
+      : e.message);
+  }
   finally{ b.disabled = false; b.textContent = 'Sign in'; }
 };
 $('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
@@ -582,19 +603,27 @@ $('partiesBtn').onclick = () => {
   $('partiesBtn').hidden = true; $('parties').hidden = false; $('parties').focus();
 };
 drop.onclick = () => fileIn.click();
+drop.onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileIn.click(); } };
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('hover'); stage([...e.dataTransfer.files]); };
 fileIn.onchange = () => { stage([...fileIn.files]); fileIn.value=''; };
 
 async function stage(files){
+  // Never drop a file silently: say what was skipped and why.
+  let notPdf = 0; const oversize = [];
   for(const f of files){
-    if(!/\.pdf$/i.test(f.name)) continue;
+    if(!/\.pdf$/i.test(f.name)){ notPdf++; continue; }
+    if(f.size > 50*1048576){ oversize.push(f.name); continue; }
     if(staged.length >= 20){ upMsg('Up to 20 statements per upload — the rest were not added.'); break; }
     const it = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
     staged.push(it); renderTray();
     it.locked = await isEncrypted(f); renderTray();
   }
+  const notes = [];
+  if(notPdf) notes.push(`${notPdf} file${notPdf===1?'':'s'} skipped — PDF statements only.`);
+  for(const nm of oversize) notes.push(`${nm} skipped — over the 50 MB limit.`);
+  if(notes.length) upMsg(notes.join(' '));
 }
 function removeFile(id){ staged = staged.filter(s=>s.id!==id); renderTray(); }
 function setPw(id,v){ const s = staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
@@ -820,7 +849,7 @@ function accountCard(e){
         ${sub?`<div class="acctline" style="margin-top:1px">${sub}</div>`:''}
       </div>
       <button class="go" style="padding:5px 16px;font-size:13px;flex:none"
-        onclick="dl('${j.job_id}','${a.slug}','xlsx',this)">Download workbook (XLSX)</button></div>
+        onclick="dl('${j.job_id}','${jsq(a.slug)}','xlsx',this)">Download workbook (XLSX)</button></div>
     ${verifStrip(a)}
     <div class="dash" id="dash-${esc(e.slug)}">
       <div class="ch">Credit assessment</div>
@@ -842,10 +871,10 @@ function accountCard(e){
     ${confLine(a.confidence)}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
-        ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
+        ? `<button class="ghost" onclick="review('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
         : ''}
       ${IS_ADMIN?`
-      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}',${(j.corrections||[]).length})">Preview</button>`:''}
+      <button class="ghost" onclick="preview('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}','${jsq(a.bank||'')}',${(j.corrections||[]).length})">Preview</button>`:''}
     </div></div>`;
 }
 
@@ -910,7 +939,7 @@ function uploadNotices(){
                a.unreadable_pages?`, ${nfmt(a.unreadable_pages)} unreadable page${a.unreadable_pages===1?'':'s'}`:''},
                <b>${nfmt(a.issues||0)}</b> row${(a.issues||0)===1?'':'s'} to check
                <button class="ghost sm" style="margin-left:5px"
-                 onclick="selectAcct('${j.job_id}/${a.slug}')">Open account</button></div>`).join('')
+                 onclick="selectAcct('${j.job_id}/${jsq(a.slug)}')">Open account</button></div>`).join('')
           + `<div class="rv-foot" style="padding-left:0;padding-right:0">
              <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
              <button class="go" onclick="markReviewed('${j.job_id}',this)">Mark reviewed</button>
@@ -932,7 +961,21 @@ function uploadNotices(){
    account is selected by default, so there is always exactly one card on
    screen; operational notices (processing / failed uploads) sit above it. */
 let selSlug = null, QUERY = '', AFILTER = 'all';
-function selectAcct(slug){ selSlug = slug; render(); }
+function selectAcct(slug){
+  selSlug = slug; render();
+  // On the single-column view the sidebar sits below the card — bring the
+  // newly selected account into view, or the tap looks like it did nothing.
+  if(window.matchMedia('(max-width:900px)').matches){
+    const el = document.getElementById('acct-'+slug);
+    if(el) el.scrollIntoView({behavior:'smooth'});
+  }
+}
+// Sidebar cards are focusable buttons — Enter/Space opens the account.
+$('hist').addEventListener('keydown', e => {
+  if((e.key==='Enter'||e.key===' ') && e.target.classList && e.target.classList.contains('h-card')){
+    e.preventDefault(); e.target.click();
+  }
+});
 function setFilter(f){ AFILTER = f; render(); }
 $('q').oninput = function(){ QUERY = this.value; render(); };
 
@@ -1023,7 +1066,8 @@ function render(){
         lastDay = day;
         // Click selects; the selected card carries the download. No per-row
         // button, no stopPropagation, no duplicate timestamp.
-        return divider + `<div class="h-card ${e.slug===selSlug?'sel':''}" onclick="selectAcct('${e.slug}')">
+        return divider + `<div class="h-card ${e.slug===selSlug?'sel':''}" tabindex="0" role="button"
+          aria-label="Open account ${esc(a.holder||a.bank||'')}" onclick="selectAcct('${jsq(e.slug)}')">
           <div class="h-top">
             <div class="h-av" style="background:${color}">${esc(code)}</div>
             <div>
@@ -1173,11 +1217,11 @@ function drawDash(host, st){
   for(let i=0;i<=4;i++){
     const t=lo+(hi-lo)*i/4;
     svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e7eaf0" stroke-width="1"/>`
-       +`<text x="${ML-8}" y="${Y(t)+3.5}" text-anchor="end" font-size="10" fill="#8b93a5">${inrShort(t)}</text>`;
+       +`<text x="${ML-8}" y="${Y(t)+3.5}" text-anchor="end" font-size="10" fill="#6b7385">${inrShort(t)}</text>`;
   }
   if(lo<0) svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(0)}" y2="${Y(0)}" stroke="#aab2c2" stroke-width="1"/>`;
   MO.forEach((mo,i)=>{ if(i%step===0||i===MO.length-1)
-    svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#8b93a5">${mlabel(mo)}</text>`;});
+    svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#6b7385">${mlabel(mo)}</text>`;});
   const endLabels=[];
   for(const [nm,col] of vis){
     const pts=SE[nm]; let d='', pen=false;
@@ -1377,13 +1421,18 @@ function drawDash(host, st){
 }
 
 async function refresh(){
+  // ONE self-rescheduling timer: quick while a job is running, relaxed
+  // otherwise. Clearing on entry means manual refresh() calls (post-upload,
+  // mark-reviewed) never stack a second polling chain — the old fixed 15s
+  // interval and the 3s busy chain used to run at the same time.
+  clearTimeout(pollT);
+  let busy = false;
   try{
     const r = await api('/jobs');
     jobs = r.jobs || []; LOADED = true;
     if(STALE){ STALE = null; LAST_FP = ''; }
     render();
-    if(jobs.some(j=>['processing','awaiting_upload','merging'].includes(j.status)))
-      setTimeout(refresh, 3000);
+    busy = jobs.some(j=>BUSY.includes(j.status));
   }catch(e){
     if(e.message === 'signed out') return;
     // Never let the UI silently go stale: say so, and keep showing the data
@@ -1392,6 +1441,10 @@ async function refresh(){
     else if(!LOADED)
       $('active').innerHTML = '<div class="empty" onclick="refresh()">Could not load your accounts — click to retry.</div>';
     console.error(e);
+  }
+  finally{
+    if(token() && !$('app').hidden)
+      pollT = setTimeout(refresh, busy ? 3000 : 15000);
   }
 }
 async function dl(id, acct, fmt, btn){
@@ -1544,8 +1597,8 @@ async function preview(id, acct, name, bank, corrN){
     const exportBar = IS_ADMIN
       ? `<div class="rv-note" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
          <span>Export:</span>
-         <button class="ghost sm" onclick="dl('${id}','${acct}','csv',this)">CSV</button>
-         <button class="ghost sm" onclick="dl('${id}','${acct}','json',this)">JSON</button>
+         <button class="ghost sm" onclick="dl('${id}','${jsq(acct)}','csv',this)">CSV</button>
+         <button class="ghost sm" onclick="dl('${id}','${jsq(acct)}','json',this)">JSON</button>
          ${corrN?`<button class="ghost sm" onclick="dlCorrections('${id}',this)">Corrections CSV · ${nfmt(corrN)}</button>`:''}
          <span style="flex:1"></span>
          <span>Click a category or party to record a correction — training data,
@@ -1569,7 +1622,6 @@ async function preview(id, acct, name, bank, corrN){
     IS_ADMIN = me.role === 'admin'; WHO = me.email; showApp();
   }catch(e){ showGate(); }
 })();
-setInterval(() => { if(token() && !$('app').hidden) refresh(); }, 15000);
 </script>
 </body>
 </html>

@@ -186,3 +186,97 @@ def test_nearest_without_max_gap_keeps_pure_nearest():
     narrs = [(47.32, ["SPILL"]), (60.32, ["OWN"])]
     _flush_nearest(anchors, narrs, rows)
     assert rows[1].description == "SPILL OWN"      # the old behaviour, unchanged
+
+
+# ---- continuation pages: the table header prints on page 1 ONLY -------------
+# Gotcha 10: a statement's column header is often printed once, on page 1, and
+# every later page starts straight into rows. A parser that requires the header
+# before parsing silently drops every continuation page — this cost 143 of 163
+# rows on the first Axis run. Pin end-to-end that a headerless page 2 is parsed
+# whole, through extract() itself with pdfplumber faked out.
+
+class _FakePage:
+    def __init__(self, words):
+        self._words = words
+
+    def extract_words(self):
+        return [dict(w) for w in self._words]
+
+    def extract_text(self):
+        return ""
+
+
+class _FakePdf:
+    def __init__(self, pages):
+        self.pages = pages
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+CONT_LAYOUT = {
+    "bank": "Test Bank", "id": "test_generic",
+    "parse": {
+        "row_anchor": r"\d{2}-\d{2}-\d{4}",
+        "continuation": "below",
+        "table_header_words": ["Date", "Particulars", "Debit", "Credit",
+                               "Balance"],
+        "columns": {"date_x_max": 100,
+                    "remarks_x_min": 110, "remarks_x_max": 300,
+                    "cheque_x_min": 300, "cheque_x_max": 360,
+                    "withdrawal_x1_max": 430, "deposit_x1_max": 510,
+                    "balance_x1_max": 580},
+    },
+}
+
+# Page 1 carries the one and only table header line; two rows follow it.
+PAGE1 = [
+    w("Date", 30, 55, 50), w("Particulars", 115, 170, 50),
+    w("Debit", 400, 425, 50), w("Credit", 480, 505, 50),
+    w("Balance", 545, 575, 50),
+    w("01-01-2026", 30, 90, 100), w("OPENING", 115, 160, 100),
+    w("CREDIT", 165, 200, 100),
+    w("1,000.00", 460, 505, 100), w("1,000.00", 530, 575, 100),
+    w("NEFT", 115, 140, 112), w("REF-AAA", 145, 190, 112),   # wrapped narration
+    w("02-01-2026", 30, 90, 130), w("CHEQUE", 115, 160, 130),
+    w("PAID", 165, 190, 130),
+    w("200.00", 395, 425, 130), w("800.00", 545, 575, 130),
+]
+# Page 2 has NO header tokens at all — only dated anchors and narration.
+PAGE2 = [
+    w("03-01-2026", 30, 90, 80), w("NEFT", 115, 140, 80), w("IN", 145, 155, 80),
+    w("500.00", 475, 505, 80), w("1,300.00", 530, 575, 80),
+    w("FROM", 115, 140, 92), w("DURGA-TRD", 145, 200, 92),
+    w("04-01-2026", 30, 90, 110), w("ATM", 115, 135, 110),
+    w("WDL", 140, 160, 110),
+    w("300.00", 395, 425, 110), w("1,000.00", 530, 575, 110),
+    w("05-01-2026", 30, 90, 140), w("INTEREST", 115, 160, 140),
+    w("250.00", 475, 505, 140), w("1,250.00", 530, 575, 140),
+]
+
+
+def test_headerless_continuation_page_is_parsed_whole(monkeypatch):
+    from bsa.extract import generic_layout
+
+    monkeypatch.setattr(
+        generic_layout.pdfplumber, "open",
+        lambda path: _FakePdf([_FakePage(PAGE1), _FakePage(PAGE2)]))
+    ex = generic_layout.extract("fake.pdf", "s.pdf", CONT_LAYOUT)
+
+    # Every page-2 row is emitted — none silently dropped for lack of a header.
+    assert [(r.date, r.page) for r in ex.rows] == [
+        ("01-01-2026", 1), ("02-01-2026", 1),
+        ("03-01-2026", 2), ("04-01-2026", 2), ("05-01-2026", 2)]
+    assert [r.balance for r in ex.rows] == \
+        [1000.0, 800.0, 1300.0, 1000.0, 1250.0]
+    assert [(r.withdrawal, r.deposit) for r in ex.rows] == [
+        (None, 1000.0), (200.0, None),
+        (None, 500.0), (300.0, None), (None, 250.0)]
+    # Narration still assembles on both pages (wrapped line included).
+    assert ex.rows[0].description == "OPENING CREDIT NEFT REF-AAA"
+    assert ex.rows[2].description == "NEFT IN FROM DURGA-TRD"
+    # And the header line itself never leaks into a row.
+    assert all("Particulars" not in r.description for r in ex.rows)
