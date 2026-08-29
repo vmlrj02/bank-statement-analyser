@@ -174,19 +174,21 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   padding:10px 14px;margin-bottom:10px;font-size:13px}
 .upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .upnote .nm{font-weight:700;margin-right:auto}
-/* The folded attention strip. One line, quiet, never taller than a row of
-   text — the account below it is the page. */
-.notebar{display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--mut);
+/* The attention row lives in the SIDEBAR, with the uploads it talks about —
+   not across the top of the main column, where it stole a band of width from
+   the account and pushed the chart down. One quiet line; the detail opens in
+   a dialog. Where there is no account to show, the same notices expand in the
+   main column instead, so nothing is hidden behind a click. */
+.nb-side{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;
+  font-family:inherit;font-size:12px;color:var(--mut);cursor:pointer;
   border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:8px;
-  background:var(--sunk);padding:7px 13px;margin-bottom:12px}
-.notebar.open{margin-bottom:9px}
-.notebar .nb-k{font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
-  color:var(--golddark);flex:none}
-.notebar .nb-t{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.notebar .nb-t b{color:var(--fg);font-weight:700;font-variant-numeric:tabular-nums}
-.notebar .nb-x{flex:none;background:none;border:0;padding:0;font-size:12px;font-weight:700;
-  color:var(--golddark);text-decoration:underline;text-underline-offset:2px}
-.notebar .nb-x:hover{color:var(--fg)}
+  background:var(--sunk);padding:7px 11px;margin-bottom:12px;
+  transition:border-color .12s,color .12s}
+.nb-side:hover{border-color:var(--line2);color:var(--fg)}
+.nb-side .nb-t{min-width:0;flex:1;line-height:1.35}
+.nb-side .nb-t b{color:var(--fg);font-weight:700;font-variant-numeric:tabular-nums}
+.nb-side .nb-x{flex:none;font-size:11px;font-weight:700;color:var(--golddark);
+  text-decoration:underline;text-underline-offset:2px;line-height:1.5}
 .notewrap{margin-bottom:14px}
 
 /* admin AI panel */
@@ -402,6 +404,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <button class="go" id="upBtn" style="width:100%;margin-bottom:12px">Upload statements</button>
     <input type="text" id="q" placeholder="Search name, bank, number…"
       style="width:100%;margin-bottom:12px;font-size:13px">
+    <button class="nb-side" id="ntBtn" hidden onclick="openNotes()"></button>
     <div id="afilters" class="afrow" hidden></div>
     <h2 id="acctHead">Accounts</h2>
     <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
@@ -435,6 +438,12 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <div class="dh"><b id="rvTitle">Review</b>
     <span style="margin-left:auto"><button class="ghost" onclick="rv.close()">Close</button></span></div>
   <div class="db" id="rvBody"></div>
+</dialog>
+
+<dialog id="ntd">
+  <div class="dh"><b>Uploads needing attention</b>
+    <span style="margin-left:auto"><button class="ghost" onclick="ntd.close()">Close</button></span></div>
+  <div class="db" id="ntBody" style="padding:17px"></div>
 </dialog>
 
 <dialog id="pwd">
@@ -732,17 +741,20 @@ function statusChip(st){
     return `<span class="chip fail">${st==='failed'?'Failed':'Password required'}</span>`;
   return `<span class="chip busy">${esc(String(st).replace(/_/g,' '))}…</span>`;
 }
+/* Only PROBLEMS earn a chip in the account header. "Balance passed" and
+   "Integrity verified" said nothing a reader needed — every clean account
+   carried both, so they were permanent furniture that pushed the holder's
+   name and the download button together. A clean account now shows no chip
+   at all, and a chip means something is wrong. The passing detail still
+   reads in the workbook Summary and the credit assessment. */
 function validationChip(v){
-  if(!v) return '';
-  if(v==='passed') return '<span class="chip done">Balance passed</span>';
+  if(!v || v==='passed') return '';
   if(v==='failed') return '<span class="chip fail">Balance FAILED</span>';
   return '<span class="chip warn">Balance warnings</span>';
 }
 function integrityChip(intg){
-  if(!intg) return '';
-  return intg.assessment==='verified'
-    ? '<span class="chip done">Integrity verified</span>'
-    : '<span class="chip warn">Integrity: review</span>';
+  if(!intg || intg.assessment==='verified') return '';
+  return '<span class="chip warn">Integrity: review</span>';
 }
 function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
 
@@ -905,9 +917,10 @@ function accountCard(e){
    lives in the account cards.
    These are OPERATIONAL, never the content. They used to stack full-height at
    the top of the main column, so landing on the page meant reading a pile of
-   error boxes before reaching the account's numbers. They now fold into a
-   one-line strip (noticeStrip) that opens on demand, so this returns the
-   bodies AND a tally that lets the strip describe them in a sentence. */
+   error boxes before reaching the account's numbers. They now live in the
+   SIDEBAR as a one-line row (noticeLine) that opens the detail in a dialog
+   (openNotes), so this returns the bodies AND a tally that lets that one line
+   describe them in a sentence. */
 function uploadNotices(){
   const money = v => (v===''||v==null) ? '—' : '$'+Number(v).toFixed(4);
   const out = [];
@@ -991,36 +1004,38 @@ function uploadNotices(){
   return {n: out.length, tally, html};
 }
 
-/* The attention strip: ONE line that says what needs a human, with the detail
-   folded behind it. Closed by default so the account's chart, numbers and
-   description are what a user or admin sees on landing — an unreadable file
-   from three weeks ago is a footnote, not the front page. It opens on click
-   and stays open for the session once opened. */
-let NOTES_OPEN = false;
-function toggleNotes(){ NOTES_OPEN = !NOTES_OPEN; render(); }
-function noticeStrip(nt, hasContent){
-  if(!nt.n) return '';
-  // With nothing else on the page there is nothing to protect, so show it all.
-  const open = NOTES_OPEN || !hasContent;
+/* What needs a human, said in one line. It sits in the sidebar next to the
+   uploads it describes, and the detail — failed files, review actions, the
+   admin AI panel — opens in a dialog. The main column is then the account:
+   chart, numbers, categorisation, description, with nothing above it. An
+   unreadable file from three weeks ago is a footnote, not the front page. */
+function noticeLine(nt){
   const t = nt.tally, bits = [];
   if(t.busy)   bits.push(`<b>${nfmt(t.busy)}</b> processing`);
   if(t.files)  bits.push(`<b>${nfmt(t.files)}</b> file${t.files===1?'':'s'} could not be read`);
   if(t.failed) bits.push(`<b>${nfmt(t.failed)}</b> upload${t.failed===1?'':'s'} failed`);
   if(t.review) bits.push(`<b>${nfmt(t.review)}</b> awaiting review`);
   if(t.ai)     bits.push(`<b>${nfmt(t.ai)}</b> used AI`);
-  const line = bits.length ? bits.join(' · ') : `<b>${nfmt(nt.n)}</b> upload${nt.n===1?'':'s'} need attention`;
-  return `<div class="notebar${open?' open':''}">
-      <span class="nb-k">Uploads</span>
-      <span class="nb-t">${line}</span>
-      ${hasContent?`<button class="nb-x" onclick="toggleNotes()">${open?'Hide':'Show'}</button>`:''}
-    </div>${open?`<div class="notewrap">${nt.html}</div>`:''}`;
+  return bits.length ? bits.join(' · ')
+                     : `<b>${nfmt(nt.n)}</b> upload${nt.n===1?'':'s'} need attention`;
+}
+function openNotes(){
+  $('ntBody').innerHTML = uploadNotices().html || '<div class="meta">Nothing needs attention.</div>';
+  ntd.showModal();
+}
+/* Keep the dialog honest while it is open: marking an upload reviewed calls
+   render(), and a stale panel behind a modal is worse than no panel. */
+function refreshNotes(nt){
+  if(!ntd.open) return;
+  if(!nt.n) { ntd.close(); return; }
+  $('ntBody').innerHTML = nt.html;
 }
 
 /* Sidebar account card → the main view shows ONLY that account. The first
    account is selected by default, so there is always exactly one card on
    screen; operational notices (processing / failed uploads) sit above it. */
 let selSlug = null, QUERY = '', AFILTER = 'all';
-function selectAcct(slug){ selSlug = slug; render(); }
+function selectAcct(slug){ selSlug = slug; if(ntd.open) ntd.close(); render(); }
 function setFilter(f){ AFILTER = f; render(); }
 $('q').oninput = function(){ QUERY = this.value; render(); };
 
@@ -1063,9 +1078,14 @@ function render(){
   const sel = accts.find(e=>e.slug===selSlug);
   // Content first: the account leads, operational notices ride above it as a
   // single folded line. With no account to show they expand in its place.
-  $('active').innerHTML = noticeStrip(nt, !!sel)
-    + (sel ? accountCard(sel)
-           : (nt.n ? '' : `<div class="empty" style="cursor:pointer" onclick="upBtn.click()">
+  const ntBtn = $('ntBtn');
+  ntBtn.hidden = !nt.n;
+  if(nt.n) ntBtn.innerHTML = `<span class="nb-t">${noticeLine(nt)}</span><span class="nb-x">View</span>`;
+  refreshNotes(nt);
+  $('active').innerHTML =
+      (sel ? accountCard(sel)
+           : (nt.n ? `<div class="notewrap">${nt.html}</div>`
+                   : `<div class="empty" style="cursor:pointer" onclick="upBtn.click()">
       Nothing yet — <b>click here to upload statements</b><br>
       <span style="font-size:12.5px">Bank PDF exports, up to 20 at once — grouped by
       account, one balance-checked report each.</span></div>`));
@@ -1527,6 +1547,7 @@ async function review(id, acct, name){
   RVC = {id, acct};
   $('rvTitle').textContent = `${name} — reconciliation`;
   $('rvBody').innerHTML = '<div class="rv-note">Loading…</div>';
+  if(ntd.open) ntd.close();          // one modal at a time
   $('rv').showModal();
   try{
     const {url} = await api(`/jobs/${id}/download?format=issues&account=${encodeURIComponent(acct)}`);
