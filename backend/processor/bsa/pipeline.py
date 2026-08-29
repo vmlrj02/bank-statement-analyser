@@ -21,8 +21,12 @@ TEMPLATE_PARSERS = {
 
 
 def extract_one(path: str, password: str | None = None,
-                time_left_ms=None) -> StatementExtract:
-    ing = ingest(path, password=password)
+                time_left_ms=None, filename: str | None = None) -> StatementExtract:
+    # `filename` is the name the person uploaded under. In Lambda `path` is a
+    # scratch file ("/tmp/…/in.pdf"), so the original name has to travel
+    # separately — it is what carries a protected file's password (see
+    # ingest.password_candidates).
+    ing = ingest(path, password=password, filename=filename)
     cls = classify(ing.path)
 
     def _stamp(extract):

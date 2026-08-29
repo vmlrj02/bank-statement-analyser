@@ -12,7 +12,7 @@ from bsa.ingest import IngestResult
 def unknown_bank(monkeypatch, tmp_path):
     pdf = tmp_path / "mystery.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None: IngestResult(
+    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None, filename=None: IngestResult(
         path=str(pdf), n_pages=3, is_digital_text=True, text_density=900.0))
     monkeypatch.setattr(pipeline, "classify", lambda p: Classification(
         layout_id=None, bank=None, page1_text="Some Bank We Do Not Know"))
@@ -38,7 +38,7 @@ def test_an_unreadable_pdf_is_not_blamed_on_a_missing_layout(monkeypatch, tmp_pa
     no parser could ever use. The file, not the registry, must be named."""
     pdf = tmp_path / "locked.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None: IngestResult(
+    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None, filename=None: IngestResult(
         path=str(pdf), n_pages=10, is_digital_text=False, text_density=0.0))
     monkeypatch.setattr(pipeline, "classify", lambda p: Classification(
         layout_id=None, bank=None, page1_text=""))
@@ -85,7 +85,7 @@ def test_a_known_layout_never_consults_the_gate(monkeypatch, tmp_path):
     that is the whole point of writing layouts."""
     pdf = tmp_path / "axis.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None: IngestResult(
+    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None, filename=None: IngestResult(
         path=str(pdf), n_pages=1, is_digital_text=True, text_density=900.0))
     monkeypatch.setattr(pipeline, "classify", lambda p: Classification(
         layout_id="axis_account_statement", bank="Axis Bank", page1_text=""))
@@ -105,7 +105,7 @@ def test_a_scanned_pdf_with_a_matching_layout_says_so(monkeypatch, tmp_path):
     off to write a descriptor that already exists."""
     pdf = tmp_path / "scan.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None: IngestResult(
+    monkeypatch.setattr(pipeline, "ingest", lambda p, password=None, filename=None: IngestResult(
         path=str(pdf), n_pages=4, is_digital_text=False, text_density=3.0,
         empty_pages=[1, 2, 3, 4]))
     monkeypatch.setattr(pipeline, "classify", lambda p: Classification(

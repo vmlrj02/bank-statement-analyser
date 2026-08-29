@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 
@@ -55,7 +56,64 @@ class IngestResult:
     modified: str = ""
 
 
-def ingest(path: str, password: str | None = None) -> IngestResult:
+# --- passwords that the file is carrying in its own name ---------------------
+#
+# Whoever sends a protected statement almost always writes its password into
+# the file name, because that is the only place it survives being forwarded:
+#   "Acct Statement pass - 43888983.pdf"        "HDFC 6260 _pass- 41361703.pdf"
+#   "Acct Statement_4672_PW- 220593370.pdf"     "PSW-176284535-HDFC MANSA.pdf"
+#   "Karnataka Bank -JAMEELA BANU- Password -JAME1982.pdf"
+# and sometimes the name IS the password ("133591747.pdf", filed under a
+# folder called "HDFC-607-PS-133591747"). Asking a person to retype what is
+# already on the screen is the kind of friction that makes an upload fail for
+# no reason, so the pipeline reads it instead.
+#
+# Every candidate is only ever TRIED: a wrong guess costs one cheap pikepdf
+# open and falls through to the next, and a file that opens with no password
+# never gets here at all. So this can never lock someone out — it can only
+# save them a step.
+_PW_LABELLED = re.compile(
+    r"(?:pass(?:word)?|pwd|psw|pw|ps)\s*[-:_ ]{0,3}\s*([A-Za-z0-9@#]{4,})", re.I)
+# A bare run of digits long enough to be a password rather than a page number.
+# Deliberately loose — account numbers and dates match too and simply fail,
+# which costs nothing: candidates are only ever tried on a file that has
+# ALREADY refused to open, so an unprotected statement never pays for them.
+# The boundary is "not a digit" rather than \b, because \b does not fire
+# between "_" and a digit and bank exports are full of
+# "Acct_Statement_XXXX9675_12052026.pdf".
+_PW_BARE = re.compile(r"(?<!\d)(\d{6,12})(?!\d)")
+# Trying every guess on a big encrypted file is the only way this could get
+# slow, so the list is bounded. Six covers every shape seen in the corpus.
+MAX_PASSWORD_GUESSES = 6
+
+
+def password_candidates(name: str | None) -> list[str]:
+    """Passwords implied by a file's own name (and its folder, when we have a
+    real path). Labelled forms first — "pass - 12345678" is a statement of
+    intent — then bare numeric tokens, which are a guess."""
+    if not name:
+        return []
+    base = os.path.basename(name)
+    parent = os.path.basename(os.path.dirname(name))
+    stem = os.path.splitext(base)[0]
+
+    out: list[str] = []
+
+    def add(v):
+        if v and v not in out:
+            out.append(v)
+
+    for text in (base, parent):
+        for m in _PW_LABELLED.finditer(text or ""):
+            add(m.group(1))
+    for text in (stem, parent):
+        for m in _PW_BARE.finditer(text or ""):
+            add(m.group(1))
+    return out[:MAX_PASSWORD_GUESSES]
+
+
+def ingest(path: str, password: str | None = None,
+           filename: str | None = None) -> IngestResult:
     if not os.path.exists(path):
         raise IngestError(f"file not found: {path}")
     if os.path.getsize(path) == 0:
@@ -70,12 +128,23 @@ def ingest(path: str, password: str | None = None) -> IngestResult:
             docinfo = _read_docinfo(pdf)
             pdf.close()
         except pikepdf.PasswordError:
-            if not password:
-                raise PasswordRequired("PDF is password-protected")
-            try:
-                pdf = pikepdf.open(path, password=password)
-            except pikepdf.PasswordError:
-                raise PasswordRequired("wrong password")
+            # The one the person typed is tried first — they know something we
+            # are only inferring — then whatever the file name is carrying.
+            attempts = ([password] if password else []) + [
+                c for c in password_candidates(filename or path) if c != password]
+            pdf = None
+            for candidate in attempts:
+                try:
+                    pdf = pikepdf.open(path, password=candidate)
+                    break
+                except pikepdf.PasswordError:
+                    continue
+            if pdf is None:
+                # "Wrong password" only when one was actually offered and
+                # rejected; otherwise this file simply needs one, and saying so
+                # is what the upload screen asks the person to act on.
+                raise PasswordRequired(
+                    "wrong password" if password else "PDF is password-protected")
             docinfo = _read_docinfo(pdf)
             tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
             pdf.save(tmp.name)

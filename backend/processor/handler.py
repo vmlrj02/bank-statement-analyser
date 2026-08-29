@@ -409,7 +409,8 @@ def lambda_handler(event, _ctx):
                 s3.download_file(BUCKET, src_key, local_pdf)
                 ex = extract_one(
                     local_pdf, password=entry.get("password"),
-                    time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None))
+                    time_left_ms=getattr(_ctx, "get_remaining_time_in_millis", None),
+                    filename=entry.get("filename"))
                 _write_work(job_id, idx, ex.meta, normalize(ex))
         except PasswordRequired:
             _mark_failed(job_id, idx, entry.get("filename", "file"),

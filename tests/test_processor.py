@@ -177,8 +177,9 @@ def three_file_job(proc, jobs_table, s3, monkeypatch):
                                   "tokens_in": 1000, "tokens_out": 200,
                                   "calls": 1, "cost_usd": 0.005}
     order = iter([extracts[0], extracts[1], extracts[2]])
-    monkeypatch.setattr(proc, "extract_one",
-                        lambda path, password=None, time_left_ms=None: next(order))
+    monkeypatch.setattr(
+        proc, "extract_one",
+        lambda path, password=None, time_left_ms=None, filename=None: next(order))
     return proc, jobs_table, s3, files
 
 
