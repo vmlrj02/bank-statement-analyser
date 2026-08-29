@@ -375,9 +375,6 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   transition:background .12s,color .12s,border-color .12s}
 .rchip:hover{border-color:var(--line2)}
 .rchip.act{background:var(--navy);color:#fff;border-color:var(--navy)}
-.tile.clk{cursor:pointer;transition:border-color .12s,box-shadow .12s}
-.tile.clk:hover{border-color:var(--line2)}
-.tile.clk.act{border-color:var(--gold);box-shadow:0 0 0 2px var(--goldpale)}
 .mt-wrap tbody tr{cursor:pointer}
 @media(max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}
   main,aside{grid-column:auto;grid-row:auto}
@@ -1424,20 +1421,21 @@ function drawDash(host, st){
   const reads = ((aa && aa.credit_summary && aa.credit_summary.reads)||[])
       .map(r=>`<li>${esc(r)}</li>`).join('');
   const aps = aa ? periodStats(aa.periods) : null;
-  // A hero tile with a `series` name doubles as a chart control: clicking it
-  // toggles that line, and the tile glows gold while its line is shown.
-  const hero = (label, v, cls, sub, meterPct, meterCls, series) => `<div class="tile${
-      series?` clk${st.visible.has(series)?' act':''}" data-s="${esc(series)}`:''}">
+  // A hero tile is a READOUT, not a control. It used to double as a chart
+  // toggle, but the legend chips already do that job and only four of the six
+  // tiles carried the behaviour — so a stray tap on a number silently changed
+  // what the chart plotted, with no cue that the two were connected.
+  const hero = (label, v, cls, sub, meterPct, meterCls) => `<div class="tile">
       <span class="tl">${label}</span><b class="${cls||''}">${inr0(v)}</b>
       ${meterPct!=null?`<div class="meter ${meterCls||''}"><i style="width:${Math.min(100,meterPct).toFixed(1)}%"></i></div>`:''}
       <i>${sub}</i></div>`;
   const small = (label, val) => `<div class="tile"><span class="tl">${label}</span><b>${val}</b></div>`;
   const heroRow = `<div class="tiles">
-    ${hero('Credits', totC, 'crn', inr0(totC/nData)+' / mo avg', null, null, 'Credits')}
-    ${hero('Debits', totD, 'drn', inr0(totD/nData)+' / mo avg', null, null, 'Debits')}
+    ${hero('Credits', totC, 'crn', inr0(totC/nData)+' / mo avg')}
+    ${hero('Debits', totD, 'drn', inr0(totD/nData)+' / mo avg')}
     ${hero('Turnover', totT, '', pct(totT,totC)+' of credits · '+inr0(totT/nData)+' / mo', totC?100*totT/totC:null)}
-    ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g', 'Cash deposits')}
-    ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r', 'Cash withdrawals')}
+    ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g')}
+    ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r')}
     ${m?hero('Monthly surplus', m.monthly_surplus, (m.monthly_surplus||0)<0?'drn':'crn',
       'debt-svc cover '+(m.servicing_coverage==null?'—':m.servicing_coverage+'×')):''}
   </div>`;
@@ -1564,12 +1562,6 @@ function drawDash(host, st){
   });
   body.querySelectorAll('.rchip').forEach(b=>b.onclick=()=>{
     st.range = b.dataset.r==='all' ? 'all' : +b.dataset.r;
-    drawDash(host, st);
-  });
-  body.querySelectorAll('.tile.clk').forEach(t=>t.onclick=()=>{
-    const nm=t.dataset.s;
-    if(st.visible.has(nm)){ if(st.visible.size>1) st.visible.delete(nm); }
-    else st.visible.add(nm);
     drawDash(host, st);
   });
   const tgl = body.querySelector('.mt-tgl');
