@@ -152,10 +152,13 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .regen:disabled{opacity:.55;cursor:default}
 /* The generated-on stamp sits beside the download button, where the reviewer
    asked for it. Quiet type: it dates the report, it is not a headline. */
-.genstamp{flex:0 0 auto;text-align:right;line-height:1.25;margin-left:2px}
-.genstamp span{display:block;font-size:10px;letter-spacing:.04em;
-  text-transform:uppercase;color:var(--mut)}
-.genstamp b{font-size:12px;color:var(--fg);white-space:nowrap}
+/* Label over date, sized as the reviewer drew it — this is the line that tells
+   a reader whether they are looking at today's report or last week's, so it is
+   readable at a glance rather than a footnote. Navy, not the marker red of the
+   mockup: red already means a debit or a failure everywhere else on this page. */
+.genstamp{flex:0 0 auto;text-align:right;line-height:1.3;margin-left:2px}
+.genstamp span{display:block;font-size:12.5px;font-weight:600;color:var(--navy)}
+.genstamp b{font-size:13.5px;color:var(--navy);white-space:nowrap}
 @media (max-width:720px){.regen span{display:none}.genstamp{display:none}}
 /* The chevron points DOWN when the section is closed (click to open) and UP
    when it is open (click to close). */
@@ -814,13 +817,18 @@ const toggleBtn = (cls, open, what) =>
    replace. Reads `generated_at`, stamped by the processor at publish; falls
    back to updated_at for reports made before that field existed. */
 function genStamp(j){
-  const ts = Number(j && (j.generated_at || j.updated_at)) || 0;
+  // reportTime, not updated_at: pressing Re-generate writes a status and moves
+  // updated_at, so the falling-back stamp would jump to the moment of the
+  // CLICK and claim a report had been generated while it was still running.
+  // Sharing one clock with the sidebar also keeps the two from disagreeing.
+  const ts = reportTime(j);
   if(!ts) return '';
   const d = new Date(ts*1000);
   const hr = d.getHours(), h12 = hr%12 || 12;
   const stamp = `${String(d.getDate()).padStart(2,'0')}-${MON[d.getMonth()]}-${d.getFullYear()}`
     + ` ${h12}:${String(d.getMinutes()).padStart(2,'0')} ${hr<12?'AM':'PM'}`;
-  return `<div class="genstamp"><span>Report generated on</span><b>${esc(stamp)}</b></div>`;
+  // Two lines, label over date, as drawn in the reviewer's mockup.
+  return `<div class="genstamp"><span>Report generated on:</span><b>${esc(stamp)}</b></div>`;
 }
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function shortDate(iso){
