@@ -167,3 +167,56 @@ return_keywords:
 dividend_payers:
   - JSW Steel
   - Narayana Hrudayalaya
+
+# ---------------------------------------------------------------------------
+# Speculative & high-risk SPENDING, from the SME category master's
+# "Speculative & High-Risk Spending" block. These do NOT get a category tag of
+# their own: the ABCL taxonomy has eighteen tags and each maps to a sheet in
+# the customer's template, so inventing a nineteenth would break the output
+# contract. A debit here stays "Regular debit" and lands on Regular Debits
+# exactly as before — what changes is that the credit assessment now COUNTS it
+# and says so, which is the whole reason the master lists them.
+#
+# Matched case-insensitively with spaces removed, anywhere in the narration, on
+# DEBITS only. Keep entries specific: a fragment short enough to appear inside
+# an ordinary merchant name will flag a business as a gambler (the "Piramal"
+# lesson under `lenders`).
+high_risk_spend:
+  Gambling / betting / real-money gaming:
+    - DREAM11
+    - GAMES24X7
+    - MY11CIRCLE
+    - RUMMYCIRCLE
+    - JUNGLEERUMMY
+    - ACE2THREE
+    - POKERBAAZI
+    - 1XBET
+    - PARIMATCH
+    - STAKE.COM
+    - BET365
+    - LOTTERY
+    - CASINO
+  Virtual digital assets / crypto:
+    - WAZIRX
+    - COINDCX
+    - COINSWITCH
+    - ZEBPAY
+    - UNOCOIN
+    - BITBNS
+    - BINANCE
+    - CRYPTO
+  Unlicensed / P2P lending outflows:
+    - FAIRCENT
+    - LENDBOX
+    - I2IFUNDING
+    - LENDENCLUB
+  Speculative stock & derivatives funding:
+    - ZERODHA
+    - GROWW
+    - UPSTOX
+    - ANGELONE
+    - ANGEL BROKING
+    - 5PAISA
+    - DHAN BROKING
+    - MCX
+    - F&O FUNDING

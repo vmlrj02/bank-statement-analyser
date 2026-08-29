@@ -28,7 +28,10 @@ from .models import JobResult, Txn
 
 _CS_LABELS = [
     ("months", "Months covered", "int"),
-    ("avg_monthly_credits", "Avg monthly credits (turnover)", "money"),
+    ("avg_monthly_credits", "Avg monthly credits (all inflows)", "money"),
+    ("avg_monthly_business_credits", "Avg monthly BUSINESS credits (turnover)", "money"),
+    ("business_credits", "Business credits (total)", "money"),
+    ("business_credit_share_pct", "Business credits as % of all credits", "pct"),
     ("avg_monthly_debits", "Avg monthly debits", "money"),
     ("total_credits", "Total credits", "money"),
     ("total_debits", "Total debits", "money"),
@@ -545,16 +548,16 @@ def write_workbook(result: JobResult, path: str) -> None:
         elif kind == "money" and isinstance(v, (int, float)):
             v = _fmt_amount(v)
         _append(ws, [label, v])
-    # Business credits: the turnover a lender may underwrite, with every
-    # non-operating inflow stripped out per the SME master.
-    from .categorize import NON_TURNOVER
-    biz = sum(t.amount for t in txns if t.amount > 0 and t.category not in NON_TURNOVER)
-    months_n = max(1, len({t.date[:7] for t in txns}))
-    _append(ws, ["Business credits (turnover, excl. non-operating)",
-                 _fmt_amount(biz)])
-    _append(ws, ["Business credits per month", _fmt_amount(biz / months_n)])
-    _append(ws, ["Business credits as % of all credits",
-                 f"{round(100 * biz / sc, 1) if sc else 0}%"])
+    # Speculative / high-risk spending, named group by group, so the sheet
+    # says WHERE the money went rather than only that a flag fired.
+    hr = metrics.get("high_risk_spend") or {}
+    if hr:
+        _append(ws, [])
+        _append(ws, ["Speculative / high-risk spending", "Count", "Amount"])
+        for c in ws[ws.max_row]:
+            c.font = bold
+        for g, v in sorted(hr.items(), key=lambda kv: -kv[1]["amount"]):
+            _append(ws, [g, v["count"], _fmt_amount(-v["amount"])])
     _append(ws, [])
     _append(ws, ["Underwriting reads"])
     ws[ws.max_row][0].font = bold

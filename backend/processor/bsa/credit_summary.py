@@ -247,6 +247,23 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
                            "share_pct": round(100 * v / total_cr, 1) if total_cr else 0.0}
                           for k, v in ranked_cr[:3]]
 
+    # Business turnover and speculative spending, both from the SME master.
+    # They are derived here rather than in categorize so that a change to the
+    # master moves one number in one place.
+    from .categorize import NON_TURNOVER, high_risk_group
+    business_cr = sum(t.amount for t in txns
+                      if t.amount > 0 and t.category not in NON_TURNOVER)
+    high_risk: dict[str, dict] = {}
+    for t in txns:
+        if t.amount >= 0:
+            continue
+        g = high_risk_group(t.description)
+        if not g:
+            continue
+        rec = high_risk.setdefault(g, {"count": 0, "amount": 0.0})
+        rec["count"] += 1
+        rec["amount"] = round(rec["amount"] + -t.amount, 2)
+
     m = {
         "months": months,
         "total_credits": round(total_cr, 2),
@@ -291,6 +308,18 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
         "two_way_parties": two_way_parties,
         "top3_party_share_pct": top3_share,
         "top_credit_parties": top_credit_parties,
+        # Business turnover (GTO): credits with every non-operating inflow
+        # stripped out per the SME master — borrowed money, personal salary,
+        # interest/treasury, investment returns, refunds and related-party
+        # inflows. avg_monthly_credits above is ALL credits and is deliberately
+        # left alone; this is the narrower number a lender underwrites.
+        "business_credits": round(business_cr, 2),
+        "avg_monthly_business_credits": round(business_cr / months, 2),
+        "business_credit_share_pct": (round(100 * business_cr / total_cr, 1)
+                                      if total_cr else 0.0),
+        # Speculative / high-risk spending, by the master's groups.
+        "high_risk_spend": high_risk,
+        "high_risk_spend_total": round(sum(g["amount"] for g in high_risk.values()), 2),
     }
 
     reads: list[str] = []
@@ -360,6 +389,17 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
     if m["servicing_coverage"] is not None and m["servicing_coverage"] < 1.5:
         reads.append(f"Debt-service coverage is tight (inflow is ~{m['servicing_coverage']}× "
                      f"existing EMI outflow) — little room for additional debt.")
+    # Speculative / high-risk spending. Worth a line whenever it happens at
+    # all: the concern is not the rupee amount but that working capital is
+    # going there. Named groups, so an underwriter can go and look.
+    if high_risk:
+        parts = [f"{g.lower()} ({v['count']} txn, {v['amount']:.0f})"
+                 for g, v in sorted(high_risk.items(),
+                                    key=lambda kv: -kv[1]["amount"])]
+        reads.append("Speculative / high-risk spending seen: " + "; ".join(parts)
+                     + " — diversion of working capital, verify with the "
+                       "borrower.")
+
     if not reads:
         reads.append("No adverse signals detected on the deterministic checks.")
     return {"metrics": m, "reads": reads}

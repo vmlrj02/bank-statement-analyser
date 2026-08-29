@@ -75,6 +75,28 @@ def is_business_credit(t) -> bool:
     return t.amount > 0 and t.category not in NON_TURNOVER
 
 
+def _squash(s: str) -> str:
+    return re.sub(r"[^A-Z0-9&.]", "", (s or "").upper())
+
+
+def high_risk_group(description: str) -> str | None:
+    """Which speculative / high-risk group a DEBIT narration belongs to, if any.
+
+    The SME master calls these out because an SME diverting working capital
+    into betting, crypto or F&O is a credit signal an underwriter must see —
+    but they get no category tag, because every tag maps to a sheet in the
+    customer's template and a nineteenth would break that contract. The row
+    stays a Regular debit; the assessment reports it.
+    """
+    groups = _RULES.get("high_risk_spend") or {}
+    hay = _squash(description)
+    for group, needles in groups.items():
+        for n in needles:
+            if _squash(n) and _squash(n) in hay:
+                return group
+    return None
+
+
 from .models import Txn
 from .narration import parse_narration
 
