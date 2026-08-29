@@ -128,8 +128,29 @@ their own uploads and never the AI block.
     over both would compare March's opening balance to January's closing and
     report a failure that is not real. The account shows the worst individual
     statement's status. Pinned by tests/test_period_gap.py.
-13. The UI is strictly black/white/grey. Status is carried by words plus fill
-    and border weight, never colour; debits use accounting parentheses.
+13. The UI follows the Get It Right brand: deep navy + gold on white, after
+    the company logo (boss's instruction, Aug 2026 — replaced the earlier
+    strictly-black/white/grey rule). Status must still read without colour
+    alone — explicit words plus fill and border weight — and debits use
+    accounting parentheses. The UI is also ACCOUNT-first: the sidebar is
+    account cards, and the main pane is that account's card, read top to
+    bottom in ONE fixed order — chart, key numbers, categorisation (mix,
+    confidence, party quality), then the written description (coverage,
+    data-quality notes, credit reads), with the month-by-month and top-party
+    tables collapsed at the end.
+
+    Only two things may appear as a notice ABOVE the cards, because an
+    account card cannot say them: an upload still processing, and files that
+    could not be read at all. NEEDS-REVIEW MUST NOT. `needs_review` is an
+    upload-wide status — processor/handler.py sets it when the WORST account
+    in the upload fails, or any file failed — while the notices render above
+    whichever account is selected. The two together put a review banner over
+    every account in the upload, including the clean ones, in both the admin
+    and the customer view. Balance state belongs to an account and is
+    described in that account's own card. The row-level reconciliation
+    drill-down survives as an admin-only button on the affected account's
+    card; there is no "mark reviewed" workflow, because marking an upload
+    said nothing about any single account in it.
 14. Listing a customer's jobs must be a QUERY on the owner index, never a
     scan filtered by owner. A scan returns items in key order, so once the
     table outgrew the scanned page a customer could see none of their own jobs

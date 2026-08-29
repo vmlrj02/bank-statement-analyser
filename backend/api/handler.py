@@ -457,8 +457,14 @@ def lambda_handler(event, _ctx):
             return _resp(400, {"error": "amount must be a number"})
         new_cat = str(body.get("new_category") or "").strip()[:80]
         new_party = str(body.get("new_party") or "").strip()[:120]
-        if not new_cat and not new_party:
-            return _resp(400, {"error": "a corrected category or party is required"})
+        # Free-text feedback: "how this SHOULD have been handled", recorded
+        # against a reconciliation issue or a row where a label correction is
+        # not the right shape. Stays in the JSON record for the domain owner;
+        # the golden-set CSV export already skips entries with no category.
+        note = str(body.get("note") or "").strip()[:500]
+        if not new_cat and not new_party and not note:
+            return _resp(400, {"error": "a corrected category, party or note "
+                                        "is required"})
         if len(existing) >= MAX_CORRECTIONS:
             return _resp(409, {"error": f"correction limit reached "
                                         f"({MAX_CORRECTIONS} per job)"})
@@ -472,6 +478,10 @@ def lambda_handler(event, _ctx):
             "new_category": new_cat,
             "old_party": str(body.get("old_party") or "")[:120],
             "new_party": new_party,
+            "note": note,
+            # Where the feedback came from: "preview" row, "reconciliation"
+            # issue — so the training review can weigh them differently.
+            "source": str(body.get("source") or "")[:40],
             "corrected_by": user_sub,
             "ts": int(time.time()),
         }
