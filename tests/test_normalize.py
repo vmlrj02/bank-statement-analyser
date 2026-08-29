@@ -513,3 +513,42 @@ def test_hdfc_atm_withdrawal_is_cash_not_a_supplier_payment():
     from bsa.normalize import detect_mode
 
     assert detect_mode("NWD-652166XXXXXX3333-18072HRY-KOMPALLY") == "atm-cash"
+
+
+# --- Axis branch / card / merchant forms (ID5, ID9) --------------------------
+# "party detection are poor in axis bank for all categories" — these six shapes
+# all print a perfectly good name that no mode branch claimed, because
+# detect_mode reads them as "other" and the generic segment scan then returned
+# a reference or nothing.
+
+@pytest.mark.parametrize("desc,want", [
+    ("POS/MD ENTERPRISES/BANGALORE/311025/20:35/73 1111", "MD ENTERPRISES"),
+    # "PAY*" is the payment aggregator's prefix, not part of the merchant.
+    ("ECOM PUR/PAY*BIGTREE E/MUMBAI/300925/22:50/367451", "BIGTREE E"),
+    ("MOB/TPFT/VIKAS VASANTH /925010004538960", "VIKAS VASANTH"),
+    # The payee, NOT the bank that presented the cheque.
+    ("BRN-CLG-CHQ PAID TO Vishwanath B/KARNATAKA BANK", "Vishwanath B"),
+    ("BRN CLG-CHQ PAID TO CRAMESH", "CRAMESH"),
+    # A counter cash deposit made BY a named person — exactly who a lender
+    # wants to see against a cash credit.
+    ("SAK/CASH DEP/SAK472180594/4543/AYAZ MOHIDDIN", "AYAZ MOHIDDIN"),
+])
+def test_axis_branch_and_merchant_forms_are_named(desc, want):
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    assert extract_counterparty(desc, detect_mode(desc)) == want
+
+
+@pytest.mark.parametrize("desc", [
+    "NEFT CHRGS 010725",
+    "GST @18% ON NEFT CHRGS",
+    "SELF CASH DEP",
+    "ECS TXN CHRGS INCL GST",
+])
+def test_a_bank_charge_still_has_no_counterparty(desc):
+    """The other half of the Axis naming number: most of what stays unnamed is
+    a fee, a self-transaction or interest, which HAS no counterparty. Naming
+    those would raise the percentage and make the report wrong."""
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    assert extract_counterparty(desc, detect_mode(desc)) == ""

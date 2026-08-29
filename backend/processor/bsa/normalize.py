@@ -215,6 +215,35 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.match(r"TRF/(?:\d+/)?([^/]*[A-Za-z][^/]*)", d)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
+    # --- Axis branch/card/merchant forms (ID5, ID9: "party detection are poor
+    # in axis bank for all categories"). Each of these prints a perfectly good
+    # name that no mode branch below claims, because detect_mode reads them as
+    # "other" and the generic segment scan then picks a reference or nothing.
+    #
+    #   POS/MD ENTERPRISES/BANGALORE/311025/20:35/73 1111
+    #   ECOM PUR/PAY*BIGTREE E/MUMBAI/300925/22:50/367451
+    # The merchant is the FIRST segment after the channel word; the segments
+    # after it are city, date, time and terminal. "PAY*" is the aggregator's
+    # prefix (PayU/Paytm gateway), not part of the merchant's name.
+    m = re.match(r"(?:POS|ECOM PUR|ECOMPUR)/([^/]+)", d, re.I)
+    if m:
+        name = re.sub(r"^(?:PAY\*|BBPS\*|RAZ\*)", "", m.group(1).strip(), flags=re.I)
+        if sum(c.isalpha() for c in name) >= 3:
+            return _clean_segment(name)
+    #   MOB/TPFT/VIKAS VASANTH /925010004538960   (mobile-banking transfer)
+    m = re.match(r"MOB/(?:TPFT|TPT|FT)/([^/]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   BRN-CLG-CHQ PAID TO Vishwanath B/KARNATAKA BANK  → the payee, not the
+    #   bank that presented the cheque.
+    m = re.search(r"CHQ PAID TO\s+([^/]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   SAK/CASH DEP/SAK472180594/4543/AYAZ MOHIDDIN — a cash deposit made at
+    #   the counter BY a named person, which is exactly who a lender wants.
+    m = re.match(r"SAK/[^/]*/[^/]*/[^/]*/([^/]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
     if mode == "upi":
         # PNB prints "UPI/<ref>/P2M|P2V/<vpa>/<NAME>" — the payee NAME is the
         # LAST segment, after the VPA. Prefer it over the VPA (which the

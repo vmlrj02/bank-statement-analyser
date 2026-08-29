@@ -154,8 +154,58 @@ def _complete_year(day_month: str, meta) -> str:
     return f"{day_month} {years[0]}" if years else day_month
 
 
+# Slack on "this line reached the cell's right edge". The last glyph's width
+# varies, so full lines end within a few points of each other.
+HARD_WRAP_TOL = 6.0
+
+
+def _join_narration(lines: list[tuple], edge: float = 0.0,
+                    tol: float = HARD_WRAP_TOL) -> str:
+    """Rejoin a row's narration lines, deciding each join by where the PREVIOUS
+    line ended.
+
+    `lines` is [(text, right_edge), ...] in reading order.
+
+    With edge=0 — the default, and every layout that has not opted into
+    `narration_wrap: hard` — nothing can reach the edge, so every join is a
+    space and the result is character-for-character what joining all the words
+    with spaces produced before. That is what keeps this change invisible to
+    the other thirty layouts.
+
+    With a real edge: a line that runs out to it was cut mid-token by the cell
+    and rejoins with NOTHING ("…/Miscell" + "aneou" -> "…/Miscellaneous"); a
+    line that stops short of it broke at a space and rejoins with one
+    ("CHARGES FOR" + ":IMPS/…"). Both happen in the same statement, which is
+    why this is per line rather than per layout.
+
+    The test is only trustworthy when the cell is WIDE. In a narrow cell a word
+    that merely fills the line lands within the tolerance too — measured on
+    PNB, whose 64pt cell makes "INCIDENTAL" (ending at 225) indistinguishable
+    from a genuine mid-token cut at 226.2. So `narration_wrap: hard` is opt-in
+    per layout, and belongs only on a bank whose statement has been read.
+    """
+    out = ""
+    for i, (text, _x1) in enumerate(lines):
+        if not text:
+            continue
+        if not out:
+            out = text
+            continue
+        prev_x1 = lines[i - 1][1]
+        # A line can also be cut mid-token WITHOUT reaching the edge, when the
+        # remainder of the token was too wide to fit at all: BoB breaks
+        # "paytm-53817591@ptyb" after the hyphen at x1 274 in a cell that runs
+        # to 319. A trailing hyphen or slash at a wrap point is a continuation
+        # marker, not punctuation the bank meant to print at line end.
+        glued = edge and (prev_x1 >= edge - tol
+                          or lines[i - 1][0].endswith(("-", "/")))
+        out += ("" if glued else " ") + text
+    return out.strip()
+
+
 def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
-                   invert: bool = False, max_gap: float | None = None) -> None:
+                   invert: bool = False, max_gap: float | None = None,
+                   edge: float = 0.0) -> None:
     """Assign buffered narration lines to the vertically NEAREST anchor, then
     emit the anchors in reading order.
 
@@ -175,7 +225,7 @@ def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
     anchor of its segment and farther than max_gap from the nearest one
     belongs to the previously emitted row.
     """
-    for ntop, zone in narrs:
+    for ntop, zone, zx1 in narrs:
         if not anchors:
             continue
         a = min(anchors, key=lambda a: abs(a["top"] - ntop))
@@ -184,13 +234,15 @@ def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
             rows[-1].description = \
                 f"{rows[-1].description} {' '.join(zone)}".strip()
             continue
-        a["parts"].append((ntop, zone))
+        a["parts"].append((ntop, zone, zx1))
     for a in sorted(anchors, key=lambda a: a["top"]):
-        desc = [w for _, zone in sorted(a["parts"], key=lambda x: x[0])
-                for w in zone]
+        # Words within one physical line always join with a space; the LINES
+        # join by the wrap rule (see _join_narration).
+        lines = [(" ".join(zone).strip(), zx1)
+                 for _, zone, zx1 in sorted(a["parts"], key=lambda x: x[0])]
         rows.append(RawRow(
             sl_no=None, date=a["date"], cheque_no=a["cheque"].strip(),
-            description=" ".join(desc).strip(),
+            description=_join_narration(lines, edge),
             withdrawal=a["wd"], deposit=a["dep"],
             balance=a["bal"], page=a["page"],
             balance_inverted=invert, is_opening=a.get("opening", False),
@@ -248,6 +300,9 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     continuation = p.get("continuation", "below")
     above = continuation == "above"
     nearest = continuation == "nearest"
+    # Opt-in: this bank wraps the narration cell mid-token (see
+    # _join_narration). Off means every join is a space, exactly as before.
+    hard_wrap = p.get("narration_wrap") == "hard"
     invert = bool(p.get("invert_balance"))     # cash-credit / overdraft chain
     # Most layouts print the narration first and the money columns to its right,
     # so a number is only an amount if it sits right of remarks_x_min (this keeps
@@ -291,7 +346,11 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             return
         rows.append(RawRow(
             sl_no=None, date=current["date"], cheque_no=current["cheque"].strip(),
-            description=" ".join(current["desc"]).strip(),
+            # The anchor's own narration line, then each continuation line as
+            # its own unit, joined by the wrap rule (see _join_narration).
+            description=_join_narration(
+                [(" ".join(current["desc"]).strip(), current["desc_x1"])]
+                + current["cont"], narr_edge),
             withdrawal=current["wd"], deposit=current["dep"],
             balance=current["bal"], page=current["page"],
             balance_inverted=invert, balance_tolerance=bal_tol,
@@ -332,6 +391,26 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 return bool(anchor_re.match(" ".join(toks)))
             return False
 
+        # A line lying WHOLLY inside the narration column is content, never
+        # page furniture. Page furniture is laid out against the PAGE — a
+        # title, a footer, a disclaimer all begin at the margin and run across
+        # the column boundaries — whereas a wrapped narration fragment is
+        # bounded by its cell.
+        #
+        # Without this, a bank that wraps mid-token loses text: BoB splits a
+        # payee VPA across lines, so "53817591@ptys" is its own line and the
+        # same merchant recurs on many pages, which made a REAL fragment look
+        # like a repeated footer and deleted it. Nothing catches that
+        # afterwards — the amounts sit on the dated line, so the balance chain
+        # still reconciles and the row simply carries a truncated narration.
+        nlo = cols.get("remarks_x_min")
+        nhi = cols.get("remarks_x_max")
+
+        def _narration_only(ln) -> bool:
+            if nlo is None or nhi is None:
+                return False
+            return all(nlo <= w["x0"] and w["x1"] <= nhi for w in ln["words"])
+
         for pageno, page in enumerate(pdf.pages, start=1):
             ws = page.extract_words()
             pages_words.append(ws)
@@ -341,9 +420,22 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 head_texts.append(page.extract_text() or "")
             for ln in _lines(ws):
                 t = " ".join(w["text"] for w in ln["words"])
-                if len(t) > 8 and not _anchorish(ln):
+                if len(t) > 8 and not _anchorish(ln) and not _narration_only(ln):
                     line_pages.setdefault(t, set()).add(pageno)
         furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
+        # Where the narration cell actually ends, MEASURED rather than
+        # declared: the furthest right a narration word reaches anywhere in the
+        # document. The layout's remarks_x_max is only a cutoff — it has to sit
+        # somewhere between this column and the next — while the wrap test
+        # needs the true edge. Words are counted only if they lie WHOLLY inside
+        # the band: page furniture printed across a column boundary starts
+        # inside it and runs far past, and one such word would put the edge out
+        # of reach so every join silently fell back to a space.
+        narr_edge = 0.0
+        if hard_wrap:
+            lo, hi = cols["remarks_x_min"], cols.get("remarks_x_max", 1e9)
+            narr_edge = max([w["x1"] for ws_ in pages_words for w in ws_
+                             if lo <= w["x0"] and w["x1"] <= hi] or [0.0])
         # Most statements carry the account line on page 1, but some print the
         # per-account transaction header on the transaction page instead (ICICI's
         # monthly export opens with a cover summary and only names the account
@@ -400,7 +492,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     if rx.search(text):
                         finalize()
                         pending.clear()
-                        _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap)
+                        _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap,
+                                       narr_edge)
                         active = scols or cols
                         switched = True
                         break
@@ -458,6 +551,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     cb = active.get("balance_crdr_band")   # Cr./Dr. after balance
                     debit_flags = active.get("debit_flags", ("DR", "Dr", "D"))
                     desc = list(pending) if above else []
+                    desc_x1 = 0.0        # how far right the anchor's narration ran
                     pending.clear()
                     for w in rest:
                         if w["x0"] >= active.get("tail_x_min", 1e9):
@@ -493,6 +587,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                             # trailing column (SBI prints a Branch Code between
                             # narration and amounts) stays out of the narration
                             desc.append(w["text"])
+                            desc_x1 = max(desc_x1, w["x1"])
                     # Single-amount-column export: resolve the sign from the flag.
                     if amount_val is not None:
                         if dir_flag in debit_flags:
@@ -521,29 +616,35 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                             "top": ln["top"], "date": date_str,
                             "cheque": cheque, "wd": wd, "dep": dep, "bal": bal,
                             "page": pageno, "opening": opening,
-                            "parts": [(ln["top"], desc)] if desc else []})
+                            "parts": [(ln["top"], desc, desc_x1)] if desc else []})
                         continue
                     current = {"date": date_str, "cheque": cheque,
                                "wd": wd, "dep": dep, "bal": bal,
-                               "desc": desc, "page": pageno, "opening": opening}
+                               "desc": desc, "desc_x1": desc_x1, "cont": [],
+                               "page": pageno, "opening": opening}
                     continue
 
                 # narration-only line
-                zone = [w["text"] for w in ws
-                        if active["remarks_x_min"] <= w["x0"] < active.get(
-                            "remarks_x_max", 1e9)]
+                zw = [w for w in ws
+                      if active["remarks_x_min"] <= w["x0"] < active.get(
+                          "remarks_x_max", 1e9)]
+                zone = [w["text"] for w in zw]
                 if not zone:
                     continue
                 if nearest:
-                    seg_narrs.append((ln["top"], zone))
+                    seg_narrs.append((ln["top"], zone, max(w["x1"] for w in zw)))
                 elif above:
                     pending.extend(zone)
                 elif current is not None:
-                    current["desc"].extend(zone)
+                    # Kept as its own line, not flattened into the word list,
+                    # because the JOIN depends on where the previous line ended.
+                    current["cont"].append(
+                        (" ".join(zone).strip(), max(w["x1"] for w in zw)))
 
             # Blocks do not span pages in a centred layout, so a page is a
             # complete segment: assign its narration lines and emit its rows.
-            _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap)
+            _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap,
+                           narr_edge)
 
         finalize()
 

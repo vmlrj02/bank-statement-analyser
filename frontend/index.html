@@ -904,9 +904,16 @@ function coverageLine(ps){
   const span = `${shortDate(st.start)} to ${shortDate(st.end)}`;
   const dur = `${nfmt(months)} month${months===1?'':'s'} · ${nfmt(st.days)} days`;
   if(!st.gaps.length) return `${span} · ${dur} · <b class="ok">no gaps</b>`;
+  // ID2: "If the period is continuous across multiple statements; show the
+  // statement period as single from/to. If not continuous, show the multiple
+  // periods like this: 1-jan-26 to 31-jan-26; 15-feb-26 to 31-mar-26."
+  // So a broken record leads with what IS covered — first-to-last spans the
+  // hole and reads as more coverage than there is — and still names what is
+  // missing, which is the part a lender acts on.
+  const held = fmtPeriods([...ps].sort((x,y)=>x[0]<y[0]?-1:1));
   const shown = st.gaps.slice(0,2).join('; ');
   const more = st.gaps.length>2 ? ` +${st.gaps.length-2} more` : '';
-  return `${span} · ${dur} · <b class="miss">missing ${esc(shown)}${more}</b>`;
+  return `${esc(held)} · ${dur} · <b class="miss">missing ${esc(shown)}${more}</b>`;
 }
 
 function statusChip(st){

@@ -6,10 +6,10 @@ first line onto the previous row, shifting all 995 descriptions one row off.
 from bsa.extract.generic_layout import _flush_nearest
 
 
-def anchor(top, date, bal, own=None):
+def anchor(top, date, bal, own=None, own_x1=0.0):
     return {"top": top, "date": date, "cheque": "", "wd": None, "dep": 100.0,
             "bal": bal, "page": 1,
-            "parts": [(top, own)] if own else []}
+            "parts": [(top, own, own_x1)] if own else []}
 
 
 def test_centred_blocks_keep_each_narration_with_its_own_row():
@@ -21,8 +21,8 @@ def test_centred_blocks_keep_each_narration_with_its_own_row():
         anchor(431.37, "05-07-2025", 5040788.09),          # narration is all wrapped
     ]
     narrs = [
-        (427.76, ["NEFT-REF-DURGA", "SWEETS"]),   # above its anchor (431.37)
-        (434.97, ["CORNER-0001"]),                # below the same anchor
+        (427.76, ["NEFT-REF-DURGA", "SWEETS"], 0.0),   # above its anchor (431.37)
+        (434.97, ["CORNER-0001"], 0.0),                # below the same anchor
     ]
     _flush_nearest(anchors, narrs, rows)
     assert [r.description for r in rows] == \
@@ -40,12 +40,12 @@ def test_rows_come_out_in_reading_order_even_if_buffered_otherwise():
 
 def test_narration_with_no_anchor_is_dropped_not_misassigned():
     rows = []
-    _flush_nearest([], [(100.0, ["orphan", "words"])], rows)
+    _flush_nearest([], [(100.0, ["orphan", "words"], 0.0)], rows)
     assert rows == []
 
 
 def test_flush_clears_its_buffers():
-    anchors, narrs, rows = [anchor(100.0, "01-01-2026", 1.0)], [(101.0, ["x"])], []
+    anchors, narrs, rows = [anchor(100.0, "01-01-2026", 1.0)], [(101.0, ["x"], 0.0)], []
     _flush_nearest(anchors, narrs, rows)
     assert anchors == [] and narrs == []
 
@@ -172,8 +172,8 @@ def test_nearest_max_gap_returns_page_spill_to_previous_row():
     # page 2: spilled narration at top (16.5pt above the first anchor), then
     # that anchor's own narration 3.5pt above it
     anchors = [anchor(63.82, "01-07-2025", 3192.50)]
-    narrs = [(47.32, ["UPI/DR/554641847252/DURGESH"]),
-             (60.32, ["UPI/DR/518220883533/Amar"])]
+    narrs = [(47.32, ["UPI/DR/554641847252/DURGESH"], 0.0),
+             (60.32, ["UPI/DR/518220883533/Amar"], 0.0)]
     _flush_nearest(anchors, narrs, rows, max_gap=10.0)
     assert rows[0].description == "WDL UPI/DR/554641847252/DURGESH"
     assert rows[1].description == "UPI/DR/518220883533/Amar"
@@ -183,7 +183,7 @@ def test_nearest_without_max_gap_keeps_pure_nearest():
     rows = []
     _flush_nearest([anchor(700.0, "29-06-2025", 1.0, own=["WDL"])], [], rows)
     anchors = [anchor(63.82, "01-07-2025", 2.0)]
-    narrs = [(47.32, ["SPILL"]), (60.32, ["OWN"])]
+    narrs = [(47.32, ["SPILL"], 0.0), (60.32, ["OWN"], 0.0)]
     _flush_nearest(anchors, narrs, rows)
     assert rows[1].description == "SPILL OWN"      # the old behaviour, unchanged
 

@@ -1,0 +1,48 @@
+# Layout descriptor: Karnataka Bank — "Statement Generated for the period".
+#
+# The bank's SECOND export shape (the other is karnataka_account_statement,
+# headed "Statement for A/c … Between"): different heading, different column x
+# positions, a "Chq/Ref No" column instead of "Instrument No", and a period
+# printed with a three-letter month.
+#
+# Columns: Date | Description | Chq/Ref No | Withdrawals | Deposits | Balance.
+# Narration wraps BELOW its dated line, and wraps at the CELL EDGE mid-token:
+# "UPI:…:aqib.macho@okhd" / "fcbank(CITY GUN H" is one VPA. The cell is 173pt
+# wide (x 85-258), so the edge test separates that from a line that merely
+# ended early — and the ones that end early here end on a hyphen
+# ("RTGS-SEEMA MUSHEER-HDFC-" / "HDFCH26152120744"), which the same rule joins.
+id: karnataka_period_statement
+bank: Karnataka Bank
+layout_name: Statement for the period
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "Statement Generated for the period"
+    - "KARB0"
+  any_of: []
+header:
+  account_line: 'Statement Generated for the period\s*:\s*(?P<period_from>\d{2}-[A-Za-z]{3}-\d{4})\s*-\s*(?P<period_to>\d{2}-[A-Za-z]{3}-\d{4})[\s\S]*?A/c Number\s+(?P<account_no>[\dXx*]+)'
+  period_date_format: "%d-%b-%Y"
+  account_name: '^Name\s+(.+?)\s+Branch Name\s'
+parse:
+  table_header_words: ["Description", "Withdrawals", "Deposits", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  narration_wrap: hard
+  carry_forward: 'Opening Balance'
+  columns:
+    date_x_max: 80              # Date x0 23-74
+    remarks_x_min: 80           # Description x0 85
+    remarks_x_max: 259          # stops before the Chq/Ref No column (x0 261)
+    cheque_x_min: 259
+    cheque_x_max: 360           # Chq/Ref No, before Withdrawals
+    withdrawal_x1_max: 440      # Withdrawals — right edge 418
+    deposit_x1_max: 500         # Deposits    — right edge 494
+    balance_x1_max: 585         # Balance     — right edge 573
+    tail_x_min: 99999
+  footer_markers:
+    - "Page "

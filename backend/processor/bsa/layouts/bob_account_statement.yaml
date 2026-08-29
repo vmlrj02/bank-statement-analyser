@@ -1,0 +1,63 @@
+# Layout descriptor: Bank of Baroda — "Account Statement from <d> to <d>".
+#
+# Columns: Serial No. | Transaction Date | Value Date | Description | Cheque
+# Number | Debit | Credit | Balance.
+#
+# Two things shape this descriptor:
+#
+# 1. A row's block is CENTRED on the dated line — the narration prints above
+#    AND below it (~4pt away, with ~22pt between blocks) — so continuation is
+#    `nearest`, the same as ICICI's combined export. 'below' would glue each
+#    block's first line onto the previous row and shift every description by
+#    one.
+# 2. The Description cell wraps at its EDGE, mid-token: one row prints
+#    "IMPS/P2A/…/Miscell" then "aneou". Hence narration_wrap: hard. The cell is
+#    172pt wide here (x 148-320), so a line that was cut by the edge really is
+#    distinguishable from one that broke at a space ("CHARGES FOR" stops at
+#    199, nowhere near the edge) — which is exactly what makes the wrap test
+#    safe on this bank and not on PNB's 64pt cell.
+id: bob_account_statement
+bank: Bank of Baroda
+layout_name: Account Statement
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "Account Statement from"
+    - "BARB0"                    # every BoB IFSC begins BARB0 (zero, not letter O)
+  any_of: []
+header:
+  account_line: 'Account Statement from\s*(?P<period_from>[\d-]+)\s*to\s*(?P<period_to>[\d-]+)[\s\S]*?Account Number\s+IFSC Code\s*\n\s*(?P<account_no>\d{9,20})\b'
+  period_date_format: "%d-%m-%Y"
+  # "NANDINI AGRO VIDYARANYAPURA" — holder and branch print on ONE line under
+  # their two headings, so the trailing branch token is excluded rather than
+  # captured as part of the name.
+  account_name: 'Account Name\s+Branch Name\s*\n(.+?)\s+\S+$'
+parse:
+  table_header_words: ["Description", "Debit", "Credit", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: nearest
+  narration_wrap: hard
+  nearest_max_gap: 12           # ~4pt inside a block, ~22pt between blocks
+  carry_forward: 'Opening Balance'
+  columns:
+    sl_no_x_max: 45             # drop the leading Serial No. (x0 31-38) so the
+                                # Transaction Date becomes the anchor token
+    date_x_max: 95              # Transaction Date x0 51-87 (Value Date starts
+                                # at 101 and is ignored: it is not a decimal so
+                                # it can never be read as an amount)
+    remarks_x_min: 140          # Description x0 148
+    remarks_x_max: 321          # stops before the Cheque Number column (x0 322)
+    cheque_x_min: 321
+    cheque_x_max: 388           # before the Debit column (x0 389+)
+    withdrawal_x1_max: 440      # Debit   — right edge 426
+    deposit_x1_max: 505         # Credit  — right edge 492
+    balance_x1_max: 580         # Balance — right edge 571
+    tail_x_min: 99999
+  footer_markers:
+    - "Note:In case you find any discrepancy"
+    - "This is a computer-generated statement"
+    - "Page "

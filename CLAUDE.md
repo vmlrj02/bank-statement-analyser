@@ -188,6 +188,27 @@ their own uploads and never the AI block.
     genuinely cannot be opened comes back asking, as Unlock inside its own
     failure.
 
+20. A LINE THAT SITS WHOLLY INSIDE THE NARRATION COLUMN IS CONTENT, never page
+    furniture. generic_layout drops a line whose exact text repeats on two or
+    more pages, which is how a footer stops being appended to a description on
+    any bank without each layout listing its own footer phrases. But a bank
+    that wraps mid-token turns a payee into its own short line — BoB splits a
+    VPA so "53817591@ptys" is a line of its own, and the same merchant recurs
+    across pages — and that looked exactly like a repeated footer, so real
+    narration was deleted. Nothing downstream catches it: the amounts are on
+    the dated line, so the balance chain still reconciles and the row simply
+    carries a truncated description. Page furniture is laid out against the
+    PAGE and starts at the margin; content is bounded by its cell. That is the
+    test now (`_narration_only`).
+21. Some banks wrap the narration cell at its EDGE, mid-token, so the lines
+    must rejoin with NOTHING rather than a space, or a payee is split in two
+    and never consolidates with the same payee spelled whole elsewhere. This is
+    `narration_wrap: hard`, opt-in per layout, and the join is decided PER LINE
+    (by whether the previous line reached the measured cell edge, or ended on a
+    hyphen or slash) because the same statement also wraps at spaces. It is
+    opt-in because the test needs a WIDE cell: see next-steps item 2 for why
+    PNB's 64pt column defeats it while BoB's 172pt one does not.
+
 ## Workbook = the customer's template, sheet for sheet
 
 backend/processor/bsa/publish.py renders Output_Template-2.xlsx exactly: the
@@ -353,7 +374,7 @@ to a human underwriter, not an accusation. A ModDate after CreationDate is
 carried as information only (genuine statements are routinely re-saved), NEVER a
 review trigger. Pinned by tests/test_integrity.py.
 
-Registry as it stands — 31 layouts across 14 banks. Bank != layout:
+Registry as it stands — 34 layouts across 16 banks. Bank != layout:
 ICICI alone exports six different shapes and SBI seven, which is why "we
 support ICICI" is not a meaningful claim — a layout is matched by its page-1
 fingerprint, not by the bank's name:
@@ -363,6 +384,7 @@ fingerprint, not by the bank's name:
     Axis Bank                      Axis Account Statement              generic
     Axis Bank                      Cash Credit Statement               generic
     Axis Bank                      Statement of Account                generic
+    Bank of Baroda                 Account Statement                   generic
     City Union Bank                Statement of Account                generic
     Equitas Small Finance Bank     Statement of Account                columnar
     HDFC Bank                      Statement of account                generic
@@ -376,6 +398,8 @@ fingerprint, not by the bank's name:
     Indian Overseas Bank           Account Statement                   generic
     IndusInd Bank                  Account Statement                   generic
     IndusInd Bank                  Account Statement (bank-reference)  generic
+    Karnataka Bank                 Account Statement                   generic
+    Karnataka Bank                 Statement for the period            generic
     Punjab National Bank           Account Statement (current)         generic
     Punjab National Bank           Statement of Account                generic
     Punjab National Bank           Statement of Account                generic
@@ -410,39 +434,43 @@ failed files are listed on the upload with a plain reason.
 
 ## Current next steps
 
-1. **The last two of the founder's top seven.** The target list is HDFC,
-   Axis, ICICI, SBI, Kotak, BoB, PNB. Five are done; the gap is:
-   - **Bank of Baroda** — three samples are in hand (Samples-3/bob) and all
-     three currently fail with "no layout". They are clean digital text in a
-     wrapped-cell shape, so this is an ordinary `columnar` descriptor.
-   - **Kotak** — no layout AND no sample anywhere, so this one is blocked on
-     getting a statement, not on us.
-   Also unsupported, with samples in hand: Karnataka Bank (6 files), Deutsche
-   Bank (2), Canara (1). A descriptor is roughly an hour and, with the S3
-   registry, needs no deploy — it is the whole answer to an unknown bank,
-   since the LLM fallback is closed by default.
-2. **PNB glues/splits wrapped narration** (half fixed). PNB wraps the
-   Description cell at its EDGE, so one row prints as "UPI/CR/25845" /
-   "9693857/ROS" / "HAN". generic_layout space-joins a row's narration lines,
-   so the party reads "ROS HAN" and never consolidates with the same party
-   spelled whole elsewhere.
+1. **Kotak is the last of the founder's top seven.** The target list is HDFC,
+   Axis, ICICI, SBI, Kotak, BoB, PNB. Six are done — Bank of Baroda landed as
+   `bob_account_statement` (three samples, 1,450 rows, every one reconciling).
+   Kotak has no layout AND no sample anywhere on this machine, so it is blocked
+   on getting a statement, not on us: ask for one.
 
-   FIXED, and separate: pnb_ca_statement's `remarks_x_max` was 370, which
-   swallowed the Branch Name column and put a stray " -" on the end of every
-   description on that export. It is 232 now — the cell really ends at x1 ~229,
-   and nothing between 232 and 370 is transaction text on either CA sample.
+   Still unsupported, with samples in hand: Deutsche Bank (2 files) and Canara
+   (1). Karnataka Bank is now covered by TWO descriptors, which is the usual
+   surprise — one bank, two exports ("Statement for A/c … Between" and
+   "Statement Generated for the period"), sharing nothing but the KARB0 IFSC
+   prefix that both fingerprints lean on because neither page prints the bank's
+   name anywhere.
 
-   NOT fixed, and do not "just" no-separator-join: the cell is only ~64pt wide
-   and PNB wraps mid-token on some lines and AT A SPACE on others, so joining
-   with nothing turns "SAHU CONSTRUCTION" into "SAHUON" and "INCIDENTAL
-   CHARGES" into "INCIDENTALCHARGES". The obvious discriminator — "a hard wrap
-   runs out to the cell edge" — was built and measured and is NOT sufficient:
-   in a cell this narrow a line that wrapped at a space also lands within a
-   few points of the edge ("INCIDENTAL" ends at ~225, "…/ROS" at 226.2), so
-   the two are geometrically identical. Whatever fixes this needs a signal
-   beyond the right edge — character-level spacing from the PDF content
-   stream, or a dictionary check on the candidate join — and it must be
-   measured against BOTH failure directions, not just the ROS/HAN one.
+2. **PNB still splits a wrapped party name.** PNB wraps the Description cell
+   at its EDGE, mid-token, so one row prints "UPI/CR/25845" / "9693857/ROS" /
+   "HAN" and the party reads "ROS HAN".
+
+   The machinery to fix this now EXISTS and is proven — `narration_wrap: hard`
+   (see generic_layout._join_narration) rejoins BoB and Karnataka correctly —
+   but PNB is deliberately NOT opted in, and the reason is measured rather than
+   cautious. The rule decides each join by whether the previous line reached
+   the cell's right edge. That works when the cell is wide: BoB's is 172pt and
+   Karnataka's 173pt, so a line cut by the edge is plainly distinguishable from
+   one that broke at a space. PNB's is 64pt, and there a word that merely fills
+   the line lands within the same tolerance — "INCIDENTAL" ends at 225 against
+   a genuine mid-token cut at 226.2. Switching it on fixes ROSHAN, SANJAY K and
+   ROSHAN INFRASTRUCTURE while turning "INCIDENTAL CHARGES" into
+   "INCIDENTALCHARGES" and "SAHU CONSTRUCTION" into "SAHUON". Not a trade worth
+   making on a bank the reviewer tests.
+
+   What was fixed on PNB: `pnb_ca_statement`'s `remarks_x_max` was 370, wide
+   enough to swallow the Branch Name column, which is where the stray " -" on
+   the end of every description came from. It is 232 now.
+
+   Closing the rest needs a signal beyond the right edge — character-level
+   spacing from the PDF content stream, or a dictionary check on the candidate
+   join — and it must be measured against BOTH failure directions.
 
 3. **Bedrock.** Until its Marketplace subscription works on this account there
    is no in-account inference at all, so a bank with no layout cannot be read.

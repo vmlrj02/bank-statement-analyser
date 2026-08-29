@@ -1,0 +1,48 @@
+# Layout descriptor: Karnataka Bank — "Statement for A/c … Between … and …".
+#
+# Columns: Date | Particulars | Instrument No | Withdrawals | Deposits |
+# Balance. One row per transaction, amounts on the dated line.
+#
+# The page names the bank nowhere — no logo text, no "Karnataka Bank" string —
+# so the fingerprint leans on the IFSC, which every branch of this bank shares
+# the KARB0 prefix of, together with the statement heading.
+#
+# The amount and balance words sit ~1pt ABOVE the date word rather than exactly
+# on it. _lines() groups within 3pt, so they land on one line and no
+# continuation setting is needed. The Particulars cell is TRUNCATED by the bank
+# when it overflows ("…(SYED ZAYYAN AH"), not wrapped, so there is no second
+# narration line to rejoin — the text really is absent from the PDF.
+id: karnataka_account_statement
+bank: Karnataka Bank
+layout_name: Account Statement
+version: 1
+parser: generic
+priority: 10
+fingerprints:
+  all_of:
+    - "Statement for A/c"
+    - "KARB0"
+  any_of: []
+header:
+  account_line: 'Statement for A/c\s+(?P<account_no>[*\dXx]+)\s+Between\s+(?P<period_from>[\d-]+)\s+and\s+(?P<period_to>[\d-]+)'
+  period_date_format: "%d-%m-%Y"
+  account_name: '^Name\s*:\s*(.+?)\s+Branch Name\s*:'
+parse:
+  table_header_words: ["Particulars", "Withdrawals", "Deposits", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  carry_forward: 'Opening Balance'
+  columns:
+    date_x_max: 70              # Date x0 25-66
+    remarks_x_min: 70           # Particulars x0 71
+    remarks_x_max: 295          # stops before the Instrument No column (x0 296)
+    cheque_x_min: 295
+    cheque_x_max: 370           # Instrument No, before Withdrawals
+    withdrawal_x1_max: 440      # Withdrawals — right edge 424
+    deposit_x1_max: 510         # Deposits    — right edge 496
+    balance_x1_max: 585         # Balance     — right edge 573
+    tail_x_min: 99999
+  footer_markers:
+    - "Page "
