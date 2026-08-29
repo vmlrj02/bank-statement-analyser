@@ -133,10 +133,14 @@ def test_summary_bounce_rate_divides_by_the_masters_denominator(tmp_path):
     rows = {ws.cell(row=11 + i, column=1).value: 11 + i
             for i in range(len(SUMMARY_ROWS))}
     # One inward bounce; payments issued = the EMI + the regular debit (the
-    # master's list), so the rate is 1/2.
+    # master's list), so the rate is 1/2. Stored as a FRACTION, because the
+    # template formats this row "0.00%" and Excel's percent format multiplies
+    # by 100 — 50.0 in that cell would render as 5000.00%.
+    rate = ws.cell(row=rows["Inward Payment Return (%)"], column=2)
     assert ws.cell(row=rows["No of Inward Bounces"], column=2).value == 1
     assert ws.cell(row=rows["Number of Payments Issued"], column=2).value == 2
-    assert ws.cell(row=rows["Inward Payment Return (%)"], column=2).value == 50.0
+    assert rate.value == 0.5
+    assert rate.number_format == "0.00%"
 
 
 def test_eod_balances_is_a_day_by_month_grid(tmp_path):
@@ -216,3 +220,73 @@ def test_annual_top_10_sheets_carry_the_templates_titles(tmp_path):
     assert [annual["A2"].value, annual["B2"].value] == ["Description", "Amount"]
     debits = wb["Top 10 Debits (Annual)"]
     assert debits["A1"].value == "Top 10 Funds Remittance(Party Wise)"
+
+
+# --- formatting: the template governs colour and format, not just structure --
+#
+# The customer's instruction is that the output should look exactly like
+# Output_Template-2.xlsx — "every formatting colour etc". That file cannot be
+# committed, so the values it dictates are pinned here instead: they were read
+# out of it with openpyxl and a generated workbook was diffed against it cell
+# by cell until nothing differed. If one of these changes, the output has
+# drifted from the customer's file.
+
+def test_transaction_header_wears_the_templates_navy_band(tmp_path):
+    ws = _load(tmp_path)["ECS Xns"]
+    head = ws["A1"]
+    assert head.fill.start_color.rgb == "FF003366"
+    assert head.font.name == "Arial" and head.font.b is True
+    assert head.font.color.rgb == "FFFFFFFF"
+    assert head.font.sz == 10
+    # Frozen header, so the band stays put while an analyst scrolls.
+    assert ws.freeze_panes == "A2"
+
+
+def test_transaction_rows_band_on_odd_rows_only(tmp_path):
+    ws = _load(tmp_path)["Xns"]
+    # The template leaves row 2 unfilled and fills row 3, alternating from
+    # there. Getting this inverted looks fine in isolation and wrong beside
+    # their file.
+    assert ws["A2"].fill.fill_type is None
+    assert ws["A3"].fill.start_color.rgb == "FFCCFFFF"
+
+
+def test_grouped_sheets_have_the_navy_band_but_no_banding(tmp_path):
+    ws = _load(tmp_path)["Regular Credits"]
+    assert ws["A1"].fill.start_color.rgb == "FF003366"
+    # Regular Credits/Debits carry no row fill at all in the template.
+    assert ws["A2"].fill.fill_type is None
+    assert ws["A3"].fill.fill_type is None
+
+
+def test_money_and_date_columns_use_the_templates_formats(tmp_path):
+    # "Xns" rather than a category sheet, because only rows that exist are
+    # styled — an empty sheet is just its header band.
+    ws = _load(tmp_path)["Xns"]
+    assert ws["B2"].number_format == "[$-409]dd\\-mmm\\-yy"
+    # Amount and Balance show negatives in red parentheses; Category does not.
+    assert ws["E2"].number_format == "#,##0.00_);[Red](#,##0.00)"
+    assert ws["F2"].number_format == "#,##0.00"
+    assert ws["G2"].number_format == "#,##0.00_);[Red](#,##0.00)"
+
+
+def test_summary_and_grid_sheets_carry_their_own_header_colours(tmp_path):
+    wb = _load(tmp_path)
+    # Each grid sheet has a different header colour in the template.
+    assert wb["EOD Balances"]["A1"].fill.start_color.rgb == "FFFFFF00"
+    assert wb["EOD Balances"]["B1"].fill.start_color.rgb == "FFFBD4B4"
+    assert wb["Avg Balances"]["A1"].fill.start_color.rgb == "FF333399"
+    assert wb["Top 10 Credits (Annual)"]["A2"].fill.start_color.rgb == "FFBDD7EE"
+    summary = wb["Summary"]
+    assert summary["A2"].fill.start_color.rgb == "FFFDE9D9"   # identity label
+    assert summary["B2"].fill.start_color.rgb == "FFCCFFFF"   # identity value
+    assert summary["A11"].fill.start_color.rgb == "FFFFFF99"  # metric label
+    assert summary["B11"].fill.start_color.rgb == "FFCCCCFF"  # metric value
+
+
+def test_template_column_widths_are_applied(tmp_path):
+    ws = _load(tmp_path)["ECS Xns"]
+    # Description is the wide column; without this the sheet reads as a
+    # column of "####" and truncated narration.
+    assert round(ws.column_dimensions["D"].width, 2) == 46.71
+    assert round(ws.column_dimensions["A"].width, 2) == 8.29

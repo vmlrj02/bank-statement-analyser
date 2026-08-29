@@ -25,6 +25,8 @@ from .categorize import category_detail
 from .credit_summary import credit_summary
 from .integrity import account_integrity
 from .models import JobResult, Txn
+from .workbook_style import (style_avg_balances, style_eod, style_party_annual,
+                             style_party_month, style_summary, style_xn_sheet)
 
 _CS_LABELS = [
     ("months", "Months covered", "int"),
@@ -324,9 +326,12 @@ def _summary_sheet(ws, result: JobResult, txns: list[Txn], bold) -> None:
             sum(1 for t in rows if t.category in PAYMENTS_DEPOSITED),
             None,                                    # outward return %, below
         ]
+        # Rates are stored as FRACTIONS because the template formats these two
+        # rows as "0.00%", and Excel's percent format multiplies by 100 — a
+        # value of 12.5 in a 0.00% cell would render as 1250.00%.
         iss, dep = per[mk][10], per[mk][13]
-        per[mk][11] = round(100 * per[mk][9] / iss, 2) if iss else 0
-        per[mk][14] = round(100 * per[mk][12] / dep, 2) if dep else 0
+        per[mk][11] = round(per[mk][9] / iss, 4) if iss else 0
+        per[mk][14] = round(per[mk][12] / dep, 4) if dep else 0
 
     # The last column is an average for the balance rows and a total for the
     # count/amount rows; a rate is recomputed from the totals, never averaged
@@ -339,14 +344,14 @@ def _summary_sheet(ws, result: JobResult, txns: list[Txn], bold) -> None:
             num_i, den_i = RATE_ROWS[i]
             num = sum(per[mk][num_i] for mk in months)
             den = sum(per[mk][den_i] for mk in months)
-            total = round(100 * num / den, 2) if den else 0
+            total = round(num / den, 4) if den else 0   # fraction; see above
         elif i in AVG_ROWS:
             got = [v for v in vals if v is not None]
             total = round(sum(got) / len(got), 2) if got else ""
         else:
             total = round(sum(v for v in vals if v is not None), 2)
         _append(ws, [label] + [("" if v is None else v) for v in vals] + [total])
-        ws[ws.max_row][0].font = bold
+    style_summary(ws, len(months), set(RATE_ROWS))
 
 
 def _eod_sheet(ws, txns: list[Txn], bold) -> None:
@@ -354,10 +359,9 @@ def _eod_sheet(ws, txns: list[Txn], bold) -> None:
     months = _months_desc(txns)
     daily = _daily_balances(txns)
     _append(ws, ["Day/Month"] + [_month_label(k) for k in months])
-    for c in ws[1]:
-        c.font = bold
     for day in range(1, 32):
         _append(ws, [day] + [daily.get(f"{mk}-{day:02d}", "") for mk in months])
+    style_eod(ws, len(months))
 
 
 def _avg_balances_sheet(ws, txns: list[Txn], bold) -> None:
@@ -369,8 +373,7 @@ def _avg_balances_sheet(ws, txns: list[Txn], bold) -> None:
                  "Average Balance of 1st, 10th , 15th & 25th",
                  "Inflow", "Outflow", "Net Flow", "Inward cheque returns",
                  "Outward cheque returns", "No of credit", "No of debit"])
-    for c in ws[1]:
-        c.font = bold
+    ncols = ws.max_column
     for mk in _months_desc(txns):
         rows = [t for t in txns if t.date[:7] == mk]
         anchors = [daily.get(f"{mk}-{d:02d}") for d in (1, 10, 15, 25)]
@@ -387,6 +390,7 @@ def _avg_balances_sheet(ws, txns: list[Txn], bold) -> None:
             sum(1 for t in rows if t.amount > 0),
             sum(1 for t in rows if t.amount < 0),
         ])
+    style_avg_balances(ws, ncols)
 
 
 def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
@@ -417,7 +421,9 @@ def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
     # a padding row holds no cells, so max_row does not count it and the
     # stride would silently drift on any month with fewer than ten parties.
     r = 2
+    month_rows: list[int] = []
     for mk in sorted(per_month, reverse=True):
+        month_rows.append(r)
         y, m = mk.split("-")
         cell = ws.cell(row=r, column=2, value=date(int(y), int(m), 1))
         cell.font = bold
@@ -435,15 +441,15 @@ def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
             ws.cell(row=r + 2 + i, column=3, value=round(amt, 2))
         # Fixed stride: month + header + ten party slots, filled or not.
         r += 2 + PER_MONTH
+    style_party_month(ws, month_rows)
 
 
 def _party_annual_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
     """Top 10 parties over the whole statement set — the template's annual view."""
     _append(ws, [title])
-    ws["A1"].font = bold
+    # The template merges the title across both columns.
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
     _append(ws, ["Description", "Amount"])
-    for c in ws[2]:
-        c.font = bold
     by_party: dict[str, float] = defaultdict(float)
     for t in txns:
         if (t.amount > 0) == want_credit and t.counterparty:
@@ -451,6 +457,7 @@ def _party_annual_sheet(ws, txns, want_credit, group_label, title, bold) -> None
                                      t.counterparty)] += abs(t.amount)
     for party in sorted(by_party, key=lambda p: -by_party[p])[:10]:
         _append(ws, [party, round(by_party[party], 2)])
+    style_party_annual(ws)
 
 
 def _xn_row(i: int, t: Txn) -> list:
@@ -510,10 +517,8 @@ def write_workbook(result: JobResult, path: str) -> None:
     # findable only by scrolling Xns.
     sheets["Other Xns"] = wb.create_sheet("Other Xns")
     for name in XN_SHEETS:
-        ws = sheets[name]
-        _append(ws, GROUPED_HEADERS if name in GROUPED_SHEETS else XN_HEADERS)
-        for c in ws[1]:
-            c.font = bold
+        _append(sheets[name],
+                GROUPED_HEADERS if name in GROUPED_SHEETS else XN_HEADERS)
     # Sl. No. restarts on every sheet: on a template sheet it numbers that
     # sheet's rows, which is what a reader counting cash deposits expects.
     seq: dict[str, int] = defaultdict(int)
@@ -531,6 +536,11 @@ def write_workbook(result: JobResult, path: str) -> None:
         put("Xns", t)
         if date.fromisoformat(t.date).weekday() == 6:
             put("SundayXns", t)
+
+    # Style the transaction sheets only after every row is on them, so the
+    # banding and borders cover the rows that were actually written.
+    for name in XN_SHEETS:
+        style_xn_sheet(sheets[name], grouped=name in GROUPED_SHEETS)
 
     # --- sheets beyond the template, appended after it ----------------------
     # Credit Assessment is the lender-facing conclusion and the thing this
