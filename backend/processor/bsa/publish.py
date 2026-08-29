@@ -38,7 +38,7 @@ _CS_LABELS = [
     ("avg_balance", "Average balance", "money"),
     ("min_balance", "Minimum balance", "money"),
     ("closing_balance", "Closing balance", "money"),
-    ("cash_intensity_pct", "Cash intensity", "pct"),
+    ("cash_intensity_pct", "Cash intensity (% of turnover)", "pct"),
     ("emi_outflow_monthly", "EMI / interest outflow (monthly)", "money"),
     ("bounce_count", "Bounce / return events", "int"),
     ("penal_charges", "Penal charges", "money"),
@@ -49,7 +49,7 @@ _CS_LABELS = [
     ("turnover_trend", "Turnover trend", "text"),
     ("balance_stability_cv", "Balance stability (variation)", "num"),
     ("monthly_surplus", "Monthly surplus (net inflow)", "money"),
-    ("servicing_coverage", "Debt-service coverage (× EMI)", "num"),
+    ("servicing_coverage", "Debt-service coverage (turnover ÷ EMI)", "num"),
 ]
 
 

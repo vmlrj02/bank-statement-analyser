@@ -77,8 +77,50 @@ def test_monthly_turnover_series():
             txn("2025-02-05", 80000, 140000)]
     m = credit_summary(txns)["metrics"]
     assert m["monthly_turnover"] == [
-        {"month": "2025-01", "credits": 100000, "debits": 40000, "net": 60000},
-        {"month": "2025-02", "credits": 80000, "debits": 0, "net": 80000}]
+        {"month": "2025-01", "credits": 100000, "turnover": 100000,
+         "debits": 40000, "net": 60000},
+        {"month": "2025-02", "credits": 80000, "turnover": 80000,
+         "debits": 0, "net": 80000}]
+
+
+def test_monthly_turnover_excludes_loans_and_salary():
+    """TURNOVER is business credits. A loan disbursal and a salary credit are
+    inflows, so they raise `credits`, but neither is revenue — so neither may
+    move `turnover`. This is the whole definition, pinned on the series a
+    lender actually reads month by month."""
+    txns = [txn("2025-01-05", 100000, 100000),
+            txn("2025-01-10", 500000, 600000, cat="Loan amount disbursal"),
+            txn("2025-01-15", 50000, 650000, cat="Salary credited")]
+    m = credit_summary(txns)["metrics"]
+    jan = m["monthly_turnover"][0]
+    assert jan["credits"] == 650000        # every inflow
+    assert jan["turnover"] == 100000       # business credits only
+    assert m["business_credits"] == 100000
+    # And nothing derived from turnover may inherit the borrowed money.
+    assert m["avg_monthly_business_credits"] == 100000
+
+
+def test_servicing_coverage_ignores_loan_disbursals():
+    """Debt-service coverage is turnover ÷ EMI outflow. Counting a loan
+    disbursal as capacity to repay loans is circular — it flatters exactly the
+    most leveraged borrower. One month, 100k of trade, a 500k disbursal and
+    50k of EMI: coverage is 2x, not 12x."""
+    txns = [txn("2025-01-05", 100000, 100000),
+            txn("2025-01-10", 500000, 600000, cat="Loan amount disbursal"),
+            txn("2025-01-20", -50000, 550000, cat="EMI transaction")]
+    m = credit_summary(txns)["metrics"]
+    assert m["servicing_coverage"] == 2.0
+
+
+def test_cash_intensity_is_a_share_of_turnover():
+    """Cash deposits ARE business credits, so intensity is measured against
+    turnover. A loan disbursal in the denominator would dilute a cash trader's
+    intensity and hide the very risk the number exists to show."""
+    txns = [txn("2025-01-05", 60000, 60000, cat="cash deposit"),
+            txn("2025-01-06", 40000, 100000),
+            txn("2025-01-10", 400000, 500000, cat="Loan amount disbursal")]
+    m = credit_summary(txns)["metrics"]
+    assert m["cash_intensity_pct"] == 60.0
 
 
 def test_last_quarter_decline_read():

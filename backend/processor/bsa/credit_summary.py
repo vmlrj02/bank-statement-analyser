@@ -16,7 +16,19 @@ import re
 from collections import defaultdict
 from datetime import date, timedelta
 
+from .categorize import NON_TURNOVER, high_risk_group
 from .models import Txn
+
+
+def is_turnover(t: Txn) -> bool:
+    """TURNOVER means BUSINESS credits — the money the business earned by
+    trading. Borrowed money and personal income are not revenue, so a loan
+    disbursal, a salary credit, interest, treasury income, a refund and a
+    related-party inflow are all stripped out before any number this module
+    calls "turnover" is quoted. NON_TURNOVER (categorize.py) is the single
+    definition, taken from the SME category master; nothing here re-states it.
+    """
+    return t.amount > 0 and t.category not in NON_TURNOVER
 
 
 def _pkey(name: str) -> str:
@@ -63,6 +75,11 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
     debits = [t for t in txns if t.amount < 0]
     total_cr = sum(t.amount for t in credits)
     total_dr = -sum(t.amount for t in debits)
+    # Turnover is business credits only — see is_turnover. Every figure below
+    # that a lender reads as "turnover" derives from THIS list, never from
+    # `credits`, so a loan disbursal can never inflate it.
+    turnover_txns = [t for t in credits if is_turnover(t)]
+    business_cr = sum(t.amount for t in turnover_txns)
 
     def cat_sum(cat):
         return sum(abs(t.amount) for t in txns if t.category == cat)
@@ -75,12 +92,17 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
     min_bal = round(min(eod), 2) if eod else 0.0
     closing_bal = round(txns[-1].balance, 2)
 
-    # Monthly credit series (for turnover trend) and monthly average balance
-    # (for stability), oldest month first.
+    # Monthly credit series and monthly average balance (for stability),
+    # oldest month first. Two series: all credits, and turnover (business
+    # credits). The TREND is read off turnover — a loan drawn in the second
+    # half would otherwise read as a growing business.
     monthly_cr: dict[str, float] = defaultdict(float)
     for t in credits:
         monthly_cr[t.date[:7]] += t.amount
-    cr_series = [monthly_cr[k] for k in sorted(monthly_cr)]
+    monthly_to: dict[str, float] = defaultdict(float)
+    for t in turnover_txns:
+        monthly_to[t.date[:7]] += t.amount
+    cr_series = [monthly_to[k] for k in sorted(monthly_to)]
     bal_by_month: dict[str, list[float]] = defaultdict(list)
     bal_seen: dict[str, float] = {}
     for t in txns:
@@ -89,7 +111,8 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
         bal_by_month[d[:7]].append(b)
     monthly_avg_bal = [sum(v) / len(v) for _, v in sorted(bal_by_month.items())]
 
-    # Turnover trend: compare the first and second halves of the credit series.
+    # Turnover trend: compare the first and second halves of the TURNOVER
+    # series (business credits), not of all credits.
     trend = "flat"
     if len(cr_series) >= 4:
         half = len(cr_series) // 2
@@ -134,23 +157,29 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
 
     period_end = date.fromisoformat(max(t.date for t in txns))
 
-    # --- Month-by-month turnover (credits/debits/net per calendar month) ---
+    # --- Month by month, per calendar month ---
+    # `credits` is every inflow and `turnover` is the business-credit subset;
+    # both are carried so the month table can show the flow AND the turnover
+    # without either being mistaken for the other.
     monthly_dr: dict[str, float] = defaultdict(float)
     for t in debits:
         monthly_dr[t.date[:7]] += -t.amount
     month_keys = sorted(set(monthly_cr) | set(monthly_dr))
     monthly_turnover = [{"month": k,
                          "credits": round(monthly_cr.get(k, 0.0), 2),
+                         "turnover": round(monthly_to.get(k, 0.0), 2),
                          "debits": round(monthly_dr.get(k, 0.0), 2),
                          "net": round(monthly_cr.get(k, 0.0) - monthly_dr.get(k, 0.0), 2)}
                         for k in month_keys]
-    # Last quarter vs everything before it: average monthly credits in the
+    # Last quarter vs everything before it: average monthly TURNOVER in the
     # final 3 calendar months against the average of the prior months. Needs
-    # at least 6 months, or a seasonal dip masquerades as a trend.
+    # at least 6 months, or a seasonal dip masquerades as a trend. Turnover,
+    # not all credits: a loan drawn in the last quarter would otherwise hide
+    # exactly the decline this read exists to catch.
     last_q_change = None
     if len(month_keys) >= 6:
-        last3 = [monthly_cr.get(k, 0.0) for k in month_keys[-3:]]
-        prior = [monthly_cr.get(k, 0.0) for k in month_keys[:-3]]
+        last3 = [monthly_to.get(k, 0.0) for k in month_keys[-3:]]
+        prior = [monthly_to.get(k, 0.0) for k in month_keys[:-3]]
         prior_avg = sum(prior) / len(prior)
         if prior_avg > 0:
             last_q_change = round(100 * (sum(last3) / 3 - prior_avg) / prior_avg, 1)
@@ -247,12 +276,8 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
                            "share_pct": round(100 * v / total_cr, 1) if total_cr else 0.0}
                           for k, v in ranked_cr[:3]]
 
-    # Business turnover and speculative spending, both from the SME master.
-    # They are derived here rather than in categorize so that a change to the
-    # master moves one number in one place.
-    from .categorize import NON_TURNOVER, high_risk_group
-    business_cr = sum(t.amount for t in txns
-                      if t.amount > 0 and t.category not in NON_TURNOVER)
+    # Speculative spending, from the SME master. (Turnover itself is derived
+    # at the top of this function, from is_turnover.)
     high_risk: dict[str, dict] = {}
     for t in txns:
         if t.amount >= 0:
@@ -269,13 +294,18 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
         "total_credits": round(total_cr, 2),
         "total_debits": round(total_dr, 2),
         "net_cashflow": round(total_cr - total_dr, 2),
-        "avg_monthly_credits": round(total_cr / months, 2),      # ~turnover
+        # All inflows, honestly named. This is NOT turnover — see
+        # avg_monthly_business_credits for the turnover figure.
+        "avg_monthly_credits": round(total_cr / months, 2),
         "avg_monthly_debits": round(total_dr / months, 2),
         "avg_balance": avg_bal,
         "min_balance": min_bal,
         "closing_balance": closing_bal,
         "cash_deposits": round(cash_in, 2),
-        "cash_intensity_pct": round(100 * cash_in / total_cr, 1) if total_cr else 0.0,
+        # Cash as a share of TURNOVER. Cash deposits are themselves business
+        # credits, so the denominator is turnover — measuring them against all
+        # inflows would let a loan disbursal dilute a cash trader's intensity.
+        "cash_intensity_pct": round(100 * cash_in / business_cr, 1) if business_cr else 0.0,
         "emi_outflow": round(emi_out, 2),
         "emi_outflow_monthly": round(emi_out / months, 2),
         "bounce_count": bounces,
@@ -287,10 +317,13 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
         "turnover_trend": trend,
         "balance_stability_cv": stability_cv,
         # Servicing capacity: monthly surplus after existing debt service, and a
-        # simple coverage ratio (inflow ÷ EMI outflow). >1 means inflow covers
-        # current EMIs; higher is more headroom for new debt.
+        # coverage ratio (monthly TURNOVER ÷ monthly EMI outflow). >1 means
+        # trading income covers current EMIs; higher is more headroom for new
+        # debt. Turnover, not all credits — counting a loan disbursal as
+        # capacity to repay loans is circular, and flatters the most leveraged
+        # borrowers precisely when it matters most.
         "monthly_surplus": round((total_cr - total_dr) / months, 2),
-        "servicing_coverage": (round((total_cr / months) / (emi_out / months), 2)
+        "servicing_coverage": (round((business_cr / months) / (emi_out / months), 2)
                                if emi_out else None),
         "integrity": (integrity or {}).get("assessment", "—"),
         "balance_verified": validation_status == "passed",
@@ -337,14 +370,14 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
                      f"days vs {bounces_prior_90d} in the 90 days before — recent "
                      f"cheque/mandate failures, not old history.")
     if m["cash_intensity_pct"] >= 40:
-        reads.append(f"Cash-intensive: {m['cash_intensity_pct']}% of credits are cash "
+        reads.append(f"Cash-intensive: {m['cash_intensity_pct']}% of turnover is cash "
                      f"deposits — turnover is harder to verify independently.")
     if avg_bal < 0:
         reads.append("Average balance is negative — an overdraft / CC account "
                      "operating in the drawn range.")
-    if emi_out and m["emi_outflow_monthly"] > m["avg_monthly_credits"] * 0.5:
+    if emi_out and m["emi_outflow_monthly"] > m["avg_monthly_business_credits"] * 0.5:
         reads.append(f"EMI/interest outflow (~{m['emi_outflow_monthly']:.0f}/mo) is a "
-                     f"large share of monthly inflow — limited headroom for new EMI.")
+                     f"large share of monthly turnover — limited headroom for new EMI.")
     if n_active_emi:
         active_total = sum(o["monthly_amount"] for o in emi_obligations if o["active"])
         line = (f"{n_active_emi} EMI obligation(s) active at period end "
@@ -369,15 +402,15 @@ def credit_summary(txns: list[Txn], integrity: dict | None = None,
         reads.append(f"{m['related_party_credit_pct']}% of credits are from related "
                      f"parties — may overstate genuine third-party turnover.")
     if trend == "declining":
-        reads.append("Turnover is declining over the period — credits in the "
-                     "later months are materially below the earlier ones.")
+        reads.append("Turnover is declining over the period — business credits "
+                     "in the later months are materially below the earlier ones.")
     elif trend == "rising":
         reads.append("Turnover is rising over the period — a positive trend.")
     if last_q_change is not None and last_q_change <= -30:
-        last3_avg = sum(monthly_cr.get(k, 0.0) for k in month_keys[-3:]) / 3
-        prior_avg = (sum(monthly_cr.get(k, 0.0) for k in month_keys[:-3])
+        last3_avg = sum(monthly_to.get(k, 0.0) for k in month_keys[-3:]) / 3
+        prior_avg = (sum(monthly_to.get(k, 0.0) for k in month_keys[:-3])
                      / len(month_keys[:-3]))
-        reads.append(f"Credits in the last quarter average {last3_avg:.0f}/mo vs "
+        reads.append(f"Turnover in the last quarter averages {last3_avg:.0f}/mo vs "
                      f"{prior_avg:.0f}/mo earlier — down {-last_q_change}%.")
     if stability_cv is not None and stability_cv > 0.6:
         reads.append("Balance swings widely month to month — low liquidity "

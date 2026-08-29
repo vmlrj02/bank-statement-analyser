@@ -196,6 +196,20 @@ the two bounce-rate rows (a bounce count alone says nothing — three returns
 against four payments is a failing account, three against nine hundred is
 noise), and NON_TURNOVER is the set of credits that are not business turnover.
 
+18. TURNOVER MEANS BUSINESS CREDITS. Never total credits. NON_TURNOVER
+    (categorize.py) is the one definition — loan disbursals, salary, interest
+    received, investment returns, refunds and related-party inflows are all
+    stripped out; cash deposits DO count, because they are sales receipts and
+    their risk is reported separately as cash intensity. The word must mean the
+    same thing in the API, the workbook and the card, so anything DERIVED from
+    turnover uses the same base: `turnover_trend`, the per-month `turnover`
+    series, the last-quarter change, cash intensity (a share OF turnover) and
+    debt-service coverage (turnover ÷ EMI). Counting a loan disbursal as
+    capacity to repay loans is circular and flatters the most leveraged
+    borrower. `avg_monthly_credits` and `total_credits` are the honest
+    all-inflow figures and stay that way — they are simply not called turnover.
+    Pinned by tests/test_credit_summary.py and tests/test_taxonomy_master.py.
+
 ## Data residency — the gate that was blocking real customers
 
 An LLM call is the only thing in this pipeline that can send statement data
