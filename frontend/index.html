@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bank Statement Analyser</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2316294f'/><text x='16' y='23' text-anchor='middle' font-family='Georgia,serif' font-size='19' font-weight='700' fill='%23b9902e'>G</text></svg>">
 <style>
 /* Get It Right brand: deep navy + gold on white, after the company logo.
    Status still reads without colour alone — explicit words plus fill and
    border weight — and debits keep accounting parentheses, matching the CSV. */
 :root{
-  --bg:#ffffff; --fg:#16294f; --mut:#5a6478; --faint:#8b93a5;
+  --bg:#ffffff; --fg:#16294f; --mut:#5a6478; --faint:#6b7385;
   --line:#dce0e8; --line2:#aab2c2; --sunk:#f5f6fa;
   --navy:#16294f; --gold:#b9902e; --golddark:#8a6a1d; --goldpale:#f7f0dd;
   --radius:10px;
@@ -24,8 +25,7 @@ body{margin:0;background:var(--bg);color:var(--fg);
 
 .shell{max-width:1140px;margin:0 auto;padding:0 24px 80px;
   display:grid;grid-template-columns:268px minmax(0,1fr);gap:36px;align-items:start}
-/* Uploads list on the LEFT, content on the right. DOM order stays main-first
-   so the narrow single-column view keeps the drop zone on top. */
+/* Uploads list on the LEFT, content on the right. */
 main{grid-column:2;grid-row:2}
 aside{grid-column:1;grid-row:2}
 header{grid-column:1/-1;padding:30px 0 18px;border-bottom:2px solid var(--navy);margin-bottom:28px;
@@ -125,12 +125,6 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .meta b{color:var(--fg)}
 .cats{display:flex;flex-wrap:wrap;gap:5px;margin-top:11px}
 .cats span{border:1px solid var(--line);color:var(--mut);font-size:11.5px;padding:2px 9px;border-radius:999px}
-.conf{display:flex;align-items:center;gap:9px;margin-top:11px;font-size:12px;color:var(--mut);flex-wrap:wrap}
-.conf .clabel{font-weight:600;color:var(--fg)}
-.conf .cbar{width:120px;height:8px;border:1px solid var(--line2);border-radius:99px;overflow:hidden;display:flex;background:var(--sunk)}
-.conf .cbar i{height:100%;background:var(--fg)}
-.conf .cbar i.m{background:var(--line2)}
-.conf b{color:var(--fg)}
 .rvw{font-size:10px;border:1px solid var(--fg);border-radius:4px;padding:0 5px;margin-left:5px;
   text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
 /* Admin-only correction affordance in the preview: a dotted underline, no
@@ -143,18 +137,8 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .dtl{color:var(--mut);font-size:11px}
 .err{border:1px solid var(--fg);border-left-width:4px;font-size:12.5px;padding:9px 11px;
   border-radius:6px;margin-top:11px;word-break:break-word}
-.credit{margin-top:13px;border:1px solid var(--line);border-radius:7px;padding:12px 13px}
-.credit .ch{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--golddark);
-  font-weight:700;margin-bottom:9px}
-.cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
-  border:1px solid var(--line)}
-.cx{background:var(--bg);padding:8px 10px}
-.cx b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
-.cx.sm b{font-size:12px;line-height:1.5}
-.cx span{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
 .creads{margin:10px 0 0;padding-left:17px;font-size:12.5px;color:var(--mut)}
 .creads li{margin:3px 0}
-@media (max-width:560px){.cgrid{grid-template-columns:repeat(2,1fr)}}
 .acts{display:flex;gap:7px;margin-top:13px;flex-wrap:wrap}
 .empty{color:var(--mut);text-align:center;padding:32px 0;font-size:14px;
   border:1px dashed var(--line2);border-radius:var(--radius)}
@@ -165,12 +149,6 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   padding:10px 14px;margin-bottom:10px;font-size:13px}
 .upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .upnote .nm{font-weight:700;margin-right:auto}
-/* Per-upload history rows inside an account card */
-.uprow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px dotted var(--line);
-  font-size:12.5px;flex-wrap:wrap}
-.uprow .d{font-weight:600}
-.uprow .m{color:var(--mut)}
-.uprow .ghost{margin-left:auto;font-size:12px;padding:3px 11px}
 
 /* admin AI panel */
 .ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
@@ -338,6 +316,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <input id="pw" type="password" autocomplete="current-password">
     <button class="go" id="signin">Sign in</button>
     <div class="msg" id="gmsg" hidden></div>
+    <p class="sub" style="margin:16px 0 0;font-size:12.5px">Forgotten your password? Contact your administrator.</p>
   </div>
 </div>
 
@@ -356,7 +335,11 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   </header>
 
   <main>
-    <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+    <div id="active">
+      <div class="skel" style="height:38px;width:55%"></div>
+      <div class="skel" style="height:220px;margin-top:12px"></div>
+      <div class="skel" style="height:90px;margin-top:12px"></div>
+    </div>
   </main>
 
   <aside>
@@ -365,7 +348,11 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
       style="width:100%;margin-bottom:12px;font-size:13px">
     <div id="afilters" class="afrow" hidden></div>
     <h2 id="acctHead">Accounts</h2>
-    <div class="hist" id="hist"><div class="side-empty">No uploads yet</div></div>
+    <div class="hist" id="hist"><div style="padding:12px">
+      <div class="skel" style="height:64px"></div>
+      <div class="skel" style="height:64px;margin-top:9px"></div>
+      <div class="skel" style="height:64px;margin-top:9px"></div>
+    </div></div>
   </aside>
 </div>
 
@@ -373,9 +360,11 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <div class="dh"><b>Upload statements</b>
     <span style="margin-left:auto"><button class="ghost" onclick="up.close()">Close</button></span></div>
   <div class="db" style="padding:17px">
-    <div class="drop" id="drop">
+    <div class="drop" id="drop" tabindex="0" role="button"
+      aria-label="Choose PDF statements to upload">
       <div class="t">Drop PDFs here, or click to choose</div>
       <div class="s">Up to 20 at once — grouped by account, one report each</div>
+      <div class="s">Supports Axis, HDFC, ICICI, SBI, PNB, IndusInd, Equitas and other Indian banks</div>
       <input type="file" id="file" accept="application/pdf" multiple hidden>
     </div>
     <div id="tray"></div>
@@ -434,16 +423,28 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
 <script>
 const API = window.BSA_API;
 const $ = id => document.getElementById(id);
-const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* Escapes quotes and backticks too: escaped values (holder, bank names) come
+   from uploaded PDF text and are interpolated into single-quoted onclick
+   handlers, so leaving ' unescaped was a stored-XSS route to the admin. */
+const esc = s => String(s==null?'':s).replace(/[&<>"'`]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
+/* For values inside single-quoted JS strings in onclick attributes. HTML
+   entities are DECODED before the handler runs, so esc() alone still hands
+   the JS a raw quote — backslash-escape for the JS context first, then esc()
+   so the value cannot break out of the attribute either. */
+const jsq = s => esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
 const nfmt = n => Number(n||0).toLocaleString('en-IN');
 const kb = n => n < 1048576 ? (n/1024).toFixed(0)+' KB' : (n/1048576).toFixed(1)+' MB';
 const TKEY = 'bsa.token';
 let IS_ADMIN = false, WHO = '', jobs = [];
-let staged = [], seq = 0;
+let staged = [], seq = 0, stageNote = '';
+let pollT = null;        // the ONE polling timer — refresh() reschedules itself
+let LOADED = false;      // first /jobs response seen — until then, skeletons
 
 /* ---------- auth: session token from our own API, no external service ---------- */
 function token(){ return localStorage.getItem(TKEY) || null; }
 function showGate(msg){
+  // A modal dialog paints above the fixed gate — close any before showing it.
+  document.querySelectorAll('dialog').forEach(d=>d.open&&d.close());
   $('app').hidden = true; $('gate').hidden = false;
   $('gmsg').hidden = !msg; if(msg) $('gmsg').textContent = msg;
 }
@@ -465,7 +466,11 @@ $('signin').onclick = async () => {
     localStorage.setItem(TKEY, j.token);
     IS_ADMIN = j.role === 'admin'; WHO = j.email; $('pw').value = '';
     showApp();
-  }catch(e){ showGate(e.message); }
+  }catch(e){
+    showGate((e instanceof TypeError || /failed to fetch/i.test(e.message||''))
+      ? 'Could not reach the server — check your connection and try again.'
+      : e.message);
+  }
   finally{ b.disabled = false; }
 };
 $('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
@@ -489,7 +494,7 @@ $('pwGo').onclick = async () => {
     $('pwMsg').hidden = false;
     $('pwMsg').textContent = 'Password changed. Other devices stay signed in until their session expires.';
     $('pwOld').value=''; $('pwNew').value='';
-  }catch(e){ $('pwMsg').hidden = false; $('pwMsg').textContent = e.message; }
+  }catch(e){ if(!e.auth){ $('pwMsg').hidden = false; $('pwMsg').textContent = e.message; } }
   finally{ b.disabled = false; }
 };
 
@@ -535,15 +540,23 @@ $('cdGo').onclick = async () => {
 };
 $('cdDesc') && $('cdDesc').addEventListener('keydown', e => { if(e.key==='Enter') $('cdGo').click(); });
 
+/* An auth failure shows the sign-in gate itself and marks the thrown error
+   with .auth = true, so callers skip their own alert — the gate already says
+   what happened, and an alert on top of it would just be noise. */
 async function api(path, opts){
   const t = token();
-  if(!t){ showGate('Please sign in.'); throw new Error('signed out'); }
+  if(!t){
+    showGate('Please sign in.');
+    const err = new Error('Please sign in.'); err.auth = true; throw err;
+  }
   opts = opts || {};
   opts.headers = Object.assign({}, opts.headers, {authorization:'Bearer '+t});
   const r = await fetch(API+path, opts);
   if(r.status === 401){
-    localStorage.removeItem(TKEY); showGate('Session expired — please sign in again.');
-    throw new Error('signed out');
+    localStorage.removeItem(TKEY);
+    showGate('Your session has expired — please sign in again.');
+    const err = new Error('Your session has expired — please sign in again.');
+    err.auth = true; throw err;
   }
   if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
   return r.json();
@@ -564,25 +577,37 @@ async function isEncrypted(file){
 const drop = $('drop'), fileIn = $('file');
 $('upBtn').onclick = () => $('up').showModal();
 drop.onclick = () => fileIn.click();
+drop.onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileIn.click(); } };
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('hover'); stage([...e.dataTransfer.files]); };
 fileIn.onchange = () => { stage([...fileIn.files]); fileIn.value=''; };
 
 async function stage(files){
+  // Never drop a file silently: say what was skipped and why.
+  let notPdf = 0; const oversize = [];
   for(const f of files){
-    if(!/\.pdf$/i.test(f.name)) continue;
+    if(!/\.pdf$/i.test(f.name)){ notPdf++; continue; }
+    if(f.size > 50*1048576){ oversize.push(f.name); continue; }
     if(staged.length >= 20){ alert('Up to 20 statements per upload.'); break; }
     const it = {file:f, name:f.name, size:f.size, locked:false, pw:'', id:++seq};
     staged.push(it); renderTray();
     it.locked = await isEncrypted(f); renderTray();
   }
+  const notes = [];
+  if(notPdf) notes.push(`${notPdf} file${notPdf===1?'':'s'} skipped — PDF statements only.`);
+  for(const nm of oversize) notes.push(`${nm} skipped — over the 50 MB limit.`);
+  stageNote = notes.join(' ');
+  renderTray();
 }
 function removeFile(id){ staged = staged.filter(s=>s.id!==id); renderTray(); }
 function setPw(id,v){ const s = staged.find(x=>x.id===id); if(s) s.pw=v; updateGo(); }
 function renderTray(){
   const t = $('tray');
-  if(!staged.length){ t.innerHTML=''; $('controls').hidden = true; return; }
+  if(!staged.length){
+    t.innerHTML = stageNote ? `<div class="hint" style="margin-top:10px">${esc(stageNote)}</div>` : '';
+    $('controls').hidden = true; return;
+  }
   $('controls').hidden = false;
   t.innerHTML = `<div class="tray">
     <div class="trayhead">${staged.length} file${staged.length>1?'s':''} selected</div>
@@ -605,9 +630,9 @@ function updateGo(){
   $('go').disabled = !staged.length;
   $('go').textContent = staged.length>1 ? `Analyse ${staged.length} statements` : 'Analyse statement';
   const maybe = staged.filter(s=>s.locked && !s.pw).length;
-  $('hint').textContent = maybe
+  $('hint').textContent = (stageNote ? stageNote+' ' : '') + (maybe
     ? `If a file is password-protected, add its password — otherwise just continue.`
-    : (staged.length>1 ? 'Grouped by account — one report per account.' : '');
+    : (staged.length>1 ? 'Grouped by account — one report per account.' : ''));
 }
 $('go').onclick = async () => {
   const b = $('go'); b.disabled = true;
@@ -625,9 +650,9 @@ $('go').onclick = async () => {
         headers:{'content-type':'application/pdf'}, body:files[i].file});
       if(!res.ok) throw new Error(`upload failed for ${files[i].name}`);
     }
-    staged=[]; $('parties').value=''; renderTray(); refresh();
+    staged=[]; stageNote=''; $('parties').value=''; renderTray(); refresh();
     $('up').close();
-  }catch(e){ alert('Upload failed: '+e.message); }
+  }catch(e){ if(!e.auth) alert('Upload failed: '+e.message); }
   finally{ b.disabled=false; updateGo(); }
 };
 
@@ -642,9 +667,6 @@ function shortDate(iso){
   const [y,m,d] = iso.split('-');
   return `${Number(d)}-${MON[Number(m)-1]}-${y.slice(2)}`;
 }
-// Continuous periods are already collapsed server-side; a gap stays its own range.
-const fmtPeriods = ps => (ps||[]).map(p=>`${shortDate(p[0])} to ${shortDate(p[1])}`).join('; ');
-
 function statusChip(st){
   if(st==='done')      return '<span class="chip done">Done</span>';
   if(st==='reviewed')  return '<span class="chip done">Reviewed</span>';
@@ -697,26 +719,6 @@ function accountIndex(){
   return out;
 }
 
-function confLine(c){
-  if(!c) return '';
-  const tot=(c.high||0)+(c.medium||0)+(c.low||0); if(!tot) return '';
-  const conf=Math.round(100*((c.high||0)+(c.medium||0))/tot);
-  const low=c.low||0;
-  return `<div class="conf"><span class="clabel">Categorisation confidence</span>
-    <span class="cbar"><i style="width:${100*(c.high||0)/tot}%"></i><i class="m" style="width:${100*(c.medium||0)/tot}%"></i></span>
-    <span>${conf}% confident${low?` · <b>${nfmt(low)}</b> flagged for review`:' · none flagged'}</span></div>`;
-}
-/* Party quality: how many rows name a real counterparty, vs a machine handle
-   (account number / VPA), vs none at all. Same bar as confidence: solid fill
-   = named, grey = handle, empty = none. Old jobs lack the key — hide. */
-function partyLine(pq){
-  if(!pq) return '';
-  const tot=(pq.named||0)+(pq.handle||0)+(pq.none||0); if(!tot) return '';
-  const pc=k=>Math.round(100*(pq[k]||0)/tot);
-  return `<div class="conf"><span class="clabel">Party quality</span>
-    <span class="cbar"><i style="width:${100*(pq.named||0)/tot}%"></i><i class="m" style="width:${100*(pq.handle||0)/tot}%"></i></span>
-    <span>names: ${pc('named')}% named · ${pc('handle')}% handle · ${pc('none')}% none</span></div>`;
-}
 /* Display at most the LAST 4 digits of an account number, whatever shape the
    stored value has (XXXXXX1234, unmasked legacy, etc.). */
 const acctNo = n => n ? 'xx'+String(n).slice(-4) : '';
@@ -792,7 +794,7 @@ function accountCard(e){
         ${sub?`<div class="acctline" style="margin-top:1px">${sub}</div>`:''}
       </div>
       <button class="go" style="padding:5px 16px;font-size:13px;flex:none"
-        onclick="dl('${j.job_id}','${a.slug}','xlsx')">Download Report</button></div>
+        onclick="dl('${j.job_id}','${jsq(a.slug)}','xlsx')">Download Report</button></div>
     <div class="dash" id="dash-${esc(e.slug)}">
       <div class="ch">Account dashboard</div>
       <div class="dash-body">
@@ -811,12 +813,12 @@ function accountCard(e){
     ${cats?`<div class="catmix"><div class="ch">Category mix</div>${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
-        ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
+        ? `<button class="ghost" onclick="review('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
         : ''}
       ${IS_ADMIN?`
-      <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}')">Preview</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','csv')">CSV</button>
-      <button class="ghost" onclick="dl('${j.job_id}','${a.slug}','json')">JSON</button>`:''}
+      <button class="ghost" onclick="preview('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}','${jsq(a.bank||'')}')">Preview</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${jsq(a.slug)}','csv')">CSV</button>
+      <button class="ghost" onclick="dl('${j.job_id}','${jsq(a.slug)}','json')">JSON</button>`:''}
       ${IS_ADMIN && (j.corrections||[]).length
         ? `<button class="ghost" onclick="dlCorrections('${j.job_id}')">Corrections CSV · ${nfmt(j.corrections.length)}</button>`:''}
     </div></div>`;
@@ -880,9 +882,9 @@ function uploadNotices(){
                a.unreadable_pages?`, ${nfmt(a.unreadable_pages)} unreadable page${a.unreadable_pages===1?'':'s'}`:''},
                <b>${nfmt(a.issues||0)}</b> row${(a.issues||0)===1?'':'s'} to check
                <button class="ghost" style="font-size:11px;padding:1px 9px;margin-left:5px"
-                 onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review rows</button>
+                 onclick="review('${j.job_id}','${jsq(a.slug)}','${jsq(a.title||a.account_no)}')">Review rows</button>
                <button class="ghost" style="font-size:11px;padding:1px 9px"
-                 onclick="selectAcct('${j.job_id}/${a.slug}')">Open account</button></div>`).join('')
+                 onclick="selectAcct('${j.job_id}/${jsq(a.slug)}')">Open account</button></div>`).join('')
           + `<div class="rv-foot" style="padding-left:0;padding-right:0">
              <input type="text" id="rvNote-${j.job_id}" placeholder="Note (optional) — what you checked">
              <button class="go" onclick="markReviewed('${j.job_id}')">Mark reviewed</button>
@@ -904,9 +906,23 @@ function uploadNotices(){
    account is selected by default, so there is always exactly one card on
    screen; operational notices (processing / failed uploads) sit above it. */
 let selSlug = null, QUERY = '', AFILTER = 'all';
-function selectAcct(slug){ selSlug = slug; render(); }
+function selectAcct(slug){
+  selSlug = slug; render();
+  // On the single-column view the sidebar sits below the card — bring the
+  // newly selected account into view, or the tap looks like it did nothing.
+  if(window.matchMedia('(max-width:900px)').matches){
+    const el = document.getElementById('acct-'+slug);
+    if(el) el.scrollIntoView({behavior:'smooth'});
+  }
+}
 function setFilter(f){ AFILTER = f; render(); }
 $('q').oninput = function(){ QUERY = this.value; render(); };
+// Sidebar cards are focusable buttons — Enter/Space opens the account.
+$('hist').addEventListener('keydown', e => {
+  if((e.key==='Enter'||e.key===' ') && e.target.classList && e.target.classList.contains('h-card')){
+    e.preventDefault(); e.target.click();
+  }
+});
 
 /* Admin triage predicates — what state a JOB is in, for the filter chips.
    A job whose files ALL failed has no summary; its reason lives in j.error. */
@@ -947,7 +963,13 @@ function render(){
   const sel = accts.find(e=>e.slug===selSlug);
   $('active').innerHTML = notices
     + (sel ? accountCard(sel)
-           : (notices ? '' : '<div class="empty">Nothing yet — upload statements to begin.</div>'));
+           : notices ? ''
+           : !LOADED ? `<div class="skel" style="height:38px;width:55%"></div>
+               <div class="skel" style="height:220px;margin-top:12px"></div>
+               <div class="skel" style="height:90px;margin-top:12px"></div>`
+           : `<div class="empty">Nothing yet — upload statements to begin.
+               <div class="hint" style="margin-top:6px">Supports Axis, HDFC, ICICI, SBI, PNB,
+               IndusInd, Equitas and other Indian banks.</div></div>`);
   if(sel) loadDash(sel);
 
   const q = QUERY.trim().toLowerCase();
@@ -969,7 +991,8 @@ function render(){
         const day = dayLabel(e.latest.j.created_at||0);
         const divider = day!==lastDay ? `<div class="h-day">${esc(day)}</div>` : '';
         lastDay = day;
-        return divider + `<div class="h-card ${e.slug===selSlug?'sel':''}" onclick="selectAcct('${e.slug}')">
+        return divider + `<div class="h-card ${e.slug===selSlug?'sel':''}" tabindex="0" role="button"
+          aria-label="Open account ${esc(a.holder||a.bank||'')}" onclick="selectAcct('${jsq(e.slug)}')">
           <div class="h-top">
             <div class="h-av" style="background:${color}">${esc(code)}</div>
             <div>
@@ -981,10 +1004,14 @@ function render(){
           ${IS_ADMIN && e.latest.j.owner ? `<div class="h-own">${esc(e.latest.j.owner)}</div>`:''}
           <div class="h-foot"><span class="tm">${esc(timeLabel(e.latest.j.created_at||0))}</span>
             <button class="ghost" title="Download report"
-              onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${e.latest.a.slug}','xlsx')">Download</button></div>
+              onclick="event.stopPropagation();dl('${e.latest.j.job_id}','${jsq(e.latest.a.slug)}','xlsx')">Download</button></div>
         </div>`;}).join('')
-    : (q ? '<div class="side-empty">No accounts match your search</div>'
-         : '<div class="side-empty">No uploads yet</div>');
+    : q ? '<div class="side-empty">No accounts match your search</div>'
+    : !LOADED ? `<div style="padding:12px">
+        <div class="skel" style="height:64px"></div>
+        <div class="skel" style="height:64px;margin-top:9px"></div>
+        <div class="skel" style="height:64px;margin-top:9px"></div></div>`
+    : '<div class="side-empty">No uploads yet</div>';
 }
 
 /* ---------- monthly trends dashboard ----------
@@ -1122,11 +1149,11 @@ function drawDash(host, st){
   for(let i=0;i<=4;i++){
     const t=lo+(hi-lo)*i/4;
     svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e7eaf0" stroke-width="1"/>`
-       +`<text x="${ML-8}" y="${Y(t)+3.5}" text-anchor="end" font-size="10" fill="#8b93a5">${inrShort(t)}</text>`;
+       +`<text x="${ML-8}" y="${Y(t)+3.5}" text-anchor="end" font-size="10" fill="#6b7385">${inrShort(t)}</text>`;
   }
   if(lo<0) svg+=`<line x1="${ML}" x2="${W-MR}" y1="${Y(0)}" y2="${Y(0)}" stroke="#aab2c2" stroke-width="1"/>`;
   MO.forEach((mo,i)=>{ if(i%step===0||i===MO.length-1)
-    svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#8b93a5">${mlabel(mo)}</text>`;});
+    svg+=`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#6b7385">${mlabel(mo)}</text>`;});
   for(const [nm,col] of vis){
     const pts=SE[nm]; let d='', pen=false;
     pts.forEach((v,i)=>{ if(v==null){pen=false;return;}
@@ -1312,17 +1339,28 @@ function drawDash(host, st){
 }
 
 async function refresh(){
+  // ONE self-rescheduling timer: quick while a job is running, relaxed
+  // otherwise. Clearing on entry means manual refresh() calls (post-upload,
+  // mark-reviewed) never stack a second polling chain.
+  clearTimeout(pollT);
+  let busy = false;
   try{
     const r = await api('/jobs');
     jobs = r.jobs || [];
+    LOADED = true;
     render();
-    if(jobs.some(j=>['processing','awaiting_upload','merging'].includes(j.status)))
-      setTimeout(refresh, 3000);
+    busy = jobs.some(j=>BUSY.includes(j.status));
   }catch(e){ console.error(e); }
+  finally{
+    if(token() && !$('app').hidden)
+      pollT = setTimeout(refresh, busy ? 3000 : 15000);
+  }
 }
 async function dl(id, acct, fmt){
-  const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
-  location.href = url;
+  try{
+    const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
+    location.href = url;
+  }catch(e){ if(!e.auth) alert('Could not download the report: '+e.message); }
 }
 /* Review. The reconciliation detail the pipeline produced, unedited: which
    row broke the chain, what the statement said, and what the arithmetic
@@ -1342,7 +1380,7 @@ function issueFeedback(el){
     body: JSON.stringify({description:(d||'reconciliation issue').slice(0,300),
                           account:RVC.acct, note:v, source:'reconciliation'})})
     .then(()=>{ el.textContent='feedback recorded'; el.classList.remove('fixable'); refresh(); })
-    .catch(e=>alert('Could not save the feedback: '+e.message));
+    .catch(e=>{ if(!e.auth) alert('Could not save the feedback: '+e.message); });
 }
 async function review(id, acct, name){
   RVC = {id, acct};
@@ -1388,7 +1426,7 @@ async function markReviewed(id){
     await api(`/jobs/${id}/review`, {method:'POST',
       headers:{'content-type':'application/json'}, body: JSON.stringify({note})});
     refresh();
-  }catch(e){ alert('Could not mark reviewed: '+e.message); }
+  }catch(e){ if(!e.auth) alert('Could not mark reviewed: '+e.message); }
 }
 
 /* Correction capture: an admin clicks a row's category or party in the
@@ -1423,7 +1461,7 @@ function fixRow(i, field){
   api(`/jobs/${PV.id}/corrections`, {method:'POST',
     headers:{'content-type':'application/json'}, body:JSON.stringify(body)})
     .then(()=>{ const el=$('pvfix'+i); if(el) el.innerHTML=' <span class="rvw">corrected</span>'; refresh(); })
-    .catch(e=>alert('Could not save the correction: '+e.message));
+    .catch(e=>{ if(!e.auth) alert('Could not save the correction: '+e.message); });
 }
 async function dlCorrections(id){
   // The export is CSV, not JSON, so it bypasses api()'s json parse.
@@ -1438,6 +1476,7 @@ async function dlCorrections(id){
   }catch(e){ alert('Could not export corrections: '+e.message); }
 }
 async function preview(id, acct, name, bank){
+  try{
   const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
   const data = await (await fetch(url)).json();
   PV = {id, acct, bank: bank||'', rows: data.rows};
@@ -1458,6 +1497,7 @@ async function preview(id, acct, name, bank){
       <td class="num">${r.balance.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')+
     '</tbody></table>';
   $('pv').showModal();
+  }catch(e){ if(!e.auth) alert('Could not load the preview: '+e.message); }
 }
 
 (async () => {
@@ -1467,7 +1507,6 @@ async function preview(id, acct, name, bank){
     IS_ADMIN = me.role === 'admin'; WHO = me.email; showApp();
   }catch(e){ showGate(); }
 })();
-setInterval(() => { if(token() && !$('app').hidden) refresh(); }, 15000);
 </script>
 </body>
 </html>

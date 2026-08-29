@@ -25,6 +25,39 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The frontend is a no-build single file: nothing ever parses it before
+      # CloudFront serves it, so one stray brace ships a blank page. node
+      # --check every inline <script> block so a syntax error fails the build
+      # instead of the login screen. (tests/test_frontend_syntax.py runs the
+      # same check under pytest; this step keeps the gate even if that test
+      # is skipped for a missing node.)
+      - name: Frontend syntax check
+        run: |
+          python - <<'EOF'
+          import pathlib, re, subprocess, sys, tempfile
+
+          html = pathlib.Path("frontend/index.html").read_text()
+          blocks = [m.group(1) for m in re.finditer(
+              r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S | re.I)
+              if m.group(1).strip()]
+          if not blocks:
+              sys.exit("no inline <script> blocks found in frontend/index.html")
+          for i, js in enumerate(blocks, start=1):
+              with tempfile.NamedTemporaryFile(
+                      "w", suffix=".js", delete=False) as f:
+                  f.write(js)
+              r = subprocess.run(["node", "--check", f.name],
+                                 capture_output=True, text=True)
+              if r.returncode:
+                  sys.exit(f"inline <script> block {i} fails node --check:\n"
+                           f"{r.stderr}")
+          print(f"{len(blocks)} inline script block(s) parse cleanly")
+          EOF
+
       - name: Install test dependencies
         run: pip install --retries 10 --timeout 60 -r requirements-dev.txt
 
@@ -44,10 +77,8 @@ jobs:
       # cycle is only rejected when the changeset is created, minutes into a
       # deploy. This synths without Docker (CDK_SKIP_BUNDLING) and walks the
       # Ref/GetAtt/DependsOn graph itself. It caught a real one: the sweeper
-      # as the processor's on-failure destination.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      # as the processor's on-failure destination. (node was set up above,
+      # for the frontend syntax check.)
       - name: Check the template for dependency cycles
         working-directory: infra
         run: |

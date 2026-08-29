@@ -55,6 +55,11 @@ UPLOAD_GRACE_S = int(os.environ.get("UPLOAD_GRACE_S", str(60 * 60)))
 # The processor's own ceiling is 15 minutes. Measured from the last progress
 # stamp, not from job creation, so a genuinely long multi-file job is safe.
 PROCESS_GRACE_S = int(os.environ.get("PROCESS_GRACE_S", str(20 * 60)))
+# Every re-drive loop is bounded. A merge that deterministically times out, or
+# a file the processor dies on the same way every attempt, would otherwise be
+# re-driven every sweep forever — each pass stamping updated_at so the job
+# never even looks stuck for long enough to be failed.
+MAX_REDRIVES = int(os.environ.get("MAX_REDRIVES", "3"))
 
 LIVE = ("awaiting_upload", "processing", "merging")
 
@@ -94,6 +99,14 @@ def _settled_indexes(item) -> set:
 def _has_work(job_id: str, idx) -> bool:
     try:
         s3.head_object(Bucket=BUCKET, Key=f"work/{job_id}/{idx}.json")
+        return True
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
+def _upload_exists(key: str) -> bool:
+    try:
+        s3.head_object(Bucket=BUCKET, Key=key)
         return True
     except Exception:                                       # noqa: BLE001
         return False
@@ -139,11 +152,45 @@ def _fail_job(job_id: str, reason: str) -> None:
     )
 
 
-def _redrive(job_id: str, item) -> bool:
+def _redrive_allowed(job_id: str, item) -> bool:
+    """Count this re-drive against the job's cap; False means the job was
+    failed instead of re-driven.
+
+    Every path that re-invokes the processor goes through here, so no re-drive
+    loop — a merge that deterministically dies, a file the processor is killed
+    on the same way every attempt — can run more than MAX_REDRIVES times.
+
+    Read-then-SET rather than an atomic ADD: the sweeper is the only writer of
+    redrive_count, and at worst a concurrent scheduled sweep and destination
+    delivery under-count one attempt, against a cap that exists to stop a loop
+    of dozens. (The test fake models ADD only for string sets, and modelling a
+    real numeric ADD there is not this change's call to make.)
+    """
+    count = int(item.get("redrive_count", 0) or 0) + 1
+    if count > MAX_REDRIVES:
+        _fail_job(job_id, (
+            f"processing was retried {MAX_REDRIVES} times without completing — "
+            "something in this upload fails the same way every attempt. "
+            "Try uploading the statements again, in smaller parts."))
+        print(f"sweeper: redrive cap reached for {job_id}; failed the job")
+        return False
+    TABLE.update_item(
+        Key={"job_id": job_id},
+        UpdateExpression="SET redrive_count = :n, updated_at = :t",
+        ExpressionAttributeValues={":n": count, ":t": _now()},
+    )
+    item["redrive_count"] = count
+    return True
+
+
+def _redrive(job_id: str, item):
     """Re-invoke the processor so it merges whatever did succeed.
 
     Points at a file whose work object already exists, so the processor skips
-    straight past extraction. Returns False when there is nothing to merge.
+    straight past extraction. Returns True when the merge was re-driven,
+    "capped" when the re-drive cap failed the job instead (truthy: the job is
+    settled, callers must not fail it again), and False when there is nothing
+    to merge.
     """
     if not PROCESSOR:
         return False
@@ -154,6 +201,8 @@ def _redrive(job_id: str, item) -> bool:
             continue
         if not _has_work(job_id, idx):
             continue
+        if not _redrive_allowed(job_id, item):
+            return "capped"
         # A stale "merging" claim would block the processor from taking the
         # merge; the claim expires, but clearing the status here means the
         # re-drive works on the first attempt rather than after the TTL.
@@ -175,6 +224,57 @@ def _redrive(job_id: str, item) -> bool:
     return False
 
 
+def _reconcile(job_id: str, item):
+    """Settle or restart every file a stale job is still waiting on.
+
+    Re-driving the merge while an index is unsettled is a zombie loop: the
+    re-driven processor skips extraction (its work object exists), stamps
+    updated_at via _mark_extracted — so the job looks fresh again — sees
+    settled < expected, and exits. Repeat every sweep until the work objects
+    expire. So before any merge re-drive, each unsettled index is resolved by
+    looking at its upload object:
+
+      * missing  — the upload never completed (presigned PUTs expire in 15
+        minutes, and this job is already past its grace period). Fail the FILE,
+        which counts it settled, so the merge stops waiting on it.
+      * present  — the bytes arrived but the extraction never finished (a lost
+        delivery, or a kill between writing work/ and marking extracted).
+        Re-invoke the processor for THAT file, through the same capped path.
+
+    Returns "invoked" when the processor was re-invoked, "capped" when the
+    re-drive cap failed the job, None when only in-place settling happened
+    (the caller should then re-read the item and re-drive the merge).
+    """
+    settled = _settled_indexes(item)
+    missing, restart = [], []
+    for f in item.get("files") or []:
+        idx = str(f.get("idx", 0))
+        if idx in settled:
+            continue
+        key = f.get("key", f"uploads/{job_id}/{idx}.pdf")
+        if _upload_exists(key):
+            restart.append((idx, key))
+        else:
+            missing.append((idx, f.get("filename", "file")))
+    for idx, filename in missing:
+        _fail_file(job_id, idx, filename,
+                   "the upload never completed — this file was never received. "
+                   "Upload it again.")
+        print(f"sweeper: settled {job_id} idx {idx} — upload never completed")
+    if not restart or not PROCESSOR:
+        return None
+    if not _redrive_allowed(job_id, item):
+        return "capped"
+    for idx, key in restart:
+        lam.invoke(
+            FunctionName=PROCESSOR, InvocationType="Event",
+            Payload=json.dumps({"Records": [
+                {"s3": {"object": {"key": key}}}]}).encode())
+        print(f"sweeper: re-invoked processor for {job_id} idx {idx} "
+              "(uploaded but never extracted)")
+    return "invoked"
+
+
 # ---------- on-failure destination ----------
 
 def _handle_invocation_failure(event) -> None:
@@ -194,7 +294,15 @@ def _handle_invocation_failure(event) -> None:
                       if f.get("key") == key), None)
         idx = entry.get("idx", 0) if entry else 0
         if str(idx) in _settled_indexes(item):
-            continue                     # a retry or the sweeper got there first
+            # A retry or the sweeper got there first — with one exception: the
+            # dead invocation may have been the MERGE itself, whose triggering
+            # file is settled by definition. Skipping it silently left the job
+            # on "merging" until the slow scheduled sweep noticed. Re-drive it
+            # now, through the same capped path.
+            if item.get("status") == "merging":
+                _redrive(job_id, item)
+                print(f"sweeper: re-drove dead merge for {job_id}")
+            continue
         filename = (entry or {}).get("filename", "file")
         timed_out = "timed out" in reason.lower()
         friendly = ("this statement could not be processed in one run — try "
@@ -229,7 +337,8 @@ def _sweep() -> dict:
     kwargs = {
         "FilterExpression": Attr("status").is_in(list(LIVE)),
         "ProjectionExpression": ("job_id, #s, created_at, updated_at, expected, "
-                                 "extracted, failed_files, files, merging_at"),
+                                 "extracted, failed_files, files, merging_at, "
+                                 "redrive_count"),
         "ExpressionAttributeNames": {"#s": "status"},
     }
     while True:
@@ -240,16 +349,44 @@ def _sweep() -> dict:
             if not reason:
                 continue
             job_id = item["job_id"]
-            # Prefer publishing what worked over failing the whole upload: the
-            # other statements are extracted and sitting in work/.
-            settled = _settled_indexes(item)
-            if item.get("status") != "awaiting_upload" and settled and \
-                    _redrive(job_id, item):
-                redriven += 1
+            if item.get("status") == "awaiting_upload":
+                _fail_job(job_id, reason)
+                swept += 1
+                print(f"sweeper: failed stuck job {job_id} — {reason}")
                 continue
-            _fail_job(job_id, reason)
-            swept += 1
-            print(f"sweeper: failed stuck job {job_id} — {reason}")
+            # Prefer publishing what worked over failing the whole upload: the
+            # other statements are extracted and sitting in work/. But FIRST
+            # settle or restart anything the job is still waiting on — a merge
+            # re-driven while an index is unsettled just refreshes updated_at
+            # and exits, which looped every sweep on a job whose later files
+            # were never uploaded.
+            files = item.get("files") or []
+            expected = int(item.get("expected", len(files)) or 0)
+            if len(_settled_indexes(item)) < expected:
+                got = _reconcile(job_id, item)
+                if got == "invoked":
+                    redriven += 1
+                    continue
+                if got == "capped":
+                    swept += 1
+                    continue
+                # Missing uploads were failed in place; re-read to see whether
+                # everything is now settled and the merge can be re-driven.
+                item = TABLE.get_item(Key={"job_id": job_id}).get("Item") or item
+                if len(_settled_indexes(item)) < expected:
+                    _fail_job(job_id, reason)
+                    swept += 1
+                    print(f"sweeper: failed stuck job {job_id} — {reason}")
+                    continue
+            got = _redrive(job_id, item)
+            if got == "capped":
+                swept += 1
+            elif got:
+                redriven += 1
+            else:
+                _fail_job(job_id, reason)
+                swept += 1
+                print(f"sweeper: failed stuck job {job_id} — {reason}")
         if "LastEvaluatedKey" not in page:
             break
         kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]

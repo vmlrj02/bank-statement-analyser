@@ -63,11 +63,17 @@ def main():
     if len(pw) < 10:
         sys.exit("password must be at least 10 characters")
     salt = secrets.token_bytes(16).hex()
+    # Setting a password bumps pwd_version, which revokes every existing
+    # session for this user (the API rejects sessions stamped with an older
+    # version). Absent on a legacy row means 1, so a reset must write 2+.
+    existing = t.get_item(Key={"pk": f"USER#{email}"}).get("Item")
+    pwd_version = int((existing or {}).get("pwd_version", 1)) + 1 if existing else 1
     t.put_item(Item={
         "pk": f"USER#{email}", "email": email, "role": a.role, "salt": salt,
         "hash": hashlib.pbkdf2_hmac("sha256", pw.encode(),
                                     bytes.fromhex(salt), PBKDF2_ROUNDS).hex(),
         "rounds": PBKDF2_ROUNDS,
+        "pwd_version": pwd_version,
     })
     print(f"{email} saved with role {a.role}")
 

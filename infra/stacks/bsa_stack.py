@@ -18,6 +18,8 @@ from aws_cdk import (
     aws_apigatewayv2_integrations as apigw_int,
     aws_cloudfront as cf,
     aws_cloudfront_origins as origins,
+    aws_cloudwatch as cw,
+    aws_cloudwatch_actions as cw_actions,
     aws_dynamodb as ddb,
     aws_events as events,
     aws_events_targets as targets,
@@ -25,6 +27,9 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_lambda_destinations as destinations,
     aws_lambda_event_sources as lambda_events,
+    aws_logs as logs,
+    aws_sns as sns,
+    aws_sns_subscriptions as sns_subs,
     aws_sqs as sqs,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
@@ -102,9 +107,18 @@ class BsaStack(Stack):
         )
 
         # ---------- processor lambda (bsa pipeline + deps, docker-bundled) ----------
+        # Every Lambda gets an explicit log group with a finite retention. The
+        # default (never expire) contradicts the data lifecycle: a traceback
+        # can carry statement text, and the source PDFs themselves are deleted
+        # after 30 days — logs must not outlive the data they describe.
         processor = _lambda.Function(
             self, "Processor",
             runtime=_lambda.Runtime.PYTHON_3_12,
+            log_group=logs.LogGroup(
+                self, "ProcessorLogs",
+                retention=logs.RetentionDays.THREE_MONTHS,
+                removal_policy=RemovalPolicy.DESTROY,
+            ),
             # ARM matches the wheels the bundling container downloads on
             # Apple-Silicon Macs (and is cheaper); keep these two in sync.
             architecture=_lambda.Architecture.ARM_64,
@@ -187,11 +201,21 @@ class BsaStack(Stack):
         # breaks the cycle — and it is the better design anyway, because a
         # failure notification now survives the sweeper itself failing instead
         # of being dropped.
+        # If the sweeper keeps failing on one message, the message must not be
+        # retried forever and then silently expire — it parks in a DLQ that an
+        # alarm watches (below), so a persistent poison message becomes an
+        # email instead of a lost job.
+        failures_dlq = sqs.Queue(
+            self, "ProcessorFailuresDLQ",
+            retention_period=Duration.days(14),
+        )
         failures = sqs.Queue(
             self, "ProcessorFailures",
             retention_period=Duration.days(4),
             # Comfortably longer than the sweeper's own 2-minute timeout.
             visibility_timeout=Duration.minutes(6),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=5, queue=failures_dlq),
         )
 
         sweeper = _lambda.Function(
@@ -201,6 +225,11 @@ class BsaStack(Stack):
             handler="handler.lambda_handler",
             memory_size=256,
             timeout=Duration.minutes(2),
+            log_group=logs.LogGroup(
+                self, "SweeperLogs",
+                retention=logs.RetentionDays.THREE_MONTHS,
+                removal_policy=RemovalPolicy.DESTROY,
+            ),
             code=_lambda.Code.from_asset(os.path.join(ROOT, "backend", "sweeper")),
             environment={
                 "DATA_BUCKET": data_bucket.bucket_name,
@@ -240,6 +269,86 @@ class BsaStack(Stack):
             description="Fail or re-drive jobs that stopped making progress",
         )
 
+        # ---------- observability: the backstop must not fail silently ----------
+        # The sweeper exists so a job cannot stay "processing" forever — but
+        # nothing watched the sweeper itself, so its own failure was invisible
+        # and every guarantee it provides quietly lapsed. These alarms all land
+        # in one inbox; the address comes from CDK context (cdk.json ops_email,
+        # or -c ops_email=... on the command line).
+        ops_email = (self.node.try_get_context("ops_email")
+                     or "praveen.kartha@highburyconsulting.in")
+        ops_topic = sns.Topic(
+            self, "OpsAlerts",
+            display_name="Bank Statement Analyser ops alerts",
+        )
+        ops_topic.add_subscription(sns_subs.EmailSubscription(ops_email))
+        alert = cw_actions.SnsAction(ops_topic)
+
+        # (a) The most important alarm in the stack: the sweeper is the thing
+        # that makes every other failure recoverable, so ANY error from it is a
+        # page. One bad run means jobs can now get stuck the old way.
+        sweeper_alarm = cw.Alarm(
+            self, "SweeperErrors",
+            metric=sweeper.metric_errors(
+                period=Duration.minutes(15), statistic="Sum"),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            alarm_description="The sweeper (stuck-job backstop) itself errored;"
+                              " stuck jobs are no longer being settled.",
+        )
+        sweeper_alarm.add_alarm_action(alert)
+
+        # (b) Per-file parse failures are caught in code and settled per job,
+        # so Errors on the processor means something structural — OOM, timeout,
+        # a bad deploy. A small threshold keeps a single S3 retry from paging.
+        processor_alarm = cw.Alarm(
+            self, "ProcessorErrors",
+            metric=processor.metric_errors(
+                period=Duration.minutes(15), statistic="Sum"),
+            threshold=3,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            alarm_description="Processor Lambda is erroring at the invocation "
+                              "level (OOM/timeout/bad deploy), not per-file.",
+        )
+        processor_alarm.add_alarm_action(alert)
+
+        # (c) Failure notifications are supposed to be consumed within seconds.
+        # One sitting for an hour means the sweeper is not draining its queue.
+        failures_age_alarm = cw.Alarm(
+            self, "FailureQueueStalled",
+            metric=failures.metric_approximate_age_of_oldest_message(
+                period=Duration.minutes(15), statistic="Maximum"),
+            threshold=3600,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            alarm_description="A processor-failure notification has waited "
+                              "over an hour; the sweeper is not consuming.",
+        )
+        failures_age_alarm.add_alarm_action(alert)
+
+        # (d) A message the sweeper failed on five times is parked, not lost —
+        # but only if a human hears about it.
+        dlq_alarm = cw.Alarm(
+            self, "FailureDlqNotEmpty",
+            metric=failures_dlq.metric_approximate_number_of_messages_visible(
+                period=Duration.minutes(15), statistic="Maximum"),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator
+            .GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            alarm_description="A failure notification exhausted its retries; "
+                              "a job may be stuck until manually re-driven.",
+        )
+        dlq_alarm.add_alarm_action(alert)
+
         # ---------- auth ----------
         # Requirement: no external auth service. Users and sessions live in
         # DynamoDB; the API Lambda verifies a bearer token on every request.
@@ -261,6 +370,11 @@ class BsaStack(Stack):
             handler="handler.lambda_handler",
             memory_size=256,
             timeout=Duration.seconds(15),
+            log_group=logs.LogGroup(
+                self, "ApiLogs",
+                retention=logs.RetentionDays.THREE_MONTHS,
+                removal_policy=RemovalPolicy.DESTROY,
+            ),
             code=_lambda.Code.from_asset(os.path.join(ROOT, "backend", "api")),
             environment={
                 "DATA_BUCKET": data_bucket.bucket_name,
@@ -310,11 +424,57 @@ class BsaStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True,
         )
+        # Security headers on every response. The CSP is derived from what
+        # index.html actually is: a single file whose only scripts are one
+        # inline block, config.js and inline on* handlers (hence
+        # 'unsafe-inline' — removing it bricks every button), one inline
+        # <style> plus style="" attributes, system fonts only, inline SVG
+        # charts. connect-src stays scheme-wide because the app fetches the
+        # account-generated execute-api domain and PUTs to presigned S3 URLs,
+        # neither of which is a stable hostname to pin at synth time.
+        csp = "; ".join([
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data:",
+            "font-src 'self'",
+            "connect-src https:",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+        ])
+        site_headers = cf.ResponseHeadersPolicy(
+            self, "SiteSecurityHeaders",
+            security_headers_behavior=cf.ResponseSecurityHeadersBehavior(
+                strict_transport_security=cf.ResponseHeadersStrictTransportSecurity(
+                    access_control_max_age=Duration.days(365),
+                    include_subdomains=True,
+                    override=True,
+                ),
+                content_type_options=cf.ResponseHeadersContentTypeOptions(
+                    override=True),                       # X-Content-Type-Options: nosniff
+                frame_options=cf.ResponseHeadersFrameOptions(
+                    frame_option=cf.HeadersFrameOption.DENY,
+                    override=True,
+                ),
+                referrer_policy=cf.ResponseHeadersReferrerPolicy(
+                    referrer_policy=cf.HeadersReferrerPolicy
+                    .STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+                    override=True,
+                ),
+                content_security_policy=cf.ResponseHeadersContentSecurityPolicy(
+                    content_security_policy=csp,
+                    override=True,
+                ),
+            ),
+        )
         dist = cf.Distribution(
             self, "Site",
             default_behavior=cf.BehaviorOptions(
                 origin=origins.S3BucketOrigin.with_origin_access_control(site_bucket),
                 viewer_protocol_policy=cf.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                response_headers_policy=site_headers,
             ),
             default_root_object="index.html",
         )
