@@ -28,6 +28,53 @@ from collections import defaultdict
 
 import yaml
 
+# ---------------------------------------------------------------------------
+# Taxonomy metadata, straight from the "Banking extraction data labeling"
+# master. These are properties OF the taxonomy, so they live in code beside
+# the tags; the fuzzy vocabulary that decides which tag a row gets stays in
+# data (category_rules.yaml).
+# ---------------------------------------------------------------------------
+
+INWARD_BOUNCE = "inward bounce penal charges"
+OUTWARD_BOUNCE = "Outward Bounced Xns"
+
+# The master's column "Number of Payments Issued - relevant for inward bounce":
+# debits the account HOLDER initiated, and therefore the only payments that
+# could have come back as an inward return. A bounce count means nothing on its
+# own - three returns against four payments is a failing account, three against
+# nine hundred is noise - so the Summary sheet reports the rate against this
+# denominator, and the master names exactly which categories belong in it.
+PAYMENTS_ISSUED = frozenset({
+    "EMI transaction", "Salary paid", "ECS transaction",
+    "Related party debit", "Regular debit",
+})
+
+# The master's column "Number of Payments Deposited - relevant for outward
+# bounce": credits the holder presented for collection, the denominator for
+# outward cheque returns. Cash deposits, interest, loan disbursals and refunds
+# are marked "No" - nothing was presented, so they cannot bounce.
+PAYMENTS_DEPOSITED = frozenset({
+    "Related party credit", "Regular credit",
+})
+
+# Credits that are NOT business turnover. The SME master is explicit about
+# which inflows must be stripped before a turnover figure is quoted: interest
+# and treasury income are "excluded from business turnover calculations",
+# own/group transfers "must be stripped out to prevent artificial turnover
+# inflation", asset sales and tax refunds are "non-core". Borrowed money and
+# personal salary were never revenue. Cash deposits DO count - they are sales
+# receipts, and their risk is reported separately as cash intensity.
+NON_TURNOVER = frozenset({
+    "Loan amount disbursal", "Salary credited", "Interest received",
+    "Investment return credited", "return / refund", "Related party credit",
+})
+
+
+def is_business_credit(t) -> bool:
+    """True when a transaction counts toward business turnover (GTO)."""
+    return t.amount > 0 and t.category not in NON_TURNOVER
+
+
 from .models import Txn
 from .narration import parse_narration
 

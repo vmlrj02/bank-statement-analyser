@@ -1,11 +1,15 @@
 """The workbook's STRUCTURE is the product — pin it.
 
-publish.write_workbook renders the lending template: "Credit Assessment" must
-be the FIRST sheet (the lender-facing conclusion a credit team reads before the
-working), followed by "Summary" and "EOD Balances", then one sheet per
-destination in the SME taxonomy. Only the sanitiser had a test; a rewrite could
-silently drop a sheet, reorder the lead sheet, or stop writing transaction rows
-and nothing would fail until a customer opened the file.
+publish.write_workbook renders the customer's own file, Output_Template-2.xlsx,
+sheet for sheet: nineteen named tabs in a fixed ORDER with fixed headers. Their
+analysts read it tab by tab against their template, so a renamed sheet, a
+reordered one or a shifted column is a defect to them even when every number is
+right ("Xns sheet is missing" was a real bug report). Anything we add beyond
+the template is appended after it, never interleaved.
+
+Only the sanitiser had a test before this; a rewrite could silently drop a
+sheet, transpose the Summary grid, or stop writing rows, and nothing would fail
+until a customer opened the file.
 """
 import os
 import sys
@@ -16,13 +20,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..",
 from openpyxl import load_workbook  # noqa: E402
 
 from bsa.models import JobResult, StatementMeta, Txn, ValidationReport  # noqa: E402
-from bsa.publish import SHEET_ORDER, write_workbook  # noqa: E402
+from bsa.publish import (GROUPED_HEADERS, SUMMARY_ROWS, TEMPLATE_SHEETS,  # noqa: E402
+                         XN_HEADERS, write_workbook)
 
 
-def _txn(desc, amount, balance, category, date):
+def _txn(desc, amount, balance, category, date, party="ACME TRADERS"):
     return Txn(date=date, cheque_no="", description=desc,
                amount=amount, balance=balance, mode="neft",
-               counterparty="ACME TRADERS", category=category,
+               counterparty=party, category=category,
                account_no="XX1234", bank="HDFC Bank", source_file="s.pdf")
 
 
@@ -36,10 +41,15 @@ def _result():
              "EMI transaction", "2026-01-06"),
         _txn("NEFT TO ACME TRADERS", -100.0, 1100.0,
              "Regular debit", "2026-01-07"),
+        # A credit that is NOT business turnover, and an inward bounce charge,
+        # so the Summary's rate rows have something to divide.
+        _txn("INT CR", 25.0, 1125.0, "Interest received", "2026-01-15"),
+        _txn("ECS RETURN CHRG", -50.0, 1075.0,
+             "inward bounce penal charges", "2026-01-25"),
     ]
     return JobResult(meta=meta, txns=txns,
                      validation=ValidationReport(status="passed",
-                                                 checked_rows=3, issues=[]))
+                                                 checked_rows=5, issues=[]))
 
 
 def _load(tmp_path):
@@ -48,50 +58,120 @@ def _load(tmp_path):
     return load_workbook(out)
 
 
-def test_credit_assessment_leads_then_summary_and_eod(tmp_path):
+# --- the template contract --------------------------------------------------
+
+def test_the_first_nineteen_sheets_are_the_template_in_order(tmp_path):
     wb = _load(tmp_path)
-    # The lead sheet is the whole point of the workbook: the credit conclusion
-    # first, the categorised working after it.
-    assert wb.sheetnames[0] == "Credit Assessment"
-    assert wb.sheetnames[1] == "Summary"
-    assert wb.sheetnames[2] == "EOD Balances"
+    assert wb.sheetnames[:len(TEMPLATE_SHEETS)] == TEMPLATE_SHEETS
 
 
-def test_every_taxonomy_destination_sheet_exists(tmp_path):
+def test_our_extra_sheets_come_after_the_template_never_inside_it(tmp_path):
     wb = _load(tmp_path)
-    for name in SHEET_ORDER:
-        assert name in wb.sheetnames, f"taxonomy sheet {name!r} missing"
+    extra = wb.sheetnames[len(TEMPLATE_SHEETS):]
+    assert "Credit Assessment" in extra
+    # The lead sheet moved deliberately: the customer's Summary is tab 1.
+    assert wb.sheetnames[0] == "Summary"
 
 
-def test_transactions_land_on_the_all_transactions_sheet(tmp_path):
+def test_transaction_sheets_use_the_templates_seven_columns(tmp_path):
     wb = _load(tmp_path)
-    ws = wb["Xns"]
-    # header + one row per input transaction
-    assert ws.max_row == 1 + 3
-    # Description is column 6 of HEADERS; row 2 is the first data row.
-    assert ws.cell(row=2, column=6).value == "CASH DEP BRANCH"
+    for name in ("Xns", "Cash Deposit Xns", "EMI Xns", "SundayXns"):
+        got = [c.value for c in wb[name][1]]
+        assert got == XN_HEADERS, f"{name} header drifted: {got}"
+    # The two grouped sheets carry the party group first and nothing else new.
+    assert [c.value for c in wb["Regular Debits"][1]] == GROUPED_HEADERS
 
 
 def test_rows_route_to_their_category_sheets(tmp_path):
     wb = _load(tmp_path)
-    assert wb["Cash Deposit Xns"].max_row == 2      # header + the deposit
-    assert wb["EMI Xns"].max_row == 2               # header + the EMI
-    emi = wb["EMI Xns"]
-    assert emi.cell(row=2, column=6).value == "ACH D- BAJAJ FINANCE EMI"
-    # Regular Debits is a GROUPED sheet: a leading party-group column shifts
-    # everything right by one, so Description sits in column 7.
+    assert wb["Cash Deposit Xns"].max_row == 2       # header + the deposit
+    assert wb["EMI Xns"].max_row == 2                # header + the EMI
+    # Description is column 4 of the template's seven.
+    assert wb["EMI Xns"].cell(row=2, column=4).value == "ACH D- BAJAJ FINANCE EMI"
     rd = wb["Regular Debits"]
-    assert rd.max_row == 2
-    assert rd.cell(row=1, column=1).value == "Group"
-    assert rd.cell(row=2, column=1).value == "ACME TRADERS"
-    assert rd.cell(row=2, column=7).value == "NEFT TO ACME TRADERS"
+    assert rd.cell(row=2, column=1).value == "ACME TRADERS"   # Group
+    assert rd.cell(row=2, column=5).value == "NEFT TO ACME TRADERS"
+    # A tag the master gives no destination still reaches a sheet of its own.
+    assert wb["Other Xns"].max_row == 2
 
 
-def test_eod_balances_carry_forward_per_day(tmp_path):
+def test_every_transaction_appears_on_the_all_transactions_sheet(tmp_path):
+    wb = _load(tmp_path)
+    ws = wb["Xns"]
+    assert ws.max_row == 1 + 5
+    assert ws.cell(row=2, column=4).value == "CASH DEP BRANCH"
+
+
+def test_serial_numbers_restart_on_every_sheet(tmp_path):
+    wb = _load(tmp_path)
+    # The EMI is the second transaction overall but the first on its own sheet.
+    assert wb["EMI Xns"].cell(row=2, column=1).value == 1
+    assert wb["Xns"].cell(row=3, column=1).value == 2
+
+
+# --- the two grids ----------------------------------------------------------
+
+def test_summary_is_the_templates_identity_block_and_month_grid(tmp_path):
+    wb = _load(tmp_path)
+    ws = wb["Summary"]
+    assert ws["A1"].value == "Summary Info"
+    assert ws["A2"].value == "Account Holder" and ws["B2"].value == "M/S STEEL"
+    assert ws["A5"].value == "Account Number" and ws["B5"].value == "XX1234"
+    assert ws["A9"].value == "Monthwise Details"
+    # Months run ACROSS as columns, with a Total/Avg at the end.
+    assert ws["A10"].value == "Item"
+    assert ws["B10"].value == "Jan-2026"
+    assert ws.cell(row=10, column=3).value == "Total/Avg"
+    # Every row of the template's block is present, in the template's order.
+    got = [ws.cell(row=11 + i, column=1).value for i in range(len(SUMMARY_ROWS))]
+    assert got == SUMMARY_ROWS
+
+
+def test_summary_bounce_rate_divides_by_the_masters_denominator(tmp_path):
+    wb = _load(tmp_path)
+    ws = wb["Summary"]
+    rows = {ws.cell(row=11 + i, column=1).value: 11 + i
+            for i in range(len(SUMMARY_ROWS))}
+    # One inward bounce; payments issued = the EMI + the regular debit (the
+    # master's list), so the rate is 1/2.
+    assert ws.cell(row=rows["No of Inward Bounces"], column=2).value == 1
+    assert ws.cell(row=rows["Number of Payments Issued"], column=2).value == 2
+    assert ws.cell(row=rows["Inward Payment Return (%)"], column=2).value == 50.0
+
+
+def test_eod_balances_is_a_day_by_month_grid(tmp_path):
     wb = _load(tmp_path)
     ws = wb["EOD Balances"]
-    rows = [(r[1].value, r[2].value)
-            for r in ws.iter_rows(min_row=2) if r[1].value]
-    # One row per calendar day of the account's range, last balance of the day.
-    assert ("2026-01-05", 1400.0) in rows
-    assert ("2026-01-07", 1100.0) in rows
+    assert ws["A1"].value == "Day/Month"
+    assert ws["B1"].value == "Jan-2026"
+    # Row 2 is day 1 ... row 32 is day 31, so day 5 is row 6.
+    assert ws.cell(row=6, column=1).value == 5
+    assert ws.cell(row=6, column=2).value == 1400.0
+    # The balance carries forward into a day with no transaction: nothing moves
+    # on the 8th, so it still shows the 7th's closing 1100.
+    assert ws.cell(row=9, column=1).value == 8
+    assert ws.cell(row=9, column=2).value == 1100.0
+    assert ws.max_row == 32
+
+
+def test_avg_balances_carries_the_templates_columns(tmp_path):
+    wb = _load(tmp_path)
+    got = [c.value for c in wb["Avg Balances"][1]]
+    assert got[:6] == ["Month", "1st", "10th", "15th", "25th",
+                       "Average Balance of 1st, 10th , 15th & 25th"]
+    assert got[6:9] == ["Inflow", "Outflow", "Net Flow"]
+    assert wb["Avg Balances"].cell(row=2, column=1).value == "Jan-2026"
+
+
+def test_top_10_party_sheets_follow_the_templates_shape(tmp_path):
+    wb = _load(tmp_path)
+    ws = wb["Top 10 Party Credits"]
+    # Column A is empty on this sheet in the template; the title sits in B.
+    assert ws["A1"].value is None
+    assert ws["B1"].value == "Monthwise Top 10 Party Credits"
+    assert ws["B2"].value == "Jan-2026"
+    assert [ws["B3"].value, ws["C3"].value] == ["Party", "Amount"]
+    assert ws["B4"].value == "ACME TRADERS"
+    annual = wb["Top 10 Credits (Annual)"]
+    assert annual["A1"].value == "Top 10 Funds Received(Party Wise)"
+    assert [annual["A2"].value, annual["B2"].value] == ["Description", "Amount"]

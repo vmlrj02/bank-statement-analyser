@@ -46,10 +46,12 @@ Stack `BsaStack` in ap-south-1, account 681832767155.
   / closing balance, cash intensity, bounce/return count, penal charges, EMI &
   interest outflow and headroom, related-party share and counterparty
   concentration, plus plain-language "reads" that fire only when a number
-  warrants. Deterministic, traceable, no scoring model. Surfaced as the lead
-  workbook sheet ("Credit Assessment"), in the API account summary, and on the
-  account card. This is what a credit team reads first and what the demo leads
-  with; the categorised transaction sheets are the "show the working".
+  warrants. Deterministic, traceable, no scoring model. Surfaced in the
+  workbook's "Credit Assessment" sheet (which sits AFTER the customer's
+  nineteen template tabs — see "Workbook = the customer's template"), in the
+  API account summary, and on the account card. This is what a credit team
+  reads first and what the demo leads with; the categorised transaction sheets
+  are the "show the working".
 - frontend/index.html — no-build SPA served via CloudFront.
 - infra/ — CDK (Python). Deploy: `cd infra && source .venv/bin/activate && cdk deploy`.
 
@@ -166,6 +168,33 @@ their own uploads and never the AI block.
     updated_at. The sweeper measures staleness from that, never from
     created_at: a twenty-file job legitimately runs for a long time after it
     was created.
+
+## Workbook = the customer's template, sheet for sheet
+
+backend/processor/bsa/publish.py renders Output_Template-2.xlsx exactly: the
+NINETEEN sheet names, their ORDER and their headers are the customer's, copied
+verbatim down to the trailing space in "Sl. No. ". Their analysts read the file
+tab by tab against their own template, so a renamed sheet, a reordered one or a
+shifted column is a defect to them even when every number is right ("Xns sheet
+is missing" was a real bug report). TEMPLATE_SHEETS / XN_HEADERS /
+GROUPED_HEADERS in publish.py are that contract, and tests/
+test_publish_workbook.py pins it.
+
+Anything of ours beyond the template — Credit Assessment, Category Totals,
+Other Xns, the largest-single-transaction sheets — is APPENDED AFTER the
+nineteen, never interleaved, so a template-driven reader finds every sheet
+where their file says it is. Note the consequence: Credit Assessment is no
+longer sheet 1. Summary is.
+
+Two sheets are grids, not lists, because the template is: Summary carries an
+identity block then a month-per-COLUMN block (most recent month first, a
+Total/Avg column last), and EOD Balances is day-of-month down by month across.
+
+The taxonomy metadata that the Summary needs lives in categorize.py, from the
+same master: PAYMENTS_ISSUED and PAYMENTS_DEPOSITED are the DENOMINATORS for
+the two bounce-rate rows (a bounce count alone says nothing — three returns
+against four payments is a failing account, three against nine hundred is
+noise), and NON_TURNOVER is the set of credits that are not business turnover.
 
 ## Data residency — the gate that was blocking real customers
 

@@ -2,8 +2,9 @@
 
 - transactions.csv : flat file (Sl. No., Date, Cheque No., Description,
   Amount in accounting format, Category, Category Detail, Party, Balance)
-- analysis.xlsx    : multi-sheet workbook per the lending template —
-  Summary, EOD Balances, then one sheet per destination in the taxonomy
+- analysis.xlsx    : the customer's own Output_Template workbook, sheet for
+  sheet — nineteen tabs in the template's exact order and headers, with our
+  own analysis (Credit Assessment, category totals) appended after them
 - statement.json   : full internal records + validation report
 """
 from __future__ import annotations
@@ -66,7 +67,12 @@ def party_key(name: str) -> str:
     to "MARSCONSTRUC"."""
     return re.sub(r"[^A-Za-z0-9]", "", name or "").upper()[:12]
 
-# taxonomy tag -> destination sheet (from Banking_pdf_extraction.xlsx)
+# taxonomy tag -> destination sheet (from the "Banking extraction data
+# labeling" master, column "Destination sheet in template"). A tag the master
+# leaves blank has no sheet of its own: interest, investment returns and
+# refunds are reported in "Xns" with their Category, exactly as the master
+# specifies, and are additionally collected in the non-template "Other Xns"
+# sheet so nothing is only findable by scrolling 8,000 rows.
 DESTINATION_SHEETS = {
     "EMI transaction": "EMI Xns",
     "ECS transaction": "ECS Xns",
@@ -89,13 +95,60 @@ DESTINATION_SHEETS = {
 }
 # The "Group" sheets carry a leading party-group column; the others do not.
 GROUPED_SHEETS = {"Regular Credits", "Regular Debits"}
-SHEET_ORDER = ["EMI Xns", "ECS Xns",
-               "Cash Deposit Xns", "Cash Withdrawal Xns", "Salary Paid Xns",
-               "Loan Disbursed Xns", "Bounced-Penal Xns", "Outward Bounced Xns",
-               "Regular Credits", "Regular Debits", "Other Xns"]
 
-# Account is a column because one report may merge several banks/accounts;
-# without it the Balance column is unreadable across a multi-account job.
+# ---------------------------------------------------------------------------
+# THE TEMPLATE CONTRACT — Output_Template-2.xlsx, sheet for sheet.
+#
+# This workbook is read by the customer's own analysts, who go down their
+# template tab by tab; a renamed sheet, a reordered one or a moved column is a
+# defect to them even when the numbers are right ("Xns sheet is missing" was a
+# real bug report). So the nineteen names, their ORDER and their headers are
+# copied from the template verbatim, down to the trailing space in "Sl. No. ".
+# Anything we add beyond the template is appended AFTER these, never
+# interleaved, so a template-driven reader finds every sheet where it expects.
+# ---------------------------------------------------------------------------
+TEMPLATE_SHEETS = [
+    "Summary", "EOD Balances", "ECS Xns", "Cash Deposit Xns",
+    "Cash Withdrawal Xns", "Top 10 Party Credits", "Top 10 Party Debits",
+    "Loan Disbursed Xns", "EMI Xns", "Salary Paid Xns",
+    "Top 10 Credits (Annual)", "Top 10 Debits (Annual)", "Avg Balances",
+    "Regular Credits", "Regular Debits", "Outward Bounced Xns",
+    "Bounced-Penal Xns", "Xns", "SundayXns",
+]
+# Transaction sheets in the template carry seven columns and no more. There is
+# no Account/Bank column because a report is per ACCOUNT (gotcha 11), and the
+# template has no Party column of its own — the party survives as the "Group"
+# column on Regular Credits/Debits, which is where the master put it.
+XN_HEADERS = ["Sl. No. ", "Date", "Cheque No.", "Description", "Amount",
+              "Category", "Balance"]
+GROUPED_HEADERS = ["Group"] + XN_HEADERS
+# The template's transaction sheets, in the order they appear above.
+XN_SHEETS = ["ECS Xns", "Cash Deposit Xns", "Cash Withdrawal Xns",
+             "Loan Disbursed Xns", "EMI Xns", "Salary Paid Xns",
+             "Regular Credits", "Regular Debits", "Outward Bounced Xns",
+             "Bounced-Penal Xns", "Xns", "SundayXns", "Other Xns"]
+
+# The rows of the template's "Monthwise Details" block, in the template's order.
+SUMMARY_ROWS = [
+    "Balance on 5th",
+    "Balance on 15th",
+    "Balance on 25th",
+    "Average Balance (of 5th, 15th and 25th)",
+    "Average Balance (month)",
+    "Credit Instances No. of times (As per Statement)",
+    "Total Credit Amount (As per Statement)",
+    "Debit Instances No. of times (As per Statement)",
+    "Total Debit Amount (As per Statement)",
+    "No of Inward Bounces",
+    "Number of Payments Issued",
+    "Inward Payment Return (%)",
+    "No of Outward Bounces",
+    "Number of Payments Deposited",
+    "Outward Cheque Return (%)",
+]
+
+# The CSV keeps the fuller internal shape — it is ours, not the customer's, and
+# the party/category-detail columns are what the reviewer harness reads.
 HEADERS = ["Sl. No.", "Date", "Account", "Bank", "Cheque No.", "Description",
            "Amount", "Category", "Category Detail", "Party", "Balance"]
 
@@ -161,6 +214,224 @@ def _eod_balances(txns: list[Txn]) -> list[tuple[str, str, float]]:
     return out
 
 
+def _daily_balances(txns: list[Txn]) -> dict[str, float]:
+    """date -> end-of-day balance, carried forward across days with no rows.
+
+    A report is per ACCOUNT, so one series is the whole story here; the
+    multi-account variant stays in _eod_balances for the non-template sheets.
+    """
+    out: dict[str, float] = {}
+    for _acct, d, b in _eod_balances(txns):
+        if b is not None:
+            out[d] = b
+    return out
+
+
+_MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _month_label(mk: str) -> str:
+    """'2025-01' -> 'Jan-2025', the template's month heading."""
+    y, m = mk.split("-")
+    return f"{_MON3[int(m) - 1]}-{y}"
+
+
+def _months_desc(txns: list[Txn]) -> list[str]:
+    """Calendar months present, MOST RECENT FIRST — the template's column order
+    (its header row reads Jan-2025, Dec-2024, ... Feb-2024)."""
+    return sorted({t.date[:7] for t in txns}, reverse=True)
+
+
+def _facility(result: JobResult) -> str:
+    """Savings / Current / Overdraft, as far as the statement actually says.
+
+    An overdraft or cash-credit account prints the balance as money OWED, and
+    the layout has to declare that for reconciliation to work at all — so the
+    flag we already carry is the one honest signal available. Anything else is
+    a guess, and a guessed facility on a credit file is worse than a blank.
+    """
+    layout = (getattr(result.meta, "layout", "") or "").lower()
+    if "od" in layout.split("_") or "overdraft" in layout or "cash_credit" in layout:
+        return "Overdraft / Cash Credit"
+    if "saving" in layout:
+        return "Savings"
+    if "current" in layout:
+        return "Current"
+    return ""
+
+
+def _summary_sheet(ws, result: JobResult, txns: list[Txn], bold) -> None:
+    """The template's Summary: an identity block, then a month-per-COLUMN grid.
+
+    The grid is transposed relative to every other month table we produce
+    (months across, metrics down) because that is how the customer's template
+    is laid out and how their analysts read it.
+    """
+    from .categorize import (INWARD_BOUNCE, OUTWARD_BOUNCE,
+                             PAYMENTS_DEPOSITED, PAYMENTS_ISSUED)
+
+    m = result.meta
+    _append(ws, ["Summary Info"])
+    ws["A1"].font = bold
+    _append(ws, ["Account Holder", m.account_name or ""])
+    # Address is not extracted from the statement. The row exists because the
+    # template has it; filling it with anything we have not read would be a
+    # fabrication on a credit document.
+    _append(ws, ["Address", ""])
+    _append(ws, ["Bank", m.bank or ""])
+    _append(ws, ["Account Number", m.account_no or ""])
+    _append(ws, ["Facility", _facility(result)])
+    _append(ws, [])
+    _append(ws, [])
+    _append(ws, ["Monthwise Details"])
+    ws["A9"].font = bold
+
+    months = _months_desc(txns)
+    _append(ws, ["Item"] + [_month_label(k) for k in months] + ["Total/Avg"])
+    for c in ws[ws.max_row]:
+        c.font = bold
+
+    daily = _daily_balances(txns)
+
+    def bal_on(mk: str, day: int):
+        return daily.get(f"{mk}-{day:02d}")
+
+    def month_bals(mk: str) -> list[float]:
+        return [b for d, b in daily.items() if d[:7] == mk]
+
+    per: dict[str, list] = {}
+    for mk in months:
+        rows = [t for t in txns if t.date[:7] == mk]
+        cr = [t for t in rows if t.amount > 0]
+        dr = [t for t in rows if t.amount < 0]
+        anchors = [bal_on(mk, d) for d in (5, 15, 25)]
+        present = [b for b in anchors if b is not None]
+        mb = month_bals(mk)
+        per[mk] = [
+            anchors[0], anchors[1], anchors[2],
+            round(sum(present) / len(present), 2) if present else None,
+            round(sum(mb) / len(mb), 2) if mb else None,
+            len(cr), round(sum(t.amount for t in cr), 2),
+            len(dr), round(sum(-t.amount for t in dr), 2),
+            sum(1 for t in rows if t.category == INWARD_BOUNCE),
+            sum(1 for t in rows if t.category in PAYMENTS_ISSUED),
+            None,                                    # inward return %, below
+            sum(1 for t in rows if t.category == OUTWARD_BOUNCE),
+            sum(1 for t in rows if t.category in PAYMENTS_DEPOSITED),
+            None,                                    # outward return %, below
+        ]
+        iss, dep = per[mk][10], per[mk][13]
+        per[mk][11] = round(100 * per[mk][9] / iss, 2) if iss else 0
+        per[mk][14] = round(100 * per[mk][12] / dep, 2) if dep else 0
+
+    # The last column is an average for the balance rows and a total for the
+    # count/amount rows; a rate is recomputed from the totals, never averaged
+    # from the monthly rates (that would weight a quiet month like a busy one).
+    AVG_ROWS = {0, 1, 2, 3, 4}
+    RATE_ROWS = {11: (9, 10), 14: (12, 13)}
+    for i, label in enumerate(SUMMARY_ROWS):
+        vals = [per[mk][i] for mk in months]
+        if i in RATE_ROWS:
+            num_i, den_i = RATE_ROWS[i]
+            num = sum(per[mk][num_i] for mk in months)
+            den = sum(per[mk][den_i] for mk in months)
+            total = round(100 * num / den, 2) if den else 0
+        elif i in AVG_ROWS:
+            got = [v for v in vals if v is not None]
+            total = round(sum(got) / len(got), 2) if got else ""
+        else:
+            total = round(sum(v for v in vals if v is not None), 2)
+        _append(ws, [label] + [("" if v is None else v) for v in vals] + [total])
+        ws[ws.max_row][0].font = bold
+
+
+def _eod_sheet(ws, txns: list[Txn], bold) -> None:
+    """Day-of-month down, month across — the template's EOD Balances grid."""
+    months = _months_desc(txns)
+    daily = _daily_balances(txns)
+    _append(ws, ["Day/Month"] + [_month_label(k) for k in months])
+    for c in ws[1]:
+        c.font = bold
+    for day in range(1, 32):
+        _append(ws, [day] + [daily.get(f"{mk}-{day:02d}", "") for mk in months])
+
+
+def _avg_balances_sheet(ws, txns: list[Txn], bold) -> None:
+    """The template's Avg Balances: anchor-day balances plus monthly flow."""
+    from .categorize import INWARD_BOUNCE, OUTWARD_BOUNCE
+
+    daily = _daily_balances(txns)
+    _append(ws, ["Month", "1st", "10th", "15th", "25th",
+                 "Average Balance of 1st, 10th , 15th & 25th",
+                 "Inflow", "Outflow", "Net Flow", "Inward cheque returns",
+                 "Outward cheque returns", "No of credit", "No of debit"])
+    for c in ws[1]:
+        c.font = bold
+    for mk in _months_desc(txns):
+        rows = [t for t in txns if t.date[:7] == mk]
+        anchors = [daily.get(f"{mk}-{d:02d}") for d in (1, 10, 15, 25)]
+        got = [b for b in anchors if b is not None]
+        inflow = round(sum(t.amount for t in rows if t.amount > 0), 2)
+        outflow = round(sum(-t.amount for t in rows if t.amount < 0), 2)
+        _append(ws, [
+            _month_label(mk),
+            *[("" if b is None else b) for b in anchors],
+            round(sum(got) / len(got), 2) if got else "",
+            inflow, outflow, round(inflow - outflow, 2),
+            sum(1 for t in rows if t.category == INWARD_BOUNCE),
+            sum(1 for t in rows if t.category == OUTWARD_BOUNCE),
+            sum(1 for t in rows if t.amount > 0),
+            sum(1 for t in rows if t.amount < 0),
+        ])
+
+
+def _party_month_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
+    """Monthwise top-10 parties, one block per month, starting in column B —
+    the template leaves column A empty on these two sheets."""
+    _append(ws, ["", title])
+    ws["B1"].font = bold
+    per_month: dict[str, dict[str, float]] = {}
+    for t in txns:
+        if (t.amount > 0) != want_credit or not t.counterparty:
+            continue
+        label = group_label.get(party_key(t.counterparty), t.counterparty)
+        mk = t.date[:7]
+        per_month.setdefault(mk, defaultdict(float))[label] += abs(t.amount)
+    for mk in sorted(per_month, reverse=True):
+        _append(ws, ["", _month_label(mk)])
+        ws[ws.max_row][1].font = bold
+        _append(ws, ["", "Party", "Amount"])
+        for c in ws[ws.max_row]:
+            c.font = bold
+        ranked = sorted(per_month[mk].items(), key=lambda kv: -kv[1])[:10]
+        for party, amt in ranked:
+            _append(ws, ["", party, round(amt, 2)])
+        _append(ws, [])
+
+
+def _party_annual_sheet(ws, txns, want_credit, group_label, title, bold) -> None:
+    """Top 10 parties over the whole statement set — the template's annual view."""
+    _append(ws, [title])
+    ws["A1"].font = bold
+    _append(ws, ["Description", "Amount"])
+    for c in ws[2]:
+        c.font = bold
+    by_party: dict[str, float] = defaultdict(float)
+    for t in txns:
+        if (t.amount > 0) == want_credit and t.counterparty:
+            by_party[group_label.get(party_key(t.counterparty),
+                                     t.counterparty)] += abs(t.amount)
+    for party in sorted(by_party, key=lambda p: -by_party[p])[:10]:
+        _append(ws, [party, round(by_party[party], 2)])
+
+
+def _xn_row(i: int, t: Txn) -> list:
+    """One transaction in the template's seven columns."""
+    return [i, _fmt_date(t.date), t.cheque_no, t.description,
+            _fmt_amount(t.amount), t.category, f"{t.balance:,.2f}"]
+
+
 def write_workbook(result: JobResult, path: str) -> None:
     # Belt-and-suspenders: normalize already scrubs control bytes at the source,
     # but a single illegal character in ANY cell makes openpyxl reject the whole
@@ -181,188 +452,142 @@ def write_workbook(result: JobResult, path: str) -> None:
     txns = result.txns
     integ = account_integrity([result.meta], result.validation.status)
 
-    # --- Credit Assessment (the lender-facing lead sheet) ---
+    # Create every template sheet up front, in the template's order, so the tab
+    # bar matches the customer's file even when a sheet ends up empty.
+    sheets = {name: wb.create_sheet(name) for name in TEMPLATE_SHEETS}
+
+    # The fullest party name seen wins for a fuzzy group, so "MARSCONSTRUCTI"
+    # and "MARSCONSTRUCTION" collapse to one party everywhere in the workbook.
+    group_label: dict[str, str] = {}
+    for t in txns:
+        k = party_key(t.counterparty)
+        if k and len(t.counterparty or "") > len(group_label.get(k, "")):
+            group_label[k] = t.counterparty
+
+    _summary_sheet(sheets["Summary"], result, txns, bold)
+    _eod_sheet(sheets["EOD Balances"], txns, bold)
+    _avg_balances_sheet(sheets["Avg Balances"], txns, bold)
+    _party_month_sheet(sheets["Top 10 Party Credits"], txns, True, group_label,
+                       "Monthwise Top 10 Party Credits", bold)
+    _party_month_sheet(sheets["Top 10 Party Debits"], txns, False, group_label,
+                       "Monthwise Top 10 Party Debits", bold)
+    _party_annual_sheet(sheets["Top 10 Credits (Annual)"], txns, True,
+                        group_label, "Top 10 Funds Received(Party Wise)", bold)
+    _party_annual_sheet(sheets["Top 10 Debits (Annual)"], txns, False,
+                        group_label, "Top 10 Funds Remittance(Party Wise)", bold)
+
+    # --- transaction sheets -------------------------------------------------
+    # "Other Xns" is ours, not the template's, so it is created after the
+    # nineteen and holds the tags the master gives no destination sheet
+    # (interest, investment returns, refunds) rather than leaving them
+    # findable only by scrolling Xns.
+    sheets["Other Xns"] = wb.create_sheet("Other Xns")
+    for name in XN_SHEETS:
+        ws = sheets[name]
+        _append(ws, GROUPED_HEADERS if name in GROUPED_SHEETS else XN_HEADERS)
+        for c in ws[1]:
+            c.font = bold
+    # Sl. No. restarts on every sheet: on a template sheet it numbers that
+    # sheet's rows, which is what a reader counting cash deposits expects.
+    seq: dict[str, int] = defaultdict(int)
+
+    def put(name: str, t: Txn) -> None:
+        seq[name] += 1
+        row = _xn_row(seq[name], t)
+        if name in GROUPED_SHEETS:
+            row = [group_label.get(party_key(t.counterparty),
+                                   t.counterparty or "unknown party")] + row
+        _append(sheets[name], row)
+
+    for t in txns:
+        put(DESTINATION_SHEETS.get(t.category, "Other Xns"), t)
+        put("Xns", t)
+        if date.fromisoformat(t.date).weekday() == 6:
+            put("SundayXns", t)
+
+    # --- sheets beyond the template, appended after it ----------------------
+    # Credit Assessment is the lender-facing conclusion and the thing this
+    # product is actually for; it sits after the template so the customer's
+    # nineteen tabs are exactly where their file says they are.
     cs = credit_summary(txns, integ, result.validation.status)
     ws = wb.create_sheet("Credit Assessment")
     _append(ws, ["Credit Assessment"])
     ws["A1"].font = big
     _append(ws, [result.meta.account_name or "", result.meta.bank or "",
-               result.meta.account_no or ""])
+                 result.meta.account_no or ""])
     _append(ws, ["Balance reconciliation", result.validation.status,
-               "Integrity", integ["assessment"]])
+                 "Integrity", integ["assessment"]])
     from .completeness import check_completeness
     nd = sum(1 for t in txns if t.amount < 0)
     nc = sum(1 for t in txns if t.amount > 0)
     sd = sum(-t.amount for t in txns if t.amount < 0)
     sc = sum(t.amount for t in txns if t.amount > 0)
     comp = check_completeness(len(txns), nd, nc,
-                              getattr(result.meta, "declared_totals", None) or {}, sd, sc)
+                              getattr(result.meta, "declared_totals", None) or {},
+                              sd, sc)
     if comp.get("checked"):
         _append(ws, ["Completeness",
-                   "complete" if comp["complete"] else "INCOMPLETE",
-                   "; ".join(comp.get("notes", [])) or
-                   f"{len(txns)} of {comp['declared']} declared"])
+                     "complete" if comp["complete"] else "INCOMPLETE",
+                     "; ".join(comp.get("notes", [])) or
+                     f"{len(txns)} of {comp['declared']} declared"])
+    _append(ws, [])
+    _append(ws, ["Statement period", result.meta.period_from or "",
+                 "to", result.meta.period_to or ""])
     _append(ws, [])
     _append(ws, ["Metric", "Value"])
     for c in ws[ws.max_row]:
         c.font = bold
-    m = cs["metrics"]
+    metrics = cs["metrics"]
     for key, label, kind in _CS_LABELS:
-        v = m.get(key)
+        v = metrics.get(key)
         if kind == "pct":
             v = f"{v}%"
         elif kind == "money" and isinstance(v, (int, float)):
             v = _fmt_amount(v)
         _append(ws, [label, v])
+    # Business credits: the turnover a lender may underwrite, with every
+    # non-operating inflow stripped out per the SME master.
+    from .categorize import NON_TURNOVER
+    biz = sum(t.amount for t in txns if t.amount > 0 and t.category not in NON_TURNOVER)
+    months_n = max(1, len({t.date[:7] for t in txns}))
+    _append(ws, ["Business credits (turnover, excl. non-operating)",
+                 _fmt_amount(biz)])
+    _append(ws, ["Business credits per month", _fmt_amount(biz / months_n)])
+    _append(ws, ["Business credits as % of all credits",
+                 f"{round(100 * biz / sc, 1) if sc else 0}%"])
     _append(ws, [])
     _append(ws, ["Underwriting reads"])
     ws[ws.max_row][0].font = bold
     for r in cs["reads"]:
         _append(ws, ["", r])
 
-    # --- Summary ---
-    ws = wb.create_sheet("Summary")
+    # Category totals and the per-account roll-up that the template's Summary
+    # has no room for.
+    ws = wb.create_sheet("Category Totals")
     agg: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
-    monthly: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
     for t in txns:
         agg[t.category][0] += 1
         agg[t.category][1] += t.amount
-        mk = t.date[:7]
-        if t.amount > 0:
-            monthly[mk][0] += t.amount
-        else:
-            monthly[mk][1] += -t.amount
-    # One row per account in the job, so a multi-bank merge is legible.
-    accounts: dict[str, list] = {}
-    for t in txns:
-        k = f"{t.bank}|{t.account_no}"
-        a = accounts.setdefault(k, [t.bank, t.account_no, t.date, t.date, 0])
-        a[2] = min(a[2], t.date)
-        a[3] = max(a[3], t.date)
-        a[4] += 1
-    _append(ws, ["Bank", "Account", "From", "To", "Transactions"])
-    for c in ws[1]:
-        c.font = bold
-    for a in accounts.values():
-        _append(ws, a)
-    _append(ws, [])
-    _append(ws, ["Validation", result.validation.status,
-               f"{result.validation.checked_rows} rows checked",
-               f"{len(result.validation.issues)} issues"])
-    # --- Integrity (statement authenticity signals) ---
-    integ = account_integrity([result.meta], result.validation.status)
-    _append(ws, [])
-    _append(ws, ["Integrity", integ["assessment"].upper()])
-    ws[ws.max_row][0].font = bold
-    _append(ws, ["PDF producer", result.meta.producer or "—",
-               "Created", result.meta.pdf_created or "—",
-               "Modified", result.meta.pdf_modified or "—"])
-    for flag in integ["flags"]:
-        _append(ws, ["", flag])
-    _append(ws, [])
-    hdr_row = ws.max_row + 1
     _append(ws, ["Category", "Count", "Net Amount"])
-    for c in ws[hdr_row]:
+    for c in ws[1]:
         c.font = bold
     for tag in sorted(agg, key=lambda k: -abs(agg[k][1])):
         _append(ws, [tag, agg[tag][0], round(agg[tag][1], 2)])
     _append(ws, [])
-    _append(ws, ["Month", "Total Credits", "Total Debits", "Net"])
-    for c in ws[ws.max_row]:
-        c.font = bold
-    for mk in sorted(monthly):
-        cr, dr = monthly[mk]
-        _append(ws, [mk, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
+    _append(ws, ["Integrity", integ["assessment"].upper()])
+    ws[ws.max_row][0].font = bold
+    _append(ws, ["PDF producer", result.meta.producer or "—",
+                 "Created", result.meta.pdf_created or "—",
+                 "Modified", result.meta.pdf_modified or "—"])
+    for flag in integ["flags"]:
+        _append(ws, ["", flag])
+    _append(ws, [])
+    _append(ws, ["Validation", result.validation.status,
+                 f"{result.validation.checked_rows} rows checked",
+                 f"{len(result.validation.issues)} issues"])
 
-    # --- EOD Balances ---
-    ws = wb.create_sheet("EOD Balances")
-    _append(ws, ["Account", "Date", "EOD Balance"])
-    for c in ws[1]:
-        c.font = bold
-    for acct, d, b in _eod_balances(txns):
-        _append(ws, [acct, d, b])
-
-    # --- category sheets (some carry a leading party Group column) ---
-    sheets = {name: wb.create_sheet(name) for name in SHEET_ORDER}
-    for name, ws2 in sheets.items():
-        _append(ws2, (["Group"] if name in GROUPED_SHEETS else []) + HEADERS)
-        for c in ws2[1]:
-            c.font = bold
-    # Group rows in the grouped sheets by fuzzy party, keeping the fullest
-    # party name seen as the group's label, so truncated variants collapse.
-    group_label: dict[str, str] = {}
-    for t in txns:
-        k = party_key(t.counterparty)
-        if k and len(t.counterparty or "") > len(group_label.get(k, "")):
-            group_label[k] = t.counterparty
-    for i, t in enumerate(txns, start=1):
-        dest = DESTINATION_SHEETS.get(t.category, "Other Xns")
-        row = _row(i, t)
-        if dest in GROUPED_SHEETS:
-            row = [group_label.get(party_key(t.counterparty), t.counterparty
-                                   or "unknown party")] + row
-        _append(sheets[dest], row)
-
-    # --- all transactions, and the Sunday subset ---
-    for name, keep in (("Xns", lambda t: True),
-                       ("SundayXns", lambda t: date.fromisoformat(t.date).weekday() == 6)):
-        ws = wb.create_sheet(name)
-        _append(ws, HEADERS)
-        for c in ws[1]:
-            c.font = bold
-        for i, t in enumerate(txns, start=1):
-            if keep(t):
-                _append(ws, _row(i, t))
-
-    # --- Top 10 parties, by direction, aggregated with the fuzzy key ---
-    for name, want_credit in (("Top 10 Party Credits", True),
-                              ("Top 10 Party Debits", False)):
-        by_party: dict[str, float] = defaultdict(float)
-        for t in txns:
-            if (t.amount > 0) == want_credit and t.counterparty:
-                by_party[group_label.get(party_key(t.counterparty),
-                                         t.counterparty)] += abs(t.amount)
-        ws = wb.create_sheet(name)
-        _append(ws, ["Party", "Total Amount", "Count"])
-        for c in ws[1]:
-            c.font = bold
-        counts: dict[str, int] = defaultdict(int)
-        for t in txns:
-            if (t.amount > 0) == want_credit and t.counterparty:
-                counts[group_label.get(party_key(t.counterparty),
-                                       t.counterparty)] += 1
-        for party in sorted(by_party, key=lambda p: -by_party[p])[:10]:
-            _append(ws, [party, round(by_party[party], 2), counts[party]])
-
-    # --- Top 10 parties PER MONTH, by direction (same fuzzy grouping) ---
-    for name, want_credit in (("Top 10 Credits MoM", True),
-                              ("Top 10 Debits MoM", False)):
-        ws = wb.create_sheet(name)
-        _append(ws, ["Month", "Rank", "Party", "Amount", "Count",
-                   "% of Month " + ("Credits" if want_credit else "Debits")])
-        for c in ws[1]:
-            c.font = bold
-        per_month: dict[str, dict[str, list]] = {}
-        month_total: dict[str, float] = defaultdict(float)
-        for t in txns:
-            if (t.amount > 0) != want_credit:
-                continue
-            mk = t.date[:7]
-            month_total[mk] += abs(t.amount)
-            if not t.counterparty:
-                continue
-            label = group_label.get(party_key(t.counterparty), t.counterparty)
-            rec = per_month.setdefault(mk, {}).setdefault(label, [0.0, 0])
-            rec[0] += abs(t.amount)
-            rec[1] += 1
-        for mk in sorted(per_month):
-            ranked = sorted(per_month[mk].items(), key=lambda kv: -kv[1][0])[:10]
-            for rank, (party, (amt, n)) in enumerate(ranked, start=1):
-                base = month_total[mk]
-                _append(ws, [mk, rank, party, round(amt, 2), n,
-                           round(100 * amt / base, 1) if base else 0.0])
-
-    # --- Top 10 single transactions, by direction ---
+    # Largest SINGLE transactions — a different question from the biggest
+    # parties, and the one that finds a one-off ₹50L movement.
     for name, want_credit in (("Top 10 Credits(Consolidated)", True),
                               ("Top 10 Debits(Consolidated)", False)):
         ws = wb.create_sheet(name)
@@ -373,23 +598,8 @@ def write_workbook(result: JobResult, path: str) -> None:
                         key=lambda t: -abs(t.amount))[:10]
         for t in ranked:
             _append(ws, [_fmt_date(t.date), t.description,
-                       t.counterparty or "unknown party", _fmt_amount(t.amount)])
-
-    # --- Average balances + monthly flow ---
-    ws = wb.create_sheet("Avg Balances")
-    _append(ws, ["Month", "Average Balance", "Inflow", "Outflow", "Net Flow"])
-    for c in ws[1]:
-        c.font = bold
-    eod = _eod_balances(txns)
-    bal_by_month: dict[str, list[float]] = defaultdict(list)
-    for _acct, d, b in eod:
-        if b is not None:
-            bal_by_month[d[:7]].append(b)
-    for mk in sorted(monthly):
-        bals = bal_by_month.get(mk, [])
-        avg = round(sum(bals) / len(bals), 2) if bals else ""
-        cr, dr = monthly[mk]
-        _append(ws, [mk, avg, round(cr, 2), round(dr, 2), round(cr - dr, 2)])
+                         t.counterparty or "unknown party",
+                         _fmt_amount(t.amount)])
 
     wb.save(path)
 
