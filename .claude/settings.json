@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source .venv/bin/activate)",
+      "Bash(cdk deploy:*)",
+      "Bash(cdk diff:*)",
+      "Bash(cdk synth:*)",
+      "Bash(cdk ls:*)"
+    ]
+  }
+}
