@@ -91,6 +91,11 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
 .job .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .job .nm{font-weight:700;font-size:15.5px;margin-right:auto;letter-spacing:-.01em}
 .job .acctline{color:var(--mut);font-size:12.5px;margin-top:3px;font-variant-numeric:tabular-nums}
+/* Coverage sits under the account line: what period is on file and what is
+   missing from it. Never colour alone — "no gaps" / "missing …" are words. */
+.job .coverline{font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .coverline .ok{color:var(--mut);font-weight:600}
+.job .coverline .miss{color:#9a3412;font-weight:700}
 .job .acctline b{color:var(--fg);font-weight:600}
 /* Trust chips beside the account name: balance chain + PDF integrity. */
 .trust{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end;max-width:220px}
@@ -733,6 +738,25 @@ function shortDate(iso){
 // Continuous periods are already collapsed server-side; a gap stays its own range.
 const fmtPeriods = ps => (ps||[]).map(p=>`${shortDate(p[0])} to ${shortDate(p[1])}`).join('; ');
 
+/* What the statements on file actually COVER, said on one line: the first and
+   last date held for this account, how long that is, and what is missing in
+   between. A lender's first question about a statement set is "how many months
+   have I got, and is there a hole in it" — that used to be answerable only by
+   reading the fact line at the foot of the card, so it now sits directly under
+   the account name. A gap is real absence of COVERAGE (no statement spans those
+   days), not a quiet month: a month with no transactions is not missing. */
+function coverageLine(ps){
+  const st = periodStats(ps);
+  if(!st) return '';
+  const months = Math.max(1, Math.round(st.days / 30.44));
+  const span = `${shortDate(st.start)} to ${shortDate(st.end)}`;
+  const dur = `${nfmt(months)} month${months===1?'':'s'} · ${nfmt(st.days)} days`;
+  if(!st.gaps.length) return `${span} · ${dur} · <b class="ok">no gaps</b>`;
+  const shown = st.gaps.slice(0,2).join('; ');
+  const more = st.gaps.length>2 ? ` +${st.gaps.length-2} more` : '';
+  return `${span} · ${dur} · <b class="miss">missing ${esc(shown)}${more}</b>`;
+}
+
 function statusChip(st){
   if(st==='done')      return '<span class="chip done">Done</span>';
   if(st==='reviewed')  return '<span class="chip done">Reviewed</span>';
@@ -874,12 +898,14 @@ function accountCard(e){
   // reconciles and whether the PDF looks like a genuine bank export. Both are
   // the first question a credit team asks, so neither should need a scroll.
   const trust = validationChip(a.validation) + integrityChip(a.integrity);
+  const cover = coverageLine(a.periods);
   return `<div class="job" id="acct-${esc(e.slug)}">
     <div class="top" style="flex-wrap:nowrap;align-items:center">
       <div class="h-av" style="background:${bcolor};width:38px;height:38px;font-size:11px;border-radius:9px">${esc(bcode)}</div>
       <div style="min-width:0;flex:1">
         <div class="nm" style="margin-right:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nm)}</div>
         ${sub?`<div class="acctline" style="margin-top:1px">${sub}</div>`:''}
+        ${cover?`<div class="acctline coverline">${cover}</div>`:''}
       </div>
       ${trust?`<div class="trust">${trust}</div>`:''}
       <button class="go" style="padding:5px 16px;font-size:13px;flex:none"
@@ -1146,9 +1172,22 @@ const DASH_SERIES = [
   ['Cash withdrawals', '#E69F00', false],
 ];
 const CAT_CASH_DEP = /^cash deposit$/i, CAT_CASH_WD = /^cash withdrawal$/i;
-// Business turnover = credits EXCLUDING loan money in and salary credited —
-// inflows that are not trading revenue.
-const CAT_NON_TURNOVER = /^(loan amount disbursal|salary credited)$/i;
+/* BUSINESS CREDITS — the turnover a lender may underwrite. Per the SME
+   category master, a credit counts only if it is operational revenue; every
+   other inflow is stripped out so the number cannot be inflated by money that
+   is not trade:
+     Loan amount disbursal   — borrowed money, not revenue
+     Salary credited         — personal income, not business receipts
+     Interest received       — "excluded from business turnover calculations"
+     Investment return       — treasury income, non-operating
+     return / refund         — a reversal of the account's own payment, and
+                               tax/duty refunds; counting it double-counts
+     Related party credit    — group/sister-concern inflows, the classic
+                               round-tripping inflation the master warns about
+   Cash deposits DO count: they are sales receipts. They carry their own risk
+   read (cash intensity), which is a separate question from turnover. */
+const CAT_NON_TURNOVER =
+  /^(loan amount disbursal|salary credited|interest received|investment return credited|return \/ refund|related party credit)$/i;
 const inrShort = v => {
   const a = Math.abs(v);
   const s = a>=1e7 ? (a/1e7).toFixed(a>=1e8?0:1)+'Cr'
@@ -1326,7 +1365,7 @@ function drawDash(host, st){
   const heroRow = `<div class="tiles">
     ${hero('Credits', totC, 'crn', inr0(totC/nData)+' / mo avg', null, null, 'Credits')}
     ${hero('Debits', totD, 'drn', inr0(totD/nData)+' / mo avg', null, null, 'Debits')}
-    ${hero('Turnover · excl. loan &amp; salary', totT, '', pct(totT,totC)+' of credits · '+inr0(totT/nData)+' / mo', totC?100*totT/totC:null)}
+    ${hero('Turnover (business credits)', totT, '', pct(totT,totC)+' of credits · '+inr0(totT/nData)+' / mo', totC?100*totT/totC:null)}
     ${hero('Cash deposits', totCd, 'crn', pct(totCd,totC)+' of credits · '+inr0(totCd/nData)+' / mo', totC?100*totCd/totC:null, 'g', 'Cash deposits')}
     ${hero('Cash withdrawals', totCw, 'drn', pct(totCw,totD)+' of debits · '+inr0(totCw/nData)+' / mo', totD?100*totCw/totD:null, 'r', 'Cash withdrawals')}
     ${m?hero('Monthly surplus', m.monthly_surplus, (m.monthly_surplus||0)<0?'drn':'crn',
