@@ -115,16 +115,8 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   text-decoration:underline;text-underline-offset:2px}
 .chip.busy{background:var(--bg);color:var(--mut);border:1px dashed var(--line2);
   font-style:italic;text-transform:none;letter-spacing:0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));
-  gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;
-  overflow:hidden;margin-top:13px}
-.stat{background:var(--bg);padding:9px 12px}
-.stat b{display:block;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
-.stat span{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
 .meta{color:var(--mut);font-size:12.5px;margin-top:9px}
 .meta b{color:var(--fg)}
-.cats{display:flex;flex-wrap:wrap;gap:5px;margin-top:11px}
-.cats span{border:1px solid var(--line);color:var(--mut);font-size:11.5px;padding:2px 9px;border-radius:999px}
 .conf{display:flex;align-items:center;gap:9px;margin-top:11px;font-size:12px;color:var(--mut);flex-wrap:wrap}
 .conf .clabel{font-weight:600;color:var(--fg)}
 .conf .cbar{width:120px;height:8px;border:1px solid var(--line2);border-radius:99px;overflow:hidden;display:flex;background:var(--sunk)}
@@ -165,12 +157,6 @@ button{font-family:inherit;font-size:14px;cursor:pointer}
   padding:10px 14px;margin-bottom:10px;font-size:13px}
 .upnote .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .upnote .nm{font-weight:700;margin-right:auto}
-/* Per-upload history rows inside an account card */
-.uprow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px dotted var(--line);
-  font-size:12.5px;flex-wrap:wrap}
-.uprow .d{font-weight:600}
-.uprow .m{color:var(--mut)}
-.uprow .ghost{margin-left:auto;font-size:12px;padding:3px 11px}
 
 /* admin AI panel */
 .ai{margin-top:13px;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
@@ -338,6 +324,8 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <input id="pw" type="password" autocomplete="current-password">
     <button class="go" id="signin">Sign in</button>
     <div class="msg" id="gmsg" hidden></div>
+    <p class="sub" style="margin-top:16px">Forgotten password? Ask your
+      administrator to reset it — there is no self-service reset yet.</p>
   </div>
 </div>
 
@@ -356,7 +344,10 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   </header>
 
   <main>
-    <div id="active"><div class="empty">Nothing yet — upload statements to begin.</div></div>
+    <div id="active"><div class="empty" style="cursor:pointer" onclick="upBtn.click()">
+      Nothing yet — <b>click here to upload statements</b><br>
+      <span style="font-size:12.5px">Bank PDF exports, up to 20 at once — grouped by
+      account, one balance-checked report each.</span></div></div>
   </main>
 
   <aside>
@@ -375,7 +366,9 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <div class="db" style="padding:17px">
     <div class="drop" id="drop">
       <div class="t">Drop PDFs here, or click to choose</div>
-      <div class="s">Up to 20 at once — grouped by account, one report each</div>
+      <div class="s">Bank PDF exports, up to 20 at once — grouped by account, one report each</div>
+      <div class="s" style="margin-top:3px">A bank we don't read yet fails with a plain
+        reason and is queued for support — re-upload that file once it's added.</div>
       <input type="file" id="file" accept="application/pdf" multiple hidden>
     </div>
     <div id="tray"></div>
@@ -383,7 +376,10 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
       <input type="text" id="parties" placeholder="Related parties, comma-separated (optional)">
       <button class="go" id="go">Analyse</button>
       <span class="hint" id="hint"></span>
+      <span class="hint" style="color:var(--faint)">Related parties: directors, partners, group
+        firms — transfers to and from them are flagged separately in the credit assessment.</span>
     </div>
+    <div class="msg" id="upMsg" hidden></div>
   </div>
 </dialog>
 
@@ -401,6 +397,8 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
     <input id="pwOld" type="password" autocomplete="current-password">
     <label for="pwNew">New password</label>
     <input id="pwNew" type="password" autocomplete="new-password">
+    <label for="pwNew2">Confirm new password</label>
+    <input id="pwNew2" type="password" autocomplete="new-password">
     <div class="msg" id="pwMsg" hidden></div>
     <button class="go" id="pwGo" style="width:100%;margin-top:16px">Change password</button>
   </div>
@@ -410,6 +408,21 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <div class="dh"><b id="pvTitle">Preview</b>
     <span style="margin-left:auto"><button class="ghost" onclick="pv.close()">Done</button></span></div>
   <div class="db" id="pvBody"></div>
+</dialog>
+
+<dialog id="fx" style="max-width:540px">
+  <div class="dh"><b id="fxTitle">Correct category</b>
+    <span style="margin-left:auto"><button class="ghost" onclick="fx.close()">Cancel</button></span></div>
+  <div class="db" style="padding:17px">
+    <div class="meta" id="fxDesc" style="margin:0 0 12px;word-break:break-word"></div>
+    <div id="fxCatWrap"><label for="fxCat">Category</label>
+      <select id="fxCat" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;
+        border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--fg)"></select></div>
+    <div id="fxNoteWrap" hidden><label for="fxNote">How should this be handled?</label>
+      <textarea id="fxNote" rows="4" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;
+        border:1px solid var(--line2);border-radius:7px;background:var(--bg);color:var(--fg)"></textarea></div>
+    <button class="go" id="fxGo" style="width:100%;margin-top:14px">Save</button>
+  </div>
 </dialog>
 
 <dialog id="cd">
@@ -478,8 +491,15 @@ $('out').onclick = async () => {
 };
 
 /* ---------- change password ---------- */
-$('chpw').onclick = () => { $('pwMsg').hidden = true; $('pwOld').value=''; $('pwNew').value=''; $('pwd').showModal(); };
+$('chpw').onclick = () => { $('pwMsg').hidden = true; $('pwOld').value=''; $('pwNew').value=''; $('pwNew2').value=''; $('pwd').showModal(); };
 $('pwGo').onclick = async () => {
+  // A typo in the new password locks the user out of a system with no
+  // self-service reset — confirm before sending.
+  if($('pwNew').value !== $('pwNew2').value){
+    $('pwMsg').hidden = false;
+    $('pwMsg').textContent = 'The two new passwords do not match.';
+    return;
+  }
   const b = $('pwGo'); b.disabled = true; $('pwMsg').hidden = true;
   try{
     await api('/auth/password', {method:'POST',
@@ -488,7 +508,7 @@ $('pwGo').onclick = async () => {
                             new_password:$('pwNew').value})});
     $('pwMsg').hidden = false;
     $('pwMsg').textContent = 'Password changed. Other devices stay signed in until their session expires.';
-    $('pwOld').value=''; $('pwNew').value='';
+    $('pwOld').value=''; $('pwNew').value=''; $('pwNew2').value='';
   }catch(e){ $('pwMsg').hidden = false; $('pwMsg').textContent = e.message; }
   finally{ b.disabled = false; }
 };
@@ -562,7 +582,7 @@ async function isEncrypted(file){
   return false;
 }
 const drop = $('drop'), fileIn = $('file');
-$('upBtn').onclick = () => $('up').showModal();
+$('upBtn').onclick = () => { $('upMsg').hidden = true; $('up').showModal(); };
 drop.onclick = () => fileIn.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
@@ -610,8 +630,9 @@ function updateGo(){
     : (staged.length>1 ? 'Grouped by account — one report per account.' : '');
 }
 $('go').onclick = async () => {
-  const b = $('go'); b.disabled = true;
+  const b = $('go'); b.disabled = true; $('upMsg').hidden = true;
   const files = staged.slice();
+  let sent = 0;
   try{
     const body = {files: files.map(s=>({filename:s.name, password:s.pw||undefined}))};
     const parties = $('parties').value.split(',').map(x=>x.trim()).filter(Boolean);
@@ -624,10 +645,20 @@ $('go').onclick = async () => {
       const res = await fetch(uploads[i].upload_url, {method:'PUT',
         headers:{'content-type':'application/pdf'}, body:files[i].file});
       if(!res.ok) throw new Error(`upload failed for ${files[i].name}`);
+      sent++;
     }
     staged=[]; $('parties').value=''; renderTray(); refresh();
     $('up').close();
-  }catch(e){ alert('Upload failed: '+e.message); }
+  }catch(e){
+    // Mid-batch failure is recoverable: what DID upload still processes and
+    // publishes; only the rest needs re-adding. Say so instead of a bare alert.
+    $('upMsg').hidden = false;
+    $('upMsg').textContent = sent
+      ? `${sent} of ${files.length} uploaded, then: ${e.message}. The uploaded `
+        + `files will still be processed — re-add the remaining ones and Analyse again.`
+      : `Upload failed: ${e.message}`;
+    refresh();
+  }
   finally{ b.disabled=false; updateGo(); }
 };
 
@@ -667,10 +698,9 @@ function integrityChip(intg){
 }
 function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
 
-/* Navigation is ACCOUNT-first: one card per account, across every upload.
-   The same account in three uploads is still one card; each upload keeps its
-   own balance-verified report, listed as history inside the card with the
-   NEWEST upload's report as the card's headline numbers. */
+/* Navigation is one card per UPLOAD + ACCOUNT: the same account uploaded
+   twice shows twice, each card carrying its own dated, balance-verified
+   report. Deliberate (user's choice) — do not re-merge across uploads. */
 function jobLabel(j){
   const d = new Date((j.created_at||0)*1000);
   const when = d.toLocaleDateString(undefined,{day:'numeric',month:'short'})
@@ -808,10 +838,10 @@ function accountCard(e){
     ${a.validation==='failed' && (a.issue_sample||[]).length
       ? `<div class="err"><b>Where the balance chain breaks:</b>
         ${esc(a.issue_sample[0].detail||'')}</div>` : ''}
-    ${cats?`<div class="catmix"><div class="ch">Category mix</div>${cats}</div>`:''}
+    ${cats?`<div class="catmix"><div class="ch">Category mix · by transaction count</div>${cats}</div>`:''}
     <div class="acts">
       ${a.validation && a.validation!=='passed'
-        ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} row${(a.issues||0)===1?'':'s'}</button>`
+        ? `<button class="ghost" onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review ${nfmt(a.issues||0)} balance break${(a.issues||0)===1?'':'s'}</button>`
         : ''}
       ${IS_ADMIN?`
       <button class="ghost" onclick="preview('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}','${esc(a.bank||'')}')">Preview</button>
@@ -878,9 +908,9 @@ function uploadNotices(){
             `<div class="meta" style="margin-top:7px">${bankBadge(a.bank)}<b>${esc(a.holder||a.bank||'Account')}</b>
                ${esc(acctNo(a.account_no))} — balance ${esc(String(a.validation).replace(/_/g,' '))}${
                a.unreadable_pages?`, ${nfmt(a.unreadable_pages)} unreadable page${a.unreadable_pages===1?'':'s'}`:''},
-               <b>${nfmt(a.issues||0)}</b> row${(a.issues||0)===1?'':'s'} to check
+               <b>${nfmt(a.issues||0)}</b> balance break${(a.issues||0)===1?'':'s'}
                <button class="ghost" style="font-size:11px;padding:1px 9px;margin-left:5px"
-                 onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review rows</button>
+                 onclick="review('${j.job_id}','${a.slug}','${esc(a.title||a.account_no)}')">Review breaks</button>
                <button class="ghost" style="font-size:11px;padding:1px 9px"
                  onclick="selectAcct('${j.job_id}/${a.slug}')">Open account</button></div>`).join('')
           + `<div class="rv-foot" style="padding-left:0;padding-right:0">
@@ -947,7 +977,10 @@ function render(){
   const sel = accts.find(e=>e.slug===selSlug);
   $('active').innerHTML = notices
     + (sel ? accountCard(sel)
-           : (notices ? '' : '<div class="empty">Nothing yet — upload statements to begin.</div>'));
+           : (notices ? '' : `<div class="empty" style="cursor:pointer" onclick="upBtn.click()">
+      Nothing yet — <b>click here to upload statements</b><br>
+      <span style="font-size:12.5px">Bank PDF exports, up to 20 at once — grouped by
+      account, one balance-checked report each.</span></div>`));
   if(sel) loadDash(sel);
 
   const q = QUERY.trim().toLowerCase();
@@ -1321,8 +1354,10 @@ async function refresh(){
   }catch(e){ console.error(e); }
 }
 async function dl(id, acct, fmt){
-  const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
-  location.href = url;
+  try{
+    const {url} = await api(`/jobs/${id}/download?format=${fmt}&account=${encodeURIComponent(acct)}`);
+    location.href = url;
+  }catch(e){ alert('Could not fetch the download: '+(e.message||'failed')); }
 }
 /* Review. The reconciliation detail the pipeline produced, unedited: which
    row broke the chain, what the statement said, and what the arithmetic
@@ -1334,15 +1369,7 @@ let RVC = null;                              // review context: {id, acct}
    training pipeline, one export. */
 function issueFeedback(el){
   if(!RVC) return;
-  const d = el.dataset.detail || '';
-  const v = (prompt('How should this be handled?\n\n'+d, '')||'').trim();
-  if(!v) return;
-  api(`/jobs/${RVC.id}/corrections`, {method:'POST',
-    headers:{'content-type':'application/json'},
-    body: JSON.stringify({description:(d||'reconciliation issue').slice(0,300),
-                          account:RVC.acct, note:v, source:'reconciliation'})})
-    .then(()=>{ el.textContent='feedback recorded'; el.classList.remove('fixable'); refresh(); })
-    .catch(e=>alert('Could not save the feedback: '+e.message));
+  openFix('feedback', {id:RVC.id, acct:RVC.acct, desc:el.dataset.detail||'', el});
 }
 async function review(id, acct, name){
   RVC = {id, acct};
@@ -1395,6 +1422,60 @@ async function markReviewed(id){
    preview, types the right value, and it is POSTed to the job — training
    data for the golden set, never a rewrite of the report itself. */
 let PV = null;                               // {id, acct, bank, rows}
+/* The canonical taxonomy — corrections must land as one of THESE strings, or
+   the golden set fills with free-text variants the harness cannot score.
+   Display names go through catLabel; the raw tag is what gets recorded. */
+const CATEGORIES = ['Regular credit','Regular debit','EMI transaction',
+  'ECS transaction','cash deposit','cash withdrawal','Loan amount disbursal',
+  'Salary credited','Salary paid','Interest received','Interest payments',
+  'Investment return credited','return / refund','inward bounce penal charges',
+  'Outward Bounced Xns','other penal charges','Related party credit',
+  'Related party debit'];
+let FX = null;                               // correction dialog context
+function openFix(mode, ctx){
+  FX = Object.assign({mode}, ctx);
+  $('fxDesc').textContent = ctx.desc || '';
+  $('fxCatWrap').hidden = mode!=='category';
+  $('fxNoteWrap').hidden = mode!=='feedback';
+  if(mode==='category'){
+    $('fxTitle').textContent = 'Correct category';
+    $('fxCat').innerHTML = CATEGORIES.map(c=>
+      `<option value="${esc(c)}" ${c===ctx.cur?'selected':''}>${esc(catLabel(c))}</option>`).join('');
+  }else{
+    $('fxTitle').textContent = 'Reviewer feedback';
+    $('fxNote').value = '';
+  }
+  $('fx').showModal();
+}
+$('fxGo').onclick = ()=>{
+  if(!FX) return;
+  if(FX.mode==='category'){
+    const r = ((PV||{}).rows||[])[FX.i];
+    if(!r){ $('fx').close(); return; }
+    const v = $('fxCat').value;
+    if(v===r.category){ $('fx').close(); return; }
+    api(`/jobs/${PV.id}/corrections`, {method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({description:r.description, amount:r.amount,
+        bank:PV.bank, account:PV.acct, old_category:r.category||'',
+        old_party:r.detail||'', new_category:v, new_party:'', source:'preview'})})
+      .then(()=>{ const el=$('pvfix'+FX.i);
+        if(el) el.innerHTML=' <span class="rvw">corrected</span>';
+        $('fx').close(); refresh(); })
+      .catch(e=>alert('Could not save the correction: '+e.message));
+  }else{
+    const v = $('fxNote').value.trim();
+    if(!v){ $('fxNote').focus(); return; }
+    api(`/jobs/${FX.id}/corrections`, {method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({description:(FX.desc||'reconciliation issue').slice(0,300),
+        account:FX.acct, note:v, source:'reconciliation'})})
+      .then(()=>{ if(FX.el){ FX.el.textContent='feedback recorded';
+          FX.el.classList.remove('fixable'); }
+        $('fx').close(); refresh(); })
+      .catch(e=>alert('Could not save the feedback: '+e.message));
+  }
+};
 function pvCatCell(r, i){
   const flag = r.confidence==='low' ? ' <span class="rvw">review</span>' : '';
   if(!IS_ADMIN)
@@ -1407,21 +1488,18 @@ function pvCatCell(r, i){
 }
 function fixRow(i, field){
   const r = ((PV||{}).rows||[])[i]; if(!r) return;
-  const body = {description:r.description, amount:r.amount, bank:PV.bank,
-                account:PV.acct, old_category:r.category||'',
-                old_party:r.detail||'', new_category:'', new_party:'',
-                source:'preview'};
   if(field==='category'){
-    const v = (prompt('Corrected category for:\n'+r.description, r.category||'')||'').trim();
-    if(!v || v===r.category) return;
-    body.new_category = v;
-  }else{
-    const v = (prompt('Corrected party for:\n'+r.description, '')||'').trim();
-    if(!v) return;
-    body.new_party = v;
+    // Canonical-taxonomy picker, never free text — see CATEGORIES.
+    openFix('category', {i, desc:r.description, cur:r.category});
+    return;
   }
+  const v = (prompt('Corrected party for:\n'+r.description, '')||'').trim();
+  if(!v) return;
   api(`/jobs/${PV.id}/corrections`, {method:'POST',
-    headers:{'content-type':'application/json'}, body:JSON.stringify(body)})
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({description:r.description, amount:r.amount, bank:PV.bank,
+      account:PV.acct, old_category:r.category||'', old_party:r.detail||'',
+      new_category:'', new_party:v, source:'preview'})})
     .then(()=>{ const el=$('pvfix'+i); if(el) el.innerHTML=' <span class="rvw">corrected</span>'; refresh(); })
     .catch(e=>alert('Could not save the correction: '+e.message));
 }
@@ -1438,8 +1516,11 @@ async function dlCorrections(id){
   }catch(e){ alert('Could not export corrections: '+e.message); }
 }
 async function preview(id, acct, name, bank){
-  const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
-  const data = await (await fetch(url)).json();
+  let data;
+  try{
+    const {url} = await api(`/jobs/${id}/download?format=preview&account=${encodeURIComponent(acct)}`);
+    data = await (await fetch(url)).json();
+  }catch(e){ alert('Could not load the preview: '+(e.message||'failed')); return; }
   PV = {id, acct, bank: bank||'', rows: data.rows};
   $('pvTitle').textContent = `${name} — first ${data.rows.length} of ${data.total} rows`;
   const lowN = data.rows.filter(r=>r.confidence==='low').length;
