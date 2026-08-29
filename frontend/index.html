@@ -566,8 +566,36 @@ const TKEY = 'bsa.token';
 let IS_ADMIN = false, WHO = '', jobs = [];
 let staged = [], seq = 0;
 
-/* ---------- auth: session token from our own API, no external service ---------- */
-function token(){ return localStorage.getItem(TKEY) || null; }
+/* ---------- auth: session token from our own API, no external service ----------
+
+   The token lives in sessionStorage, which is PER TAB, so one browser can hold
+   an admin session and a customer session side by side. It used to live only in
+   localStorage, which every tab of an origin shares: signing in as admin in the
+   second tab overwrote the first tab's token, and refreshing the first turned it
+   into the admin too — two windows, one identity, silently.
+
+   localStorage still holds the most recent token, but only as a convenience for
+   a BRAND-NEW tab: a tab with no session of its own adopts it, so opening the
+   app again does not force a fresh sign-in. Once a tab has adopted or set its
+   own token, nothing another tab does can change it. */
+function token(){
+  let t = null;
+  try{ t = sessionStorage.getItem(TKEY); }catch(e){}
+  if(t) return t;
+  try{
+    t = localStorage.getItem(TKEY);
+    if(t) sessionStorage.setItem(TKEY, t);   // this tab now owns its copy
+  }catch(e){}
+  return t || null;
+}
+function setToken(t){
+  try{ sessionStorage.setItem(TKEY, t); }catch(e){}
+  try{ localStorage.setItem(TKEY, t); }catch(e){}   // seed for future new tabs
+}
+function clearToken(){
+  try{ sessionStorage.removeItem(TKEY); }catch(e){}
+  try{ localStorage.removeItem(TKEY); }catch(e){}
+}
 function showGate(msg){
   $('app').hidden = true; $('gate').hidden = false;
   $('gmsg').hidden = !msg; if(msg) $('gmsg').textContent = msg;
@@ -590,7 +618,7 @@ $('signin').onclick = async () => {
       body: JSON.stringify({email:$('u').value.trim(), password:$('pw').value})});
     const j = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error || 'Sign-in failed');
-    localStorage.setItem(TKEY, j.token);
+    setToken(j.token);
     IS_ADMIN = j.role === 'admin'; WHO = j.email; $('pw').value = '';
     showApp();
   }catch(e){ showGate(e.message); }
@@ -600,9 +628,9 @@ $('pw').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click
 $('u').addEventListener('keydown', e => { if(e.key==='Enter') $('signin').click(); });
 $('out').onclick = async () => {
   // Tell the API first: a token left in the sessions table keeps working for
-  // up to twelve hours, so clearing only localStorage is not signing out.
+  // up to twelve hours, so clearing browser storage is not signing out.
   try{ await api('/auth/logout', {method:'POST'}); }catch(e){}
-  localStorage.removeItem(TKEY); location.reload();
+  clearToken(); location.reload();
 };
 
 /* ---------- change password ---------- */
@@ -677,7 +705,7 @@ async function api(path, opts){
   opts.headers = Object.assign({}, opts.headers, {authorization:'Bearer '+t});
   const r = await fetch(API+path, opts);
   if(r.status === 401){
-    localStorage.removeItem(TKEY); showGate('Session expired — please sign in again.');
+    clearToken(); showGate('Session expired — please sign in again.');
     throw new Error('signed out');
   }
   if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);

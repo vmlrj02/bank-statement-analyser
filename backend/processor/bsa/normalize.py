@@ -92,7 +92,14 @@ def _name_segments(raw: str) -> list[str]:
 # Words that mark a segment as a REMARK / purpose the sender typed, not the
 # recipient — used to tell the two apart when their order is not fixed.
 _REMARK_WORDS = {"PAY", "PAYME", "PAYMENT", "PAYMENTS", "TRANSFER", "TRF", "FUND",
-                 "FUNDS", "TXN", "BILL", "PYMT", "TRF.", "SALARY", "RENT", "GST"}
+                 "FUNDS", "TXN", "BILL", "PYMT", "TRF.", "SALARY", "RENT", "GST",
+                 # UPI request/collect PURPOSE tokens. They sit in the same slot
+                 # a name occupies and are mixed-case like a typed remark, so
+                 # nothing else separates them: "UPI/ReqPay/MrUjjal/…" was read
+                 # as ReqPay and "UPI/CollPay/ChandanaP/…" as CollPay. The party
+                 # is the human next to them, which is the reviewer's point.
+                 "REQPAY", "COLLPAY", "PAYREQ", "COLLECT", "REQUEST", "REQ",
+                 "COLL", "MANDATE", "AUTOPAY", "QRPAY"}
 
 # Banking vocabulary that disqualifies a free-standing narration from being read
 # as a bare party name ("G R SPONGE AND /" is a name; "DEBIT INTEREST
@@ -140,9 +147,18 @@ def _best_name(segs: list[str]) -> str:
 
 def _first_name(segs: list[str]) -> str:
     """First segment that is a plausible party. A counterparty's BANK also
-    rides in these descriptors ("…/RHEA HEALTHCARE PVT LTD/HDFC BANK/…"), so a
-    bank-looking segment is only accepted when nothing better exists."""
+    rides in these descriptors ("…/RHEA HEALTHCARE PVT LTD/HDFC BANK/…"), and a
+    UPI PURPOSE token sits in the same slot too ("UPI/ReqPay/MrUjjal/…"), so
+    neither is accepted while a better segment remains — the party is the human
+    beside them. Both are still returned if the narration holds nothing else,
+    since a weak name beats no name at all."""
     for s in segs:
+        if _BANKISH.search(s):
+            continue
+        if set(s.upper().split()) & _REMARK_WORDS:
+            continue
+        return s
+    for s in segs:                       # nothing clean: bank or purpose will do
         if not _BANKISH.search(s):
             return s
     return segs[0] if segs else ""

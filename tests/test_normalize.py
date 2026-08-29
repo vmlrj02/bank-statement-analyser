@@ -425,3 +425,40 @@ def test_party_sanitiser_kills_reviewer_visible_junk():
     assert _sanitise_party("KKBK/chitrarama/UPI") == "chitrarama"
     assert _sanitise_party("RAMESH KUMAR") == "RAMESH KUMAR"    # real names pass
     assert _sanitise_party("9963059528@ybl") == "9963059528@ybl"  # handles kept
+
+
+def test_upi_purpose_token_never_beats_the_human_name():
+    """Reviewer doc ID4 items 5 and 6: '"MrUjjal" is the party name; not
+    "ReqPay"' and 'Party name wrong; it is "ChandanaP"'.
+
+    UPI request/collect narrations put a PURPOSE token in the very slot a name
+    occupies, and it is mixed-case like a typed remark, so nothing structural
+    separates the two — the first-segment rule simply took it. Those tokens are
+    now remark vocabulary, so the human beside them wins.
+    """
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    def party(d):
+        return extract_counterparty(d, detect_mode(d))
+
+    assert party("UPI/ReqPay/MrUjjal/9876543210/Payment") == "MrUjjal"
+    assert party("UPI/CollPay/ChandanaP/8765432109") == "ChandanaP"
+    # A real name that merely sits after a purpose token is still found, and a
+    # narration carrying ONLY a purpose token keeps it rather than going blank.
+    assert party("UPI/ReqPay/SHREE LAKSHMI STEEL/HDFC0001") == "SHREE LAKSHMI STEEL"
+
+
+def test_transfer_narrations_name_the_party_or_the_account_number():
+    """Reviewer doc id7 items 1 and 2: when a transfer prints the other side's
+    account number, that number is the party, so the same counterparty
+    aggregates across rows where the bank printed only the number. Where the
+    bank printed a name too, the NAME wins."""
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    def party(d):
+        return extract_counterparty(d, detect_mode(d))
+
+    assert party("TRANSFER TO 4698150044305 SUKUMAR") == "SUKUMAR"
+    assert party("TRANSFER FROM 4897650123456 RAJESH TRADERS") == "RAJESH TRADERS"
+    assert party("TRANSFER TO 4698150044305") == "4698150044305"
+    assert party("TRANSFER FROM 4897650123456") == "4897650123456"
