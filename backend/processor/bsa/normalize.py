@@ -271,10 +271,16 @@ def extract_counterparty(desc: str, mode: str) -> str:
         if closed == ")" and sum(c.isalpha() for c in name) >= 3:
             return _clean_segment(name)
         stem = re.match(r"[A-Za-z]+", handle)
-        if stem and len(stem.group(0)) >= 3:
+        # …but only when the handle identifies somebody. A bare payment-app
+        # handle ("bharatpe.905…") is the rail, not the payee, so a truncated
+        # merchant name beats it — "SILVERT" is at least who was paid.
+        if (stem and len(stem.group(0)) >= 3
+                and not _is_bare_psp(stem.group(0).upper())):
             return _clean_segment(stem.group(0))
         if sum(c.isalpha() for c in name) >= 3:
             return _clean_segment(name)
+        if stem and len(stem.group(0)) >= 3:
+            return _clean_segment(stem.group(0))
     m = re.search(r"@[\w.\-]+\(([A-Za-z][^)]*)", d)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
@@ -795,6 +801,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     # the rows where only the identifier was printed. Runs again on the merged
     # account in the processor, where it sees every statement at once.
     resolve_identifiers(txns)
+    drop_useless_identifiers(txns)
 
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
@@ -906,6 +913,57 @@ def _is_bank_name(up: str) -> bool:
     stripped = re.sub(r"\b(LTD|LIMITED|LIMIT|PVT|PRIVATE|INDIA|THE)\b", " ", up)
     stripped = re.sub(r"[^A-Z ]", " ", stripped)
     return " ".join(stripped.split()) in _BANK_BRANDS
+
+
+# Payment apps and PSP handles. These are the RAIL the money moved on, exactly
+# like a bank name: "paytm", "phonepe" and "gpay" tell a lender nothing about
+# who was paid, and a Paytm QR handle ("paytm-83541894@ptys") is the merchant's
+# terminal id, not a name. But a handle that carries a real SERVICE word is
+# worth keeping — "gpayrecharge" is a recharge merchant, not the rail — so the
+# test strips the app name and asks whether anything meaningful is left.
+_PSP = ("PAYTM", "PHONEPE", "GPAY", "GOOGLEPAY", "BHARATPE", "AMAZONPAY",
+        "MOBIKWIK", "FREECHARGE", "PAYZAPP", "PAYU", "RAZORPAY", "BHIM",
+        "PAYTMQR", "OKAXIS", "OKICICI", "OKSBI", "OKHDFCBANK", "YBL", "IBL",
+        "AXL", "PTYS", "PTYB", "APL", "UPI")
+
+
+def _is_bare_psp(up: str) -> bool:
+    """True when the "party" is only a payment app / PSP handle."""
+    core = re.sub(r"[^A-Z0-9]", "", up)
+    for app in _PSP:
+        if core.startswith(app):
+            rest = core[len(app):]
+            rest = re.sub(r"^(QR|ME|MERCHANT)", "", rest)
+            # Anything left that is a real word (letters, not a terminal id)
+            # means this is a named service: gpay + "RECHARGE" is kept.
+            if len(rest) >= 4 and rest.isalpha():
+                return False
+            return True
+    return False
+
+
+def drop_useless_identifiers(txns) -> None:
+    """Final pass: clear parties that identify nothing.
+
+    Runs AFTER resolve_identifiers, which uses a bare account number or VPA as
+    a JOIN KEY — an account named in one row fills the rows where only the
+    number was printed. So the number has to survive until that has happened,
+    and only then be cleared where it never resolved to a name.
+
+    Two kinds go, on the reviewer's instruction:
+      - a bare account / reference number ("TRANSFER- TRANSFER 4897692162094"),
+        which he judged "no use". Note this OVERRIDES rule 2 of his own Party
+        naming tab ("if not names, UPI ID or account number") — raised with him
+        rather than applied quietly.
+      - a payment-app handle with no name attached (see _is_bare_psp).
+    """
+    for t in txns:
+        p = (t.counterparty or "").strip()
+        if not p:
+            continue
+        core = re.sub(r"[^A-Za-z0-9]", "", p)
+        if core.isdigit() or _is_bare_psp(p.upper()):
+            t.counterparty = ""
 
 
 def _sanitise_party(p: str) -> str:

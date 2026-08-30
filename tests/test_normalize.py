@@ -623,3 +623,66 @@ def test_the_labelled_party_shapes(desc, want):
     from bsa.normalize import detect_mode, extract_counterparty
 
     assert extract_counterparty(desc, detect_mode(desc)) == want
+
+
+# --- three reviewer decisions on what is NOT a party -------------------------
+# "paytm is like money transfer app but something like paytm recharge capture
+# that, not just upi txns from paytm, phonepe or gpay"; "account number no use,
+# none". A payment app is the RAIL the money moved on, exactly like a bank
+# name, and a bare account number identifies nobody a lender would recognise.
+
+def _party(desc, amount=-100.0):
+    from bsa.models import Txn
+    from bsa.normalize import (detect_mode, drop_useless_identifiers,
+                               extract_counterparty, _sanitise_party)
+    m = detect_mode(desc)
+    t = Txn(date="2026-01-01", cheque_no="", description=desc, amount=amount,
+            balance=0.0, mode=m,
+            counterparty=_sanitise_party(extract_counterparty(desc, m)))
+    drop_useless_identifiers([t])
+    return t.counterparty
+
+
+@pytest.mark.parametrize("desc", [
+    # The biggest single unnamed shape in the corpus, 544 rows: a Paytm QR
+    # terminal id is not a merchant name.
+    "UPI/691564311834/22:37:17/UPI/paytm-83541894@ptys",
+    "UPI/527710576270/10:12:20/UPI/mab.037348010970125",
+    # 329 rows: a bare beneficiary account number.
+    "TRANSFER- TRANSFER 4897692162094",
+])
+def test_a_rail_or_a_bare_number_is_not_a_party(desc):
+    assert _party(desc) == ""
+
+
+def test_a_named_service_on_the_same_rail_survives():
+    """"something like paytm recharge capture that" — gpay + RECHARGE is a
+    merchant, not the app. The test is whether anything meaningful is left
+    after the app name is stripped."""
+    assert _party("UPI:515680738386:gpayrecharge@okpayaxis(Google In") == \
+        "gpayrecharge"
+
+
+def test_a_truncated_merchant_beats_a_useless_app_handle():
+    """The handle-on-truncation rule has one exception: when the handle is only
+    a payment app, the cut name is still the better answer — "SILVERT" at least
+    says who was paid, "bharatpe" says how."""
+    assert _party("UPI:515445886848:bharatpe.9052925296@fbpe(SILVERT") == \
+        "SILVERT"
+
+
+def test_the_number_survives_long_enough_to_resolve_a_name_first():
+    """Order matters: resolve_identifiers uses a bare account number as a JOIN
+    KEY — an account named in one row fills the rows that printed only the
+    number — so the number must survive until that has run, and only then be
+    cleared where it never resolved."""
+    from bsa.models import Txn
+    from bsa.normalize import drop_useless_identifiers
+
+    named = Txn(date="2026-01-01", cheque_no="", description="x", amount=-1.0,
+                balance=0.0, mode="neft", counterparty="ACME STEELS")
+    bare = Txn(date="2026-01-02", cheque_no="", description="y", amount=-1.0,
+               balance=0.0, mode="neft", counterparty="4897692162094")
+    drop_useless_identifiers([named, bare])
+    assert named.counterparty == "ACME STEELS"   # a real name is untouched
+    assert bare.counterparty == ""               # an unresolved number is not
