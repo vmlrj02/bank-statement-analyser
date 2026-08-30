@@ -1,0 +1,824 @@
+{
+ "files": [
+  {
+   "bank": "AU SFB",
+   "layout": "au_perfios_statement",
+   "path": "AU SFB/PERFIOS (6).pdf"
+  },
+  {
+   "bank": "AU SFB",
+   "layout": "au_perfios_statement",
+   "path": "AU SFB/PERFIOS (4).pdf"
+  },
+  {
+   "bank": "AU SFB",
+   "layout": "axis_account_statement",
+   "path": "AU SFB/PERFIOS (3).pdf"
+  },
+  {
+   "bank": "Axis",
+   "layout": "axis_account_statement",
+   "path": "Axis/AcctStatement_XXX3065_03072026-1(1).pdf"
+  },
+  {
+   "bank": "Axis",
+   "layout": "axis_cc_statement",
+   "path": "Axis/PPPL 01.11.25 to 30.11.25 (1).pdf"
+  },
+  {
+   "bank": "Axis",
+   "layout": "axis_cc_statement",
+   "path": "Axis/PPPL AXIS BANK CC AC 01.09.2025-31.10.2025 (2).pdf"
+  },
+  {
+   "bank": "Axis",
+   "layout": "axis_report_statement",
+   "path": "Axis/HP BS 01.12.25 to 01.01.26.pdf"
+  },
+  {
+   "bank": "Axis",
+   "layout": "axis_report_statement",
+   "path": "Axis/HP 01.04.2026 to 25.05.2026 (2).pdf"
+  },
+  {
+   "bank": "Axis",
+   "layout": "axis_statement_of_account",
+   "path": "Axis/Ravi Samota EPDF Banking.pdf"
+  },
+  {
+   "bank": "bob",
+   "layout": "bob_account_statement",
+   "path": "bob/BOB 1-10-25 to tilldate Nandini agro.pdf"
+  },
+  {
+   "bank": "bob",
+   "layout": "bob_account_statement",
+   "path": "bob/BOB 1-4-25 to 30-6-25 Nandini agro.pdf"
+  },
+  {
+   "bank": "City union bank",
+   "layout": "cityunion_account_statement",
+   "path": "City union bank/TransNum_May_04_151636 (1).pdf"
+  },
+  {
+   "bank": "Equitas",
+   "layout": "equitas_statement_of_account",
+   "path": "Equitas/K M P STEELS   01 1.pdf"
+  },
+  {
+   "bank": "Equitas",
+   "layout": "equitas_statement_of_account",
+   "path": "Equitas/EQUTAS 6958.pdf"
+  },
+  {
+   "bank": "HDFC",
+   "layout": "hdfc_account_statement",
+   "path": "HDFC/HDFC-607-PS-133591747 (2)/133591747..pdf"
+  },
+  {
+   "bank": "HDFC",
+   "layout": "hdfc_account_statement",
+   "path": "HDFC/PSW-176284535-MANSA ENGG UPDATED.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_account_statement",
+   "path": "ICICI/shree sharda enterprises.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_combined_statement",
+   "path": "ICICI/5 May 25.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_combined_statement",
+   "path": "ICICI/ICICI 2/5 May 25.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_detailed_generic",
+   "path": "ICICI/ICICI 7137/01.08.2025 -31.08.2025.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_detailed_generic",
+   "path": "ICICI/ICICI 7137/01.06.2025-30.06.2025.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_detailed_statement",
+   "path": "ICICI/10 Oct 25.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_detailed_statement",
+   "path": "ICICI/ICICI 2/10 Oct 25.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_mth_statement",
+   "path": "ICICI/Statement_2026MTH04_217556491.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_mth_statement",
+   "path": "ICICI/Statement_2026MTH05_217556491.pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_optransactionhistory",
+   "path": "ICICI/ICICI 7137/Ramesh ICICI - 7137 2(1).pdf"
+  },
+  {
+   "bank": "ICICI",
+   "layout": "icici_optransactionhistory",
+   "path": "ICICI/ICICI 7137/Ramesh ICICI - 7137 2.pdf"
+  },
+  {
+   "bank": "IDFC bank",
+   "layout": "idfc_account_statement",
+   "path": "IDFC bank/IDFCFIRSTBankstatement_10085925401 (5).pdf"
+  },
+  {
+   "bank": "Indusind",
+   "layout": "indusind_7786_statement",
+   "path": "Indusind/Indus Bank Statement Ac No. 7786.pdf"
+  },
+  {
+   "bank": "Indusind",
+   "layout": "indusind_7786_statement",
+   "path": "Indusind/Indusind Bank-7786 (01-Feb-26 to 19-Aug-26).pdf"
+  },
+  {
+   "bank": "Indusind",
+   "layout": "indusind_account_statement",
+   "path": "Indusind/01-JAN-2026 TO 06-FEB-2026 (2).pdf"
+  },
+  {
+   "bank": "Indusind",
+   "layout": "indusind_account_statement",
+   "path": "Indusind/01-JAN-2025 TO 31-DEC-2025 (1) OCR.pdf"
+  },
+  {
+   "bank": "IOB",
+   "layout": "iob_account_statement",
+   "path": "IOB/Statement-346901000001555-6.pdf"
+  },
+  {
+   "bank": "Karnataka bank",
+   "layout": "karnataka_account_statement",
+   "path": "Karnataka bank/Karnataka Bank -JAMEELA BANU- Password -JAME1982.pdf"
+  },
+  {
+   "bank": "Karnataka bank",
+   "layout": "karnataka_period_statement",
+   "path": "Karnataka bank/3 Karnataka Bank Statement - HAPPYLASERCRAFT-password- 923124829/4 Karnataka Bank Statement - HAPPYLASERCRAFT-password- 923124829.PDF"
+  },
+  {
+   "bank": "Karnataka bank",
+   "layout": "karnataka_period_statement",
+   "path": "Karnataka bank/Karnataka Bank Statement - SYEDMUQTHARAHMED- password- 923124829/9 Karnataka Bank Statement - SYEDMUQTHARAHMED- password- 923124829.PDF"
+  },
+  {
+   "bank": "PNB",
+   "layout": "pnb_account_statement",
+   "path": "PNB/SA PNB 0051 ROSHAN 01-04-2026 to 01-06-2026.pdf"
+  },
+  {
+   "bank": "PNB",
+   "layout": "pnb_ca_statement",
+   "path": "PNB/CA JOINT PNB 0717.pdf"
+  },
+  {
+   "bank": "PNB",
+   "layout": "pnb_ca_statement",
+   "path": "PNB/CA PNB 01-04-2026 to 30-05-2026.pdf"
+  },
+  {
+   "bank": "PNB",
+   "layout": "pnb_soa_statement",
+   "path": "PNB/CA JOINT 0717 01-04-2025 to 31-03-2026.pdf"
+  },
+  {
+   "bank": "PNB",
+   "layout": "pnb_soa_statement",
+   "path": "PNB/CA PNB 01-04-2025 to 31-03-2026.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_account_statement",
+   "path": "SBI/sbi 1/26.4 SBI CA 4.4.26 to 30.4.26.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_account_statement",
+   "path": "SBI/459.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_savings_cheque",
+   "path": "SBI/Nithya SBI 9492/Nitheya SBI- 9492 3.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_savings_cheque",
+   "path": "SBI/Nithya SBI 9492/Nitheya SBI- 9492 2.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_savings_statement",
+   "path": "SBI/598 (3).pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_savings_statement",
+   "path": "SBI/598 (2).pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_savings_txn",
+   "path": "SBI/SBI SA ROSHAN 01032026 to 31052026.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_soa_internet",
+   "path": "SBI/SBI-6579-AccountStatement_23072026_124241_Password- 41000130767_1 April 2026 Till 22 July 2026.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_soa_internet",
+   "path": "SBI/SBI-PS-41000130767-598.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_statement_of_account",
+   "path": "SBI/SBI SA 01-04-2025 To 13-04-2026.pdf"
+  },
+  {
+   "bank": "SBI",
+   "layout": "sbi_statement_of_account",
+   "path": "SBI/Nithin SBI SB 3140 01-05-25 To 20-02-26 PW- 21166141185.pdf"
+  },
+  {
+   "bank": "Union Bank",
+   "layout": "unionbank_account_statement",
+   "path": "Union Bank/Mumtaaj 1-4-26 to 31-5-26 UBI.pdf"
+  },
+  {
+   "bank": "Union Bank",
+   "layout": "unionbank_account_statement",
+   "path": "Union Bank/July-25-3.pdf"
+  },
+  {
+   "bank": "MSCM co op bank",
+   "layout": "vasavi_mscm_savings",
+   "path": "MSCM co op bank/3169-pend.pdf"
+  },
+  {
+   "bank": "Yes bank",
+   "layout": "yesbank_account_statement",
+   "path": "Yes bank/01-JAN-2026 TO 06-FEB-2026.pdf"
+  },
+  {
+   "bank": "Yes bank",
+   "layout": "yesbank_account_statement",
+   "path": "Yes bank/01-Jan-2025 TO 30-Jun-2025.pdf"
+  }
+ ],
+ "per_layout": {
+  "au_perfios_statement": {
+   "files": 2,
+   "mean_desc_len": 57.9,
+   "not_reconciling": 0,
+   "party_nameable_pct": 54.7,
+   "party_named_pct": 44.0,
+   "rows": 1006,
+   "top_categories": {
+    "Business income": 36.7,
+    "Cheque Clearances (Inward)": 12.7,
+    "Inward Cheque / Mandate Bounces": 1.8,
+    "Outward Cheque / Mandate Returns": 4.0,
+    "POS / Merchant / QR Settlements": 12.4,
+    "Supplier / Vendor Settlements": 28.5
+   },
+   "unreadable_files": 0
+  },
+  "axis_account_statement": {
+   "files": 2,
+   "mean_desc_len": 56.2,
+   "not_reconciling": 0,
+   "party_nameable_pct": 97.0,
+   "party_named_pct": 93.5,
+   "rows": 956,
+   "top_categories": {
+    "Business income": 33.4,
+    "GST Payments": 0.9,
+    "Labour Welfare (PF / ESIC)": 0.8,
+    "Loan EMIs": 3.3,
+    "Misc. debit": 1.6,
+    "Supplier / Vendor Settlements": 56.2
+   },
+   "unreadable_files": 0
+  },
+  "axis_cc_statement": {
+   "files": 2,
+   "mean_desc_len": 55.7,
+   "not_reconciling": 0,
+   "party_nameable_pct": 91.6,
+   "party_named_pct": 79.0,
+   "rows": 1044,
+   "top_categories": {
+    "Business income": 31.2,
+    "Cheque Clearances (Inward)": 1.5,
+    "GST Payments": 6.9,
+    "Inward Cheque / Mandate Bounces": 0.4,
+    "Outward Cheque / Mandate Returns": 0.5,
+    "Supplier / Vendor Settlements": 58.7
+   },
+   "unreadable_files": 0
+  },
+  "axis_report_statement": {
+   "files": 2,
+   "mean_desc_len": 42.1,
+   "not_reconciling": 0,
+   "party_nameable_pct": 86.7,
+   "party_named_pct": 59.7,
+   "rows": 196,
+   "top_categories": {
+    "Business income": 18.4,
+    "GST Payments": 16.8,
+    "Loan EMIs": 2.0,
+    "OD / CC Interest & Renewal Fees": 1.5,
+    "Outward Cheque / Mandate Returns": 0.5,
+    "Supplier / Vendor Settlements": 59.2
+   },
+   "unreadable_files": 0
+  },
+  "axis_statement_of_account": {
+   "files": 1,
+   "mean_desc_len": 55.1,
+   "not_reconciling": 0,
+   "party_nameable_pct": 97.0,
+   "party_named_pct": 96.0,
+   "rows": 1240,
+   "top_categories": {
+    "Business income": 34.7,
+    "Cash Withdrawals": 2.0,
+    "Commercial Rent & Utilities": 1.4,
+    "Misc. credit": 0.9,
+    "Misc. debit": 7.6,
+    "Supplier / Vendor Settlements": 51.1
+   },
+   "unreadable_files": 0
+  },
+  "bob_account_statement": {
+   "files": 2,
+   "mean_desc_len": 45.9,
+   "not_reconciling": 0,
+   "party_nameable_pct": 62.6,
+   "party_named_pct": 56.7,
+   "rows": 766,
+   "top_categories": {
+    "Business income": 29.8,
+    "Credit Card Payments": 0.9,
+    "Direct Cash Deposits": 2.3,
+    "Loan EMIs": 0.5,
+    "Misc. debit": 4.3,
+    "Supplier / Vendor Settlements": 61.4
+   },
+   "unreadable_files": 0
+  },
+  "cityunion_account_statement": {
+   "files": 1,
+   "mean_desc_len": 69.3,
+   "not_reconciling": 0,
+   "party_nameable_pct": 95.5,
+   "party_named_pct": 95.5,
+   "rows": 22,
+   "top_categories": {
+    "Business income": 22.7,
+    "Supplier / Vendor Settlements": 77.3
+   },
+   "unreadable_files": 0
+  },
+  "equitas_statement_of_account": {
+   "files": 2,
+   "mean_desc_len": 71.0,
+   "not_reconciling": 0,
+   "party_nameable_pct": 66.7,
+   "party_named_pct": 66.7,
+   "rows": 6,
+   "top_categories": {
+    "Business income": 66.7,
+    "Supplier / Vendor Settlements": 33.3
+   },
+   "unreadable_files": 0
+  },
+  "hdfc_account_statement": {
+   "files": 2,
+   "mean_desc_len": 52.4,
+   "not_reconciling": 0,
+   "party_nameable_pct": 92.6,
+   "party_named_pct": 78.1,
+   "rows": 32,
+   "top_categories": {
+    "Business income": 28.1,
+    "Direct Cash Deposits": 9.4,
+    "Loan EMIs": 25.0,
+    "Misc. debit": 3.1,
+    "Supplier / Vendor Settlements": 34.4
+   },
+   "unreadable_files": 0
+  },
+  "icici_account_statement": {
+   "files": 1,
+   "mean_desc_len": 34.4,
+   "not_reconciling": 0,
+   "party_nameable_pct": 87.8,
+   "party_named_pct": 46.4,
+   "rows": 545,
+   "top_categories": {
+    "Bank Penalties & Non-Maintenance": 3.5,
+    "Business income": 19.1,
+    "Direct Cash Deposits": 11.4,
+    "Inward Cheque / Mandate Bounces": 31.6,
+    "OD / CC Interest & Renewal Fees": 3.5,
+    "Supplier / Vendor Settlements": 27.0
+   },
+   "unreadable_files": 0
+  },
+  "icici_combined_statement": {
+   "files": 2,
+   "mean_desc_len": 79.0,
+   "not_reconciling": 0,
+   "party_nameable_pct": 72.1,
+   "party_named_pct": 69.1,
+   "rows": 614,
+   "top_categories": {
+    "Business income": 9.8,
+    "Credit Card Payments": 1.0,
+    "GST Payments": 0.7,
+    "Misc. debit": 0.3,
+    "Payroll & Wages": 4.9,
+    "Supplier / Vendor Settlements": 82.1
+   },
+   "unreadable_files": 0
+  },
+  "icici_detailed_generic": {
+   "files": 2,
+   "mean_desc_len": 54.8,
+   "not_reconciling": 0,
+   "party_nameable_pct": 60.0,
+   "party_named_pct": 50.0,
+   "rows": 6,
+   "top_categories": {
+    "Business income": 16.7,
+    "Interest & Treasury Income": 16.7,
+    "Supplier / Vendor Settlements": 66.7
+   },
+   "unreadable_files": 0
+  },
+  "icici_detailed_statement": {
+   "files": 2,
+   "mean_desc_len": 82.6,
+   "not_reconciling": 0,
+   "party_nameable_pct": 100.0,
+   "party_named_pct": 100.0,
+   "rows": 18,
+   "top_categories": {
+    "Business income": 11.1,
+    "Supplier / Vendor Settlements": 22.2,
+    "Tax & Duty Refunds": 66.7
+   },
+   "unreadable_files": 0
+  },
+  "icici_mth_statement": {
+   "files": 2,
+   "mean_desc_len": 52.3,
+   "not_reconciling": 0,
+   "party_nameable_pct": 77.7,
+   "party_named_pct": 77.7,
+   "rows": 94,
+   "top_categories": {
+    "Business income": 5.3,
+    "Cash Withdrawals": 8.5,
+    "Commercial Rent & Utilities": 6.4,
+    "Labour Welfare (PF / ESIC)": 4.3,
+    "Loan EMIs": 8.5,
+    "Supplier / Vendor Settlements": 66.0
+   },
+   "unreadable_files": 0
+  },
+  "icici_optransactionhistory": {
+   "files": 2,
+   "mean_desc_len": 69.0,
+   "not_reconciling": 0,
+   "party_nameable_pct": 0.0,
+   "party_named_pct": 0.0,
+   "rows": 4,
+   "top_categories": {
+    "Supplier / Vendor Settlements": 100.0
+   },
+   "unreadable_files": 0
+  },
+  "idfc_account_statement": {
+   "files": 1,
+   "mean_desc_len": 51.9,
+   "not_reconciling": 0,
+   "party_nameable_pct": 35.6,
+   "party_named_pct": 28.1,
+   "rows": 57,
+   "top_categories": {
+    "Business income": 21.1,
+    "Interest & Treasury Income": 21.1,
+    "Loan EMIs": 36.8,
+    "Outward Cheque / Mandate Returns": 3.5,
+    "Supplier / Vendor Settlements": 17.5
+   },
+   "unreadable_files": 0
+  },
+  "indusind_7786_statement": {
+   "files": 2,
+   "mean_desc_len": 60.0,
+   "not_reconciling": 0,
+   "party_nameable_pct": 79.2,
+   "party_named_pct": 63.7,
+   "rows": 388,
+   "top_categories": {
+    "Business income": 30.7,
+    "Commercial Rent & Utilities": 1.8,
+    "Direct Cash Deposits": 7.0,
+    "Loan Disbursal": 3.1,
+    "Loan EMIs": 2.6,
+    "Supplier / Vendor Settlements": 49.2
+   },
+   "unreadable_files": 0
+  },
+  "indusind_account_statement": {
+   "files": 2,
+   "mean_desc_len": 45.3,
+   "not_reconciling": 0,
+   "party_nameable_pct": 88.7,
+   "party_named_pct": 84.1,
+   "rows": 1014,
+   "top_categories": {
+    "Business income": 67.4,
+    "Cheque Clearances (Inward)": 1.9,
+    "Direct Cash Deposits": 3.0,
+    "Inward Cheque / Mandate Bounces": 0.4,
+    "Loan EMIs": 0.3,
+    "Supplier / Vendor Settlements": 26.0
+   },
+   "unreadable_files": 0
+  },
+  "iob_account_statement": {
+   "files": 1,
+   "mean_desc_len": 47.5,
+   "not_reconciling": 0,
+   "party_nameable_pct": 97.7,
+   "party_named_pct": 96.3,
+   "rows": 569,
+   "top_categories": {
+    "Business income": 48.0,
+    "Commercial Rent & Utilities": 1.8,
+    "Misc. credit": 1.1,
+    "Misc. debit": 1.8,
+    "Outward Cheque / Mandate Returns": 0.5,
+    "Supplier / Vendor Settlements": 46.4
+   },
+   "unreadable_files": 0
+  },
+  "karnataka_account_statement": {
+   "files": 1,
+   "mean_desc_len": 46.7,
+   "not_reconciling": 0,
+   "party_nameable_pct": 82.7,
+   "party_named_pct": 81.4,
+   "rows": 317,
+   "top_categories": {
+    "Business income": 14.8,
+    "Commercial Rent & Utilities": 0.3,
+    "Direct Cash Deposits": 0.6,
+    "Investments Outflows": 0.3,
+    "Misc. debit": 4.4,
+    "Supplier / Vendor Settlements": 78.9
+   },
+   "unreadable_files": 0
+  },
+  "karnataka_period_statement": {
+   "files": 2,
+   "mean_desc_len": 47.9,
+   "not_reconciling": 0,
+   "party_nameable_pct": 92.3,
+   "party_named_pct": 87.3,
+   "rows": 110,
+   "top_categories": {
+    "Business income": 6.4,
+    "Commercial Rent & Utilities": 1.8,
+    "Loan EMIs": 2.7,
+    "Outward Cheque / Mandate Returns": 0.9,
+    "Supplier / Vendor Settlements": 88.2
+   },
+   "unreadable_files": 0
+  },
+  "pnb_account_statement": {
+   "files": 1,
+   "mean_desc_len": 46.7,
+   "not_reconciling": 0,
+   "party_nameable_pct": 100.0,
+   "party_named_pct": 85.7,
+   "rows": 28,
+   "top_categories": {
+    "Direct Cash Deposits": 7.1,
+    "Misc. debit": 17.9,
+    "Supplier / Vendor Settlements": 75.0
+   },
+   "unreadable_files": 0
+  },
+  "pnb_ca_statement": {
+   "files": 2,
+   "mean_desc_len": 47.8,
+   "not_reconciling": 0,
+   "party_nameable_pct": 40.5,
+   "party_named_pct": 37.0,
+   "rows": 46,
+   "top_categories": {
+    "Business income": 15.2,
+    "Cheque Clearances (Inward)": 2.2,
+    "Inward Cheque / Mandate Bounces": 8.7,
+    "Loan EMIs": 4.3,
+    "Misc. debit": 4.3,
+    "Supplier / Vendor Settlements": 58.7
+   },
+   "unreadable_files": 0
+  },
+  "pnb_soa_statement": {
+   "files": 2,
+   "mean_desc_len": 39.7,
+   "not_reconciling": 0,
+   "party_nameable_pct": 81.3,
+   "party_named_pct": 62.6,
+   "rows": 326,
+   "top_categories": {
+    "Business income": 25.8,
+    "Cash Withdrawals": 4.9,
+    "Direct Cash Deposits": 6.7,
+    "Loan EMIs": 4.3,
+    "Misc. debit": 4.6,
+    "Supplier / Vendor Settlements": 46.0
+   },
+   "unreadable_files": 0
+  },
+  "sbi_account_statement": {
+   "files": 2,
+   "mean_desc_len": 42.1,
+   "not_reconciling": 0,
+   "party_nameable_pct": 57.1,
+   "party_named_pct": 47.1,
+   "rows": 17,
+   "top_categories": {
+    "Bank Penalties & Non-Maintenance": 17.6,
+    "Business income": 47.1,
+    "Misc. credit": 5.9,
+    "OD / CC Interest & Renewal Fees": 17.6,
+    "Supplier / Vendor Settlements": 11.8
+   },
+   "unreadable_files": 0
+  },
+  "sbi_savings_cheque": {
+   "files": 2,
+   "mean_desc_len": 62.6,
+   "not_reconciling": 0,
+   "party_nameable_pct": 93.4,
+   "party_named_pct": 93.4,
+   "rows": 412,
+   "top_categories": {
+    "Bank Penalties & Non-Maintenance": 1.5,
+    "Business income": 8.7,
+    "Misc. credit": 0.2,
+    "Misc. debit": 0.7,
+    "POS / Merchant / QR Settlements": 0.5,
+    "Supplier / Vendor Settlements": 87.6
+   },
+   "unreadable_files": 0
+  },
+  "sbi_savings_statement": {
+   "files": 2,
+   "mean_desc_len": 35.8,
+   "not_reconciling": 0,
+   "party_nameable_pct": 18.4,
+   "party_named_pct": 18.2,
+   "rows": 565,
+   "top_categories": {
+    "Business income": 9.6,
+    "Misc. credit": 0.5,
+    "Misc. debit": 2.5,
+    "Outward Cheque / Mandate Returns": 0.5,
+    "Supplier / Vendor Settlements": 85.8,
+    "Travel & Conveyance expenses": 0.5
+   },
+   "unreadable_files": 0
+  },
+  "sbi_savings_txn": {
+   "files": 1,
+   "mean_desc_len": 48.5,
+   "not_reconciling": 0,
+   "party_nameable_pct": 92.3,
+   "party_named_pct": 89.9,
+   "rows": 227,
+   "top_categories": {
+    "Business income": 24.2,
+    "Cash Withdrawals": 1.3,
+    "Direct Cash Deposits": 1.3,
+    "Loan EMIs": 1.3,
+    "Misc. debit": 3.5,
+    "Supplier / Vendor Settlements": 66.1
+   },
+   "unreadable_files": 0
+  },
+  "sbi_soa_internet": {
+   "files": 2,
+   "mean_desc_len": 69.0,
+   "not_reconciling": 0,
+   "party_nameable_pct": 90.9,
+   "party_named_pct": 90.1,
+   "rows": 575,
+   "top_categories": {
+    "Business income": 21.7,
+    "Commercial Rent & Utilities": 1.7,
+    "Loan EMIs": 1.2,
+    "Misc. debit": 0.5,
+    "Supplier / Vendor Settlements": 72.3,
+    "Travel & Conveyance expenses": 0.5
+   },
+   "unreadable_files": 0
+  },
+  "sbi_statement_of_account": {
+   "files": 2,
+   "mean_desc_len": 33.5,
+   "not_reconciling": 0,
+   "party_nameable_pct": 97.2,
+   "party_named_pct": 87.5,
+   "rows": 2231,
+   "top_categories": {
+    "Business income": 10.8,
+    "Cash Withdrawals": 4.3,
+    "Commercial Rent & Utilities": 0.9,
+    "Interest & Treasury Income": 0.3,
+    "Misc. debit": 2.9,
+    "Supplier / Vendor Settlements": 80.1
+   },
+   "unreadable_files": 0
+  },
+  "unionbank_account_statement": {
+   "files": 2,
+   "mean_desc_len": 68.6,
+   "not_reconciling": 0,
+   "party_nameable_pct": 30.4,
+   "party_named_pct": 29.2,
+   "rows": 48,
+   "top_categories": {
+    "Business income": 39.6,
+    "Investments Outflows": 2.1,
+    "Loan EMIs": 2.1,
+    "Misc. debit": 4.2,
+    "POS / Merchant / QR Settlements": 35.4,
+    "Supplier / Vendor Settlements": 16.7
+   },
+   "unreadable_files": 0
+  },
+  "vasavi_mscm_savings": {
+   "files": 1,
+   "mean_desc_len": 49.4,
+   "not_reconciling": 0,
+   "party_nameable_pct": 19.0,
+   "party_named_pct": 19.0,
+   "rows": 58,
+   "top_categories": {
+    "Business income": 24.1,
+    "Interest & Treasury Income": 10.3,
+    "Loan EMIs": 62.1,
+    "Supplier / Vendor Settlements": 3.4
+   },
+   "unreadable_files": 0
+  },
+  "yesbank_account_statement": {
+   "files": 2,
+   "mean_desc_len": 110.1,
+   "not_reconciling": 0,
+   "party_nameable_pct": 98.0,
+   "party_named_pct": 56.2,
+   "rows": 562,
+   "top_categories": {
+    "Business income": 75.3,
+    "Commercial Rent & Utilities": 0.9,
+    "Misc. credit": 0.2,
+    "POS / Merchant / QR Settlements": 15.7,
+    "Payroll & Wages": 2.3,
+    "Supplier / Vendor Settlements": 5.2
+   },
+   "unreadable_files": 0
+  }
+ }
+}

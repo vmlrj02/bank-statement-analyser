@@ -348,6 +348,40 @@ cold start. Three properties matter and are pinned by tests/test_registry.py:
 - Nothing here can take the pipeline down. A malformed descriptor is skipped;
   unreachable S3 degrades to the bundled set.
 
+## Corpus snapshot — the check that catches what the others cannot
+
+    BSA_CORPUS_DIR=~/Downloads/Samples-3 python scripts/corpus_snapshot.py
+    BSA_CORPUS_DIR=... python scripts/corpus_snapshot.py --update   # re-record
+
+Run it before shipping anything that touches extraction, narration, party
+naming or categorisation. It parses a fixed set of real statements and
+compares the SHAPE of the output — rows, party rate, mean description length,
+category mix, per LAYOUT — against a committed baseline, and exits 1 on drift.
+
+It exists because on 30 August a change put thirty characters of branch
+boilerplate onto 145 of 192 SBI rows and turned one into a counterparty, and
+IT SHIPPED. Balances reconciled (the amounts were never touched), the unit
+tests passed (they assert what someone already thought of), and the
+categorisation harness stayed at 322/322 (a closed set of hand-written cases).
+The reviewer found it in a screenshot hours later. Every check we had was
+about the correctness of a KNOWN thing; nothing watched the shape of
+everything. Reinstate that bug now and this prints one line:
+`sbi_soa_internet: mean_desc_len 69.0 -> 110.9`.
+
+Two things about it are load-bearing:
+
+- SELECTION IS BY LAYOUT, not by bank, and the chosen files are recorded in
+  the baseline. Two earlier versions failed their own acceptance test: the two
+  smallest files per bank missed the regression, and four files per bank
+  spread across the size range missed it too — SBI alone has seven layouts, so
+  no per-bank quota can cover them. 57 files, 33 layouts, all of them.
+- THE BASELINE IS COMMITTED (tests/data/corpus_snapshot.json). It is only
+  numbers, so an intended improvement is a reviewable diff rather than a
+  silent move. Re-record with --update and commit it in the same change.
+
+The statements themselves cannot be committed, so with no BSA_CORPUS_DIR the
+script skips and exits 0 — CI has no statements either.
+
 ## Tests
 
     python -m venv .venv-test
