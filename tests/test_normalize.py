@@ -600,10 +600,16 @@ def test_a_real_counterparty_survives_the_bank_filter(name):
     ("UPI:553101391507:q939300321@ybl(MED ZONE PHARMA):UPI-", "MED ZONE PHARMA"),
     ("UPI:820392704009:6363874107@ybl(Mr ILIYAS PASHA)", "Mr ILIYAS PASHA"),
     ("UPI:560343925394:9945200442@ibl(CHAND PASHA):Vrl", "CHAND PASHA"),
-    # Karnataka TRUNCATES the particulars cell mid-name, so the closing bracket
-    # is optional — half a name is what the reviewer labelled these as, and it
-    # still consolidates with itself across rows.
-    ("UPI:515313177312:syedarzaan3@okicici(SYED ARZAAN", "SYED ARZAAN"),
+    # Karnataka TRUNCATES the particulars cell mid-name. When the bracket does
+    # not close, the VPA handle wins instead of the cut name — the reviewer's
+    # call, and the right one: a truncation point varies row to row, so
+    # "(SYED ARZAAN" and "(SYED" would split one payee in two, while the handle
+    # is identical every time. Their own labels had this exact shape BOTH ways,
+    # which is the symptom. Letters only, matching how they wrote the handles.
+    ("UPI:515313177312:syedarzaan3@okicici(SYED ARZAAN", "syedarzaan"),
+    ("UPI:571108761096:syedarzaan3-1@oksbi(SYED ARZAAN", "syedarzaan"),
+    ("UPI:517943266761:zayyanzsyed16-1@okhdfcbank(SYED", "zayyanzsyed"),
+    ("UPI:515680738386:gpayrecharge@okpayaxis(Google In", "gpayrecharge"),
     # 2. IMPS/P2A-<ref>-<Name>-<phone>; "Mr" is a title, not the name.
     ("IMPS/P2A-515714922426-Mr ShakeelKhan-9198450572", "ShakeelKhan"),
     ("IMPS/P2A-518704811776-SYEDSADIQAHMED-919986778644", "SYEDSADIQAHMED"),

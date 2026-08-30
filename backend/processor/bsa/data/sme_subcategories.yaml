@@ -166,7 +166,14 @@ debit:
     tags: [Regular debit, ECS transaction]
     patterns: [RENT, LEASE, ELECTRICITY, BESCOM, MSEB, TNEB, TELECOM, AIRTEL,
                JIO, VODAFONE, BSNL, WATER, BBPS, UTILITY, GAS BILL,
-               BROADBAND, INTERNET BILL]
+               BROADBAND, INTERNET BILL,
+               # The monthly rental on a payment provider's QR speaker
+               # ("SOUNDBOXRENTALJUN25EJD927"). A fixed overhead, so it belongs
+               # here rather than in Supplier / Vendor Settlements where it was
+               # quietly inflating supplier reliance. The narration names no
+               # counterparty, so the PARTY stays blank — "SOUND BOX RENTAL"
+               # describes the service, not who was paid.
+               SOUNDBOX, SOUND BOX]
 
   # Row 26, added by the founder on 30 Aug alongside the row 33/34 fix. Column
   # D is his list verbatim. It sits ABOVE Supplier / Vendor Settlements in

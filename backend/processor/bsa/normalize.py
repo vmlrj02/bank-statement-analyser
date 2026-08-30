@@ -257,6 +257,24 @@ def extract_counterparty(desc: str, mode: str) -> str:
     #    The closing bracket is OPTIONAL because Karnataka truncates the
     #    particulars cell mid-name ("…@okhdfcbank(SYED"), and half a name is
     #    still better than none — it is what the reviewer labelled those as.
+    #    When the bracket CLOSES, the name is complete and wins. When it does
+    #    not, the cell was cut mid-name and the VPA handle is used instead —
+    #    the reviewer's call, and the right one: a truncation point varies row
+    #    to row, so "(SYED ARZAAN" and "(SYED" would split one payee into two
+    #    parties, while the handle is identical every time. Their own labels
+    #    had that exact shape both ways ("SYED ARZAAN" on one row, "syedarzaan"
+    #    on another), which is the symptom. Letters only, because they stripped
+    #    the serial off "syedarzaan3-1" and "zayyanzsyed16-1" as well.
+    m = re.search(r"[:\-/]([A-Za-z][\w.\-]*)@[\w.\-]+\(([A-Za-z][^)]*?)(\)|$)", d)
+    if m:
+        handle, name, closed = m.group(1), m.group(2), m.group(3)
+        if closed == ")" and sum(c.isalpha() for c in name) >= 3:
+            return _clean_segment(name)
+        stem = re.match(r"[A-Za-z]+", handle)
+        if stem and len(stem.group(0)) >= 3:
+            return _clean_segment(stem.group(0))
+        if sum(c.isalpha() for c in name) >= 3:
+            return _clean_segment(name)
     m = re.search(r"@[\w.\-]+\(([A-Za-z][^)]*)", d)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
