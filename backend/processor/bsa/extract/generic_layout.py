@@ -205,7 +205,7 @@ def _join_narration(lines: list[tuple], edge: float = 0.0,
 
 def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
                    invert: bool = False, max_gap: float | None = None,
-                   edge: float = 0.0) -> None:
+                   edge: float = 0.0, strip=None) -> None:
     """Assign buffered narration lines to the vertically NEAREST anchor, then
     emit the anchors in reading order.
 
@@ -242,7 +242,8 @@ def _flush_nearest(anchors: list[dict], narrs: list[tuple], rows: list,
                  for _, zone, zx1 in sorted(a["parts"], key=lambda x: x[0])]
         rows.append(RawRow(
             sl_no=None, date=a["date"], cheque_no=a["cheque"].strip(),
-            description=_join_narration(lines, edge),
+            description=(strip or (lambda x: x))(
+                _join_narration(lines, edge)),
             withdrawal=a["wd"], deposit=a["dep"],
             balance=a["bal"], page=a["page"],
             balance_inverted=invert, is_opening=a.get("opening", False),
@@ -303,6 +304,18 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
     # Opt-in: this bank wraps the narration cell mid-token (see
     # _join_narration). Off means every join is a space, exactly as before.
     hard_wrap = p.get("narration_wrap") == "hard"
+    # Boilerplate this BANK prints inside every row's narration. It cannot be
+    # found by a shared heuristic: SBI stamps "AT 15035 PREMIER BANKING BRANCH,
+    # BENGALURU" on every row, and structurally that is indistinguishable from
+    # BoB's "COMMUNICATIONS LIMITE", which is a real payee — measured, the
+    # payee actually repeats MORE often (180x vs 131x). Neither position nor
+    # frequency separates them, so the bank's own format has to say.
+    strip_res = [re.compile(x, re.I) for x in (p.get("narration_strip") or [])]
+
+    def _strip_boilerplate(s: str) -> str:
+        for rx in strip_res:
+            s = rx.sub(" ", s)
+        return re.sub(r"\s{2,}", " ", s).strip(" -/,")
     invert = bool(p.get("invert_balance"))     # cash-credit / overdraft chain
     # Most layouts print the narration first and the money columns to its right,
     # so a number is only an amount if it sits right of remarks_x_min (this keeps
@@ -348,9 +361,9 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             sl_no=None, date=current["date"], cheque_no=current["cheque"].strip(),
             # The anchor's own narration line, then each continuation line as
             # its own unit, joined by the wrap rule (see _join_narration).
-            description=_join_narration(
+            description=_strip_boilerplate(_join_narration(
                 [(" ".join(current["desc"]).strip(), current["desc_x1"])]
-                + current["cont"], narr_edge),
+                + current["cont"], narr_edge)),
             withdrawal=current["wd"], deposit=current["dep"],
             balance=current["bal"], page=current["page"],
             balance_inverted=invert, balance_tolerance=bal_tol,
@@ -368,6 +381,8 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
         pages_words, page1_text = [], ""
         head_texts: list[str] = []
         line_pages: dict[str, set] = {}
+        line_tops: dict[str, set] = {}
+        narration_only_lines: set = set()
         # A dated anchor line is NEVER furniture, even when its exact text
         # repeats on another page: two genuine transactions can print
         # identically (same date, same amount, and a running balance that
@@ -420,9 +435,31 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                 head_texts.append(page.extract_text() or "")
             for ln in _lines(ws):
                 t = " ".join(w["text"] for w in ln["words"])
-                if len(t) > 8 and not _anchorish(ln) and not _narration_only(ln):
+                if len(t) > 8 and not _anchorish(ln):
                     line_pages.setdefault(t, set()).add(pageno)
-        furniture = {t for t, pgs in line_pages.items() if len(pgs) >= 2}
+                    # Vertical position, to tell repeated FURNITURE from a
+                    # repeated narration fragment (see below). Rounded to
+                    # absorb the sub-point jitter between pages.
+                    line_tops.setdefault(t, set()).add(round(ln["top"] / 4))
+                    if _narration_only(ln):
+                        narration_only_lines.add(t)
+        # A line repeating on two or more pages is page furniture — UNLESS it
+        # is a narration fragment that merely recurs. The two are told apart by
+        # WHERE they sit: furniture is laid out against the page and lands at
+        # the same height every time (a branch header, a footer), while a
+        # wrapped narration fragment appears wherever its row happens to fall.
+        #
+        # Both halves of this are real. Without the exemption, a bank that
+        # wraps mid-token loses text: BoB splits a payee VPA, so "53817591@ptys"
+        # becomes its own short line and the same merchant recurs across pages.
+        # Without the POSITION test, the exemption is far too wide: SBI prints
+        # "PREMIER BANKING BRANCH, BENGALURU" inside the narration column on
+        # every page, and treating that as content glued it onto 145 of 192
+        # rows and even surfaced it as a counterparty.
+        furniture = {t for t, pgs in line_pages.items()
+                     if len(pgs) >= 2
+                     and (t not in narration_only_lines
+                          or len(line_tops.get(t, ())) <= 1)}
         # Where the narration cell actually ends, MEASURED rather than
         # declared: the furthest right a narration word reaches anywhere in the
         # document. The layout's remarks_x_max is only a cutoff — it has to sit
@@ -493,7 +530,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                         finalize()
                         pending.clear()
                         _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap,
-                                       narr_edge)
+                                       narr_edge, _strip_boilerplate)
                         active = scols or cols
                         switched = True
                         break
@@ -644,7 +681,7 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
             # Blocks do not span pages in a centred layout, so a page is a
             # complete segment: assign its narration lines and emit its rows.
             _flush_nearest(seg_anchors, seg_narrs, rows, invert, nearest_gap,
-                           narr_edge)
+                           narr_edge, _strip_boilerplate)
 
         finalize()
 

@@ -25,6 +25,32 @@ parse:
   row_anchor: '^\d{2}/\d{2}/\d{4}$'
   date_format: "%d/%m/%Y"
   continuation: nearest
+  # SBI stamps the ACCOUNT HOLDER'S OWN BRANCH on every row's narration —
+  # "AT 15035 PREMIER BANKING BRANCH, BENGALURU" — which is noise on all of
+  # them: it says where the customer banks, never who they paid. It had been
+  # disappearing by accident, swept up by the generic "a line repeating on two
+  # or more pages is furniture" rule, until that rule learned to spare wrapped
+  # narration (which it had to, or BoB loses real payees). It cannot be found
+  # generically: structurally this is identical to BoB's "COMMUNICATIONS
+  # LIMITE", and the real payee actually repeats MORE often (180x vs 131x), so
+  # neither position nor frequency separates them. The bank's own format has
+  # to say, which is what this is.
+  narration_strip:
+    - '\bAT \d{4,6}\b'                       # the branch code stamp
+    # "PREMIER BANKING BRANCH, BENGALURU". At most TWO uppercase words before
+    # BRANCH, or the match runs backwards over the payee — the same row can
+    # read "...OF Mr. CHANDRASHEKARAN O PREMIER BANKING BRANCH", and a greedy
+    # pattern eats the name with the stamp. The city is optional because the
+    # stamp straddles a line break and often leaves it on the next row.
+    - '\b(?:[A-Z]+\s){0,2}BRANCH,?(?:\s*[A-Z]+)?\b'
+    # The stamp straddles a line break, so its tail ("BENGALURU", sometimes
+    # "BRANCH, BENGALURU") is assigned to the NEXT row and arrives leading.
+    # Anchored to SBI's own opening verbs rather than to a city name, so it
+    # does not depend on which branch the customer uses.
+    - '^(?:BRANCH,\s*)?[A-Z]{4,}\s+(?=WDL |SWEEP |DEP |TFR |BY |TO )'
+    # The cover page bleeds into the first row: everything from "As on <date>"
+    # through "Statement From :<date>" is the account summary, not a payment.
+    - 'As on \d{2}-\d{2}-\d{4}.*?Statement From\s*:\d{2}-\d{2}-\d{4}'
   columns:
     date_x_max: 75              # Txn Date ~27-68 (Value Date ~82 is ignored)
     remarks_x_min: 130          # Description ~138-300

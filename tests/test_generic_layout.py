@@ -280,3 +280,54 @@ def test_headerless_continuation_page_is_parsed_whole(monkeypatch):
     assert ex.rows[2].description == "NEFT IN FROM DURGA-TRD"
     # And the header line itself never leaks into a row.
     assert all("Particulars" not in r.description for r in ex.rows)
+
+
+# --- narration_strip: boilerplate only the BANK can identify -----------------
+
+def test_narration_strip_removes_the_banks_own_boilerplate():
+    """SBI stamps the ACCOUNT HOLDER'S OWN BRANCH on every row — "AT 15035
+    PREMIER BANKING BRANCH, BENGALURU" — which says where the customer banks,
+    never who they paid.
+
+    It cannot be found generically, and that is the whole point of putting it
+    in the descriptor. Structurally it is identical to BoB's "COMMUNICATIONS
+    LIMITE", a real payee that wraps onto its own line; measured on the corpus
+    the PAYEE repeats more often than the boilerplate (180x vs 131x), so
+    neither position nor frequency separates them.
+    """
+    import re
+    from bsa.extract.generic_layout import _join_narration
+
+    strips = [re.compile(x, re.I) for x in (
+        r'\bAT \d{4,6}\b',
+        r'\b(?:[A-Z]+\s){0,2}BRANCH,?(?:\s*[A-Z]+)?\b',
+        r'^(?:BRANCH,\s*)?[A-Z]{4,}\s+(?=WDL |SWEEP |DEP |TFR |BY |TO )',
+    )]
+
+    def strip(s):
+        for rx in strips:
+            s = rx.sub(" ", s)
+        return re.sub(r"\s{2,}", " ", s).strip(" -/,")
+
+    # The stamp goes, the transaction stays.
+    assert strip("WDL TFR IMPS/609210928400/KKBK- xx686-SRES/trf AT 15035 "
+                 "PREMIER BANKING BRANCH, BENGALURU") == \
+        "WDL TFR IMPS/609210928400/KKBK- xx686-SRES/trf"
+    # The stamp straddles a line break, so its tail arrives LEADING on the
+    # next row — anchored to SBI's opening verbs, not to a city name.
+    assert strip("BENGALURU WDL TFR LOCKER CHARGES 0098324150359") == \
+        "WDL TFR LOCKER CHARGES 0098324150359"
+    # At most two uppercase words before BRANCH, or the match runs backwards
+    # over the payee and deletes the name with the stamp.
+    assert strip("SWEEP TRF CREDT 0045051155199 OF Mr. CHANDRASHEKARAN O "
+                 "PREMIER BANKING BRANCH") == \
+        "SWEEP TRF CREDT 0045051155199 OF Mr. CHANDRASHEKARAN O"
+
+
+def test_a_layout_without_narration_strip_is_untouched():
+    """Opt-in: every other descriptor keeps its narration verbatim."""
+    from bsa.extract.generic_layout import _join_narration
+
+    assert _join_narration([("NEFT-YESAP52740277381-ONE 97", 0.0),
+                            ("COMMUNICATIONS LIMITE", 0.0)]) == \
+        "NEFT-YESAP52740277381-ONE 97 COMMUNICATIONS LIMITE"
