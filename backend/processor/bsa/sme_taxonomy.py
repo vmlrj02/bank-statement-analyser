@@ -122,8 +122,8 @@ def sme_subcategory(t) -> str:
         # a real company and the words look like any other payment — so the
         # amount IS the rule. Deliberately a ceiling and nothing else: the
         # founder asked for these to fire "less rarely and only for small
-        # amounts less than ₹10", so anything at or above the ceiling stays in
-        # the trade lines where it belongs.
+        # amounts", so anything at or above the ceiling stays in the trade
+        # lines where it belongs.
         if e["max_abs_amount"] is not None and amount >= e["max_abs_amount"]:
             continue
         if e["max_abs_amount"] is not None and not e["patterns"]:

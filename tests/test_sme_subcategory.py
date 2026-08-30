@@ -150,10 +150,23 @@ def test_a_token_card_debit_is_a_misc_debit():
              "Regular debit")) == "Misc. debit"
 
 
-def test_the_ceiling_is_exclusive_so_ten_rupees_is_still_trade():
-    """"less than 10" — at the ceiling it stays where it was."""
-    assert sme_subcategory(_txn("UPI/P2A/395106793615/HEMALATHA/UTIB/", 10.00,
+def test_the_ceiling_is_exclusive():
+    """AT the ceiling a row stays where it was; only BELOW it is "misc".
+
+    The number itself is expected to move — it began at ₹10 and the founder
+    raised it to ₹50 once he remembered an airport lounge takes ₹25 as a
+    refundable deduction — so this pins the boundary BEHAVIOUR, and the value
+    lives in data where he can change it without a code edit."""
+    assert sme_subcategory(_txn("UPI/P2A/395106793615/HEMALATHA/UTIB/", 50.00,
                                 "Regular credit")) == "Business income"
+    assert sme_subcategory(_txn("UPI/P2A/395106793615/HEMALATHA/UTIB/", 49.99,
+                                "Regular credit")) == "Misc. credit"
+
+
+def test_the_lounge_deduction_that_prompted_the_higher_ceiling():
+    """₹25, which the old ₹10 ceiling missed."""
+    assert sme_subcategory(_txn("POS/AIRPORT LOUNGE ACCESS/", -25.00,
+                                "Regular debit")) == "Misc. debit"
 
 
 def test_an_ordinary_payment_is_untouched_by_the_ceiling():

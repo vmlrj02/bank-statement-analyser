@@ -19,7 +19,10 @@ credit:
   # verifying an account, and the ₹1-2 a merchant gateway takes to save a card,
   # both come from real companies with ordinary-looking narration — there is no
   # phrase to match on. The master's own identification column says exactly
-  # that: "Credits such ₹1 for account verification; credits less than ₹10".
+  # that: "Credits such ₹1 for account verification". The ceiling started at
+  # ₹10 and is ₹50 now — raised by the founder once he remembered an airport
+  # lounge takes ₹25 as a refundable deduction: the same shape of transaction,
+  # just dearer. Expect it to move again; that is why it is data, not code.
   # High priority so the ceiling wins over the trade-line default; the ceiling
   # itself keeps them rare, which is what was asked for.
   - name: Misc. credit
@@ -28,7 +31,7 @@ credit:
     sheet: ""
     tags: []
     patterns: []
-    max_abs_amount: 10
+    max_abs_amount: 50
 
   - name: Business income
     priority: -10
@@ -185,14 +188,14 @@ debit:
     patterns: [EPFO, ESIC, PROVIDENT FUND, PF CHALLAN, ESI, LWF]
 
   # The debit twin of Misc. credit — "test transactions; deducting a token ₹1
-  # or 2 while saving a card in a merchant PG; debits less than ₹10".
+  # or 2 while saving a card in a merchant PG". Ceiling ₹50, see Misc. credit.
   - name: Misc. debit
     priority: 100
     group: Misc. debit
     sheet: ""
     tags: []
     patterns: []
-    max_abs_amount: 10
+    max_abs_amount: 50
 
   - name: Cash Withdrawals
     group: Cash & Non-Operating

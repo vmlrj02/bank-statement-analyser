@@ -224,9 +224,12 @@ their own uploads and never the AI block.
 23. The two "Misc." sub-categories are identified by SIZE, not wording. A ₹1
     penny-drop that verifies an account, and the ₹1-2 a merchant gateway takes
     to save a card, both come from real companies with ordinary narration —
-    there is no phrase to match. `max_abs_amount: 10` in
+    there is no phrase to match. `max_abs_amount` in
     data/sme_subcategories.yaml is the whole rule, and the ceiling is
-    EXCLUSIVE ("credits less than ₹10"), so ₹10.00 itself stays trade income.
+    EXCLUSIVE, so a row AT the ceiling stays where it was. The value is expected
+    to move — it began at ₹10 and is ₹50 since the founder remembered an
+    airport lounge takes ₹25 as a refundable deduction — which is exactly why
+    it lives in data rather than in code.
 24. A CREDIT NAMING A LOAN ACCOUNT is a disbursal even when the payer is a
     plain bank rather than an NBFC in `lenders`. Do not add banks to
     `lenders` — every NEFT from one would become a disbursal. Seen for real:
