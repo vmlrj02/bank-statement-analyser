@@ -221,6 +221,17 @@ their own uploads and never the AI block.
     WHOLE name ("AXIS" is a bank, "AXIS MACHINE TOOLS" is a customer).
     Finance companies are NOT banks and stay nameable — Bajaj Finance,
     Kinara Capital — which is what makes an EMI row still say who was paid.
+25. A BOUNCE CHARGE IS A PENALTY; THE RETURN ITSELF IS NOT. The master's row
+    33 (Inward Cheque / Mandate Bounces) is the return EVENT and maps to no
+    sheet; row 34 (Bank Penalties & Non-Maintenance) is the CHARGE and owns
+    `Bounced-Penal Xns` — the founder moved that mapping on 30 Aug because it
+    was on row 33. Every pattern on row 34 carries CHG / PENALTY / INT, and
+    that is the whole distinction. Both rows accept a WIDE tag list, because a
+    charge is tagged by the event it belongs to ("Chq Rtrn Chrgs Incl GST" is
+    tagged Outward Bounced Xns), and their patterns are specific enough to
+    carry the decision alone. NOT taken from his column D: the bare "INCL GST",
+    which appears on ordinary service fees too ("NEFT CHRGS INCL GST") and
+    would contradict gotcha 5 — flagged to him rather than applied.
 23. The two "Misc." sub-categories are identified by SIZE, not wording. A ₹1
     penny-drop that verifies an account, and the ₹1-2 a merchant gateway takes
     to save a card, both come from real companies with ordinary narration —
@@ -229,7 +240,12 @@ their own uploads and never the AI block.
     EXCLUSIVE, so a row AT the ceiling stays where it was. The value is expected
     to move — it began at ₹10 and is ₹50 since the founder remembered an
     airport lounge takes ₹25 as a refundable deduction — which is exactly why
-    it lives in data rather than in code.
+    it lives in data rather than in code. They are also a RESIDUAL, never an
+    override: a named match always beats them and they only outrank the generic
+    trade default. At ₹10 that hardly mattered; at ₹50 a bare ceiling would
+    relabel a ₹23 bank charge, a small MAB penalty or a token EMI as "misc" and
+    destroy the signal a lender needs. Measured at ~2% of rows, which is the
+    "rare" that was asked for.
 24. A CREDIT NAMING A LOAN ACCOUNT is a disbursal even when the payer is a
     plain bank rather than an NBFC in `lenders`. Do not add banks to
     `lenders` — every NEFT from one would become a disbursal. Seen for real:

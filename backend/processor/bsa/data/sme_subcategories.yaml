@@ -168,6 +168,18 @@ debit:
                JIO, VODAFONE, BSNL, WATER, BBPS, UTILITY, GAS BILL,
                BROADBAND, INTERNET BILL]
 
+  # Row 26, added by the founder on 30 Aug alongside the row 33/34 fix. Column
+  # D is his list verbatim. It sits ABOVE Supplier / Vendor Settlements in
+  # effect because that line is priority -10, so a redBus or IRCTC debit stops
+  # being read as a trade payable.
+  - name: Travel & Conveyance expenses
+    group: Operating Expenses (OpEx)
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [REDBUS, UBER, OLA, IRCTC, MAKEMYTRIP, IBIBO, IXIGO, GOIBIBO,
+               CLEARTRIP, EASEMYTRIP, YATRA, INDIGO, SPICEJET, AIR INDIA,
+               VISTARA, RAPIDO, MERU, TRAVEL, AIRLINES]
+
   - name: GST Payments
     group: Statutory & Compliance
     sheet: Regular Debits
@@ -217,18 +229,49 @@ debit:
     patterns: [MUTUAL FUND, SIP, MF PURCHASE, LIC, INSURANCE PREMIUM,
                FIXED DEPOSIT, RD INSTAL, PPF, NPS]
 
-  - name: Inward Cheque / Mandate Bounces
+  # Row 34 of the master, and the sheet the founder moved here from row 33 on
+  # 30 Aug: the CHARGE is what lands on Bounced-Penal Xns, not the return event.
+  # Column D is his, and every entry carries CHG / PENALTY / INT — that is the
+  # whole distinction from row 33 above.
+  #
+  # It accepts the bounce tags as well as its own, because a charge for a
+  # returned cheque gets tagged by the EVENT it belongs to ("Chq Rtrn Chrgs
+  # Incl GST" was tagged Outward Bounced Xns and read as a return). The
+  # patterns are specific enough to carry the decision on their own, so
+  # widening the tag list costs nothing.
+  #
+  # Deliberately NOT taking the master's bare "INCL GST": it appears on every
+  # ordinary service fee too ("NEFT CHRGS INCL GST"), and gotcha 5 is explicit
+  # that penal means a threshold or violation charge, never a routine fee.
+  # Flagged to the founder rather than silently applied.
+  - name: Bank Penalties & Non-Maintenance
+    priority: 20
     group: Banking Friction & Penal
     sheet: Bounced-Penal Xns
-    tags: [inward bounce penal charges]
-    patterns: []
+    tags: [other penal charges, inward bounce penal charges, Outward Bounced Xns,
+           Regular debit, ECS transaction]
+    patterns: [CHQ RTN CHG, CHQ RTRN CHRGS, CHQ RTRN CHRG, CHEQUE RETURN CHG,
+               ECS RET CHG, ECS RETURN CHG, NACH BOUNCE CHGS, NACH BOUNCE CHG,
+               ACH RETURN CHG, NSF CHG, MIN BAL CHG, MAB CHG, NON MAINT CHG,
+               LIMIT EXPIRY PENALTY, PENAL INT, EXCESS OD CHG, TOD PENALTY,
+               PENAL, EXCESS OD, MIN BAL, MAB, AMB, NON MAINT]
 
-  - name: Bank Penalties & Non-Maintenance
+  # Row 33: the return EVENT, not the charge for it. The founder moved the
+  # Bounced-Penal Xns mapping off this row and onto Bank Penalties above on
+  # 30 Aug ("earlier Bounced-Penal Xns was mapped to row 33 which is wrong"),
+  # so column E here is now "--". Column D is his, and note none of it carries
+  # CHG — that is what separates it from row 34.
+  - name: Inward Cheque / Mandate Bounces
     group: Banking Friction & Penal
     sheet: ""
-    tags: [other penal charges]
-    patterns: [PENAL INT, EXCESS OD, MIN BAL, MAB, AMB, NON MAINT,
-               LIMIT EXPIRY, POS THRESHOLD]
+    # Same reasoning as row 34: the return EVENT gets tagged by whatever the
+    # bank called the movement, often a plain Regular debit, so the tag list is
+    # wide and the specific patterns carry the decision.
+    tags: [inward bounce penal charges, Outward Bounced Xns, Regular debit,
+           ECS transaction]
+    patterns: [INW CLG RET, INW RET, CHEQUE RETURN, CHQ RTN, ECS RETURN,
+               ACH RETURN, NACH REJECT, DISHONOUR, INSUFFICIENT FUNDS,
+               EXCEEDS ARRANGEMENT]
 
   - name: Statutory Penalty / Late Fees
     group: Banking Friction & Penal

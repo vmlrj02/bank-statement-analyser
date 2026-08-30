@@ -111,26 +111,25 @@ def sme_subcategory(t) -> str:
 
     amount = abs(float(getattr(t, "amount", 0) or 0))
 
+    # The two "Misc." lines are a RESIDUAL, not an override. The master
+    # identifies them by size rather than wording — a ₹1 penny-drop verifying
+    # an account, the ₹1-2 a gateway takes to save a card, a ₹25 lounge
+    # deduction — because the payer is a real company and the narration reads
+    # like any other payment. But size alone cannot be allowed to WIN: at the
+    # ₹50 ceiling that would relabel a ₹23 NEFT charge, a small MAB penalty or
+    # a token EMI as "misc", destroying the signal a lender actually needs.
+    # So a named match always beats them, and they only outrank the generic
+    # trade default. That is also what makes them rare, which is what was
+    # asked for.
+    misc_name = ""
+
     best_name, best_score = "", None
     for e in data["entries"]:
         if e["side"] != side:
             continue
-        # An AMOUNT ceiling, for the two "Misc." lines the master defines by
-        # size rather than by wording: a ₹1 penny-drop credit that verifies an
-        # account, or the ₹1-2 a merchant gateway takes and returns to save a
-        # card. There is no narration that reliably marks these — the payer is
-        # a real company and the words look like any other payment — so the
-        # amount IS the rule. Deliberately a ceiling and nothing else: the
-        # founder asked for these to fire "less rarely and only for small
-        # amounts", so anything at or above the ceiling stays in the trade
-        # lines where it belongs.
-        if e["max_abs_amount"] is not None and amount >= e["max_abs_amount"]:
-            continue
-        if e["max_abs_amount"] is not None and not e["patterns"]:
-            # Size alone decided it; no pattern needs to match.
-            score = (e["priority"], 0)
-            if best_score is None or score > best_score:
-                best_name, best_score = e["name"], score
+        if e["max_abs_amount"] is not None:
+            if amount < e["max_abs_amount"] and not e["patterns"]:
+                misc_name = e["name"]
             continue
         # An empty tag set means "any row on this side" — the speculative and
         # high-risk groups, which are defined by who was paid, not by the tag.
@@ -154,4 +153,6 @@ def sme_subcategory(t) -> str:
             break
     if best_name:
         return best_name
+    if misc_name:
+        return misc_name
     return data["defaults"].get(tag, "")

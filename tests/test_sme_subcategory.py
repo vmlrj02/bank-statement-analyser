@@ -121,7 +121,7 @@ def test_a_subcategory_cannot_cross_the_credit_debit_line():
 
 def test_every_subcategory_declares_a_group_from_the_masters_column_a():
     subs = subcategories()
-    assert len(subs) == 35        # the master's 33, plus Misc. credit and Misc. debit
+    assert len(subs) == 36   # the master's 34, plus Misc. credit and Misc. debit
     for s in subs:
         assert s["group"], s["name"]
         assert group_of(s["name"]) == s["group"]
@@ -172,3 +172,52 @@ def test_the_lounge_deduction_that_prompted_the_higher_ceiling():
 def test_an_ordinary_payment_is_untouched_by_the_ceiling():
     assert sme_subcategory(_txn("NEFT INVOICE 8891", 250000.0,
                                 "Regular credit")) == "Business income"
+
+
+# --- the founder's 30 Aug corrections to the master ---------------------------
+
+def test_a_bounce_CHARGE_is_a_penalty_not_a_return():
+    """"debit were also put under returns.. it should be under bank penalties."
+    He moved the Bounced-Penal Xns sheet mapping from row 33 (the return EVENT)
+    to row 34 (the CHARGE), and rewrote both rows' patterns — every entry on
+    row 34 carries CHG / PENALTY / INT, which is the whole distinction.
+
+    "Chq Rtrn Chrgs Incl GST" is the row he circled: it gets tagged by the
+    event it belongs to (Outward Bounced Xns), so the sub-category has to be
+    able to see past the tag."""
+    for desc in ("Chq Rtrn Chrgs Incl GST", "ECS RET CHG 12/05",
+                 "NACH BOUNCE CHGS", "CHRG MAB NON MAINTENANCE"):
+        assert sme_subcategory(_txn(desc, -590, "Outward Bounced Xns")) == \
+            "Bank Penalties & Non-Maintenance", desc
+
+
+def test_the_return_event_itself_is_not_a_penalty():
+    assert sme_subcategory(
+        _txn("INW CLG RET CHEQUE RETURN DISHONOUR", -1200, "Regular debit")) == \
+        "Inward Cheque / Mandate Bounces"
+
+
+def test_travel_is_its_own_line_not_a_trade_payable():
+    """Row 26, added the same night."""
+    for desc in ("UPI/P2M/1234/REDBUS/Payment", "IRCTC RAIL BOOKING",
+                 "UPI/P2M/9/MAKEMYTRIP/"):
+        assert sme_subcategory(_txn(desc, -1417, "Regular debit")) == \
+            "Travel & Conveyance expenses", desc
+
+
+def test_misc_is_a_residual_and_never_beats_a_named_match():
+    """The ceiling identifies a token payment, but it must not OVERRIDE a real
+    one. At ₹50 a bare ceiling would relabel a small penalty, a bank charge or
+    a token EMI as "misc" and destroy the signal — so a named match always
+    wins and Misc only outranks the generic trade default."""
+    # A small penalty stays a penalty.
+    assert sme_subcategory(_txn("CHRG MAB NON MAINTENANCE", -40,
+                                "other penal charges")) == \
+        "Bank Penalties & Non-Maintenance"
+    # A small travel debit stays travel.
+    assert sme_subcategory(_txn("UPI/P2M/1/REDBUS/", -30, "Regular debit")) == \
+        "Travel & Conveyance expenses"
+    # But an unremarkable tiny credit still becomes misc.
+    assert sme_subcategory(
+        _txn("UPI/P2M/530718094408/UBER INDIA SYSTEMS PRIVATE L/", 1.00,
+             "Regular credit")) == "Misc. credit"
