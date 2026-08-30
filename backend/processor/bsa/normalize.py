@@ -244,6 +244,40 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.match(r"SAK/[^/]*/[^/]*/[^/]*/([^/]+)", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
+    # --- the four shapes the reviewer labelled (round 1) ---------------------
+    # 41 of 47 labelled shapes — 489 of 563 transactions — were these, and in
+    # every one the payee is at a KNOWN POSITION in the string. Worth stating
+    # because it is the argument against reaching for a model here: this is
+    # "take the text inside the brackets", not something that needs learning.
+    #
+    # 1. The name printed in brackets after the VPA. The single biggest shape
+    #    in the labelled set (33 shapes, 359 rows), Karnataka Bank and others:
+    #      UPI:516187488189:paytmqr6er7uc@ptys(Maseeha Banu)
+    #      UPI:553101391507:q939300321@ybl(MED ZONE PHARMA):UPI-
+    #    The closing bracket is OPTIONAL because Karnataka truncates the
+    #    particulars cell mid-name ("…@okhdfcbank(SYED"), and half a name is
+    #    still better than none — it is what the reviewer labelled those as.
+    m = re.search(r"@[\w.\-]+\(([A-Za-z][^)]*)", d)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    # 2. IMPS/P2A-<ref>-<Name>-<phone>. "Mr"/"Mrs" is a title, not the name.
+    m = re.search(r"IMPS/P2A-\d+-(?:MR|MRS|MS)\.?\s*([A-Za-z][A-Za-z .]*?)-\d"
+                  r"|IMPS/P2A-\d+-([A-Za-z][A-Za-z .]*?)-\d", d, re.I)
+    if m:
+        name = m.group(1) or m.group(2)
+        if name and sum(c.isalpha() for c in name) >= 3:
+            return _clean_segment(name)
+    # 3. EBANK:<ref>/<NAME>/<ref>. The slash run is greedy because the name
+    #    segment is sometimes empty ("EBANK:1475338882///KSBCL").
+    m = re.match(r"EBANK:\d+/+([A-Za-z][^/]*)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    # 4. A reversal keeps the original payee's VPA handle. Letters only: the
+    #    reviewer labelled "ZAYYANZSYED16-1@okhdfcbank" as "ZAYYANZSYED" here
+    #    and in the bracket form too, so the trailing serial is not the name.
+    m = re.match(r"REV-UPI-\d+-([A-Za-z]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
     if mode == "upi":
         # PNB prints "UPI/<ref>/P2M|P2V/<vpa>/<NAME>" — the payee NAME is the
         # LAST segment, after the VPA. Prefer it over the VPA (which the

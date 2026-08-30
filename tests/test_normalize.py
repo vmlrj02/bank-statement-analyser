@@ -585,3 +585,35 @@ def test_a_real_counterparty_survives_the_bank_filter(name):
     from bsa.normalize import _sanitise_party
 
     assert _sanitise_party(name) == name
+
+
+# --- the four shapes from the reviewer's first labelling round ---------------
+# 41 of 47 labelled shapes — 489 of 563 transactions — were these four, and in
+# every one the payee sits at a KNOWN POSITION in the string. Worth recording
+# because it settled an architecture question: this is "take the text inside
+# the brackets", not something that needs a model.
+
+@pytest.mark.parametrize("desc,want", [
+    # 1. The name in brackets after the VPA — the biggest shape in the set
+    #    (33 shapes, 359 rows), and worth 65 points of Karnataka Bank on its own.
+    ("UPI:516187488189:paytmqr6er7uc@ptys(Maseeha Banu)", "Maseeha Banu"),
+    ("UPI:553101391507:q939300321@ybl(MED ZONE PHARMA):UPI-", "MED ZONE PHARMA"),
+    ("UPI:820392704009:6363874107@ybl(Mr ILIYAS PASHA)", "Mr ILIYAS PASHA"),
+    ("UPI:560343925394:9945200442@ibl(CHAND PASHA):Vrl", "CHAND PASHA"),
+    # Karnataka TRUNCATES the particulars cell mid-name, so the closing bracket
+    # is optional — half a name is what the reviewer labelled these as, and it
+    # still consolidates with itself across rows.
+    ("UPI:515313177312:syedarzaan3@okicici(SYED ARZAAN", "SYED ARZAAN"),
+    # 2. IMPS/P2A-<ref>-<Name>-<phone>; "Mr" is a title, not the name.
+    ("IMPS/P2A-515714922426-Mr ShakeelKhan-9198450572", "ShakeelKhan"),
+    ("IMPS/P2A-518704811776-SYEDSADIQAHMED-919986778644", "SYEDSADIQAHMED"),
+    # 3. EBANK — the name segment is sometimes empty, hence the greedy slashes.
+    ("EBANK:1475569389/ONE 97 COMMUNICATION/51006701886", "ONE 97 COMMUNICATION"),
+    ("EBANK:1475338882///KSBCL", "KSBCL"),
+    # 4. A reversal keeps the original payee's handle.
+    ("REV-UPI-50200073096835-ZAYYANZSYED16-1@O KHDFCBANK-1", "ZAYYANZSYED"),
+])
+def test_the_labelled_party_shapes(desc, want):
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    assert extract_counterparty(desc, detect_mode(desc)) == want
