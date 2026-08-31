@@ -315,13 +315,28 @@ def extract_counterparty(desc: str, mode: str) -> str:
     #     or the payee's bank — so a bank that prints the name first (Kotak:
     #     "UPI/SULGIRI MALLES/519258796756/UPI") cannot match, and neither can
     #     a direction flag in that slot (IOB: "UPI/794684068531/DR/ PHONEPE").
-    for pat in (r"\bUPI/\d{6,}/(?!DR/|CR/)[^/]*/([^/]+?)//ICI",
-                r"\bUPI/\d{6,}/(?!DR/|CR/)[^/]*/([^/]+?)/[A-Za-z][A-Za-z ]*"
+    for pat in (r"\bUPI/\d{6,}/(?!DR/|CR/)([^/]*)/([^/]+?)//ICI",
+                r"\bUPI/\d{6,}/(?!DR/|CR/)([^/]*)/([^/]+?)/[A-Za-z][A-Za-z ]*"
                 r"(?:BANK|LTD|Bank|Ltd)",
-                r"\bMMT/IMPS/\d{6,}/[^/]*/([^/]+?)/(?:[A-Z]{4}\d|[A-Z][a-z]+ )"):
+                r"\bMMT/IMPS/\d{6,}/([^/]*)/([^/]+?)/(?:[A-Z]{4}\d|[A-Z][a-z]+ )"):
         m = re.search(pat, d)
-        if m and sum(c.isalpha() for c in m.group(1)) >= 3:
-            return _clean_segment(m.group(1))
+        if not m:
+            continue
+        remark, payee = m.group(1), m.group(2)
+        # …unless the payee slot holds a bare QR or app handle
+        # ("paytmqr10gvpf@p", "gpay-1124261310", "vyapar.17164938"), which
+        # names nobody. The reviewer asked for the REMARK back on those rows —
+        # "orangepurchase" is at least what the money bought, and a weak label
+        # beats an empty cell. A named payee still wins outright.
+        # Keep the digits: _is_bare_psp reads what FOLLOWS the app name to tell
+        # a bare handle ("paytmqr10gvpf" -> "10gvpf") from a named service
+        # ("gpayRECHARGE"). Stripping them first made every QR handle look like
+        # the latter.
+        stem = payee.split("@")[0].upper()
+        cand = remark if (_is_bare_psp(stem)
+                          or not any(c.isalpha() for c in payee)) else payee
+        if sum(c.isalpha() for c in cand) >= 3:
+            return _clean_segment(cand)
     # 2. IMPS/P2A-<ref>-<Name>-<phone>. "Mr"/"Mrs" is a title, not the name.
     m = re.search(r"IMPS/P2A-\d+-(?:MR|MRS|MS)\.?\s*([A-Za-z][A-Za-z .]*?)(?:-\d|$)"
                   r"|IMPS/P2A-\d+-([A-Za-z][A-Za-z .]*?)(?:-\d|$)", d, re.I)
@@ -389,6 +404,19 @@ def extract_counterparty(desc: str, mode: str) -> str:
     #   INWARD CLEARING ZONE 8- BEHARILAL G H"), Canara does not.
     m = re.search(r"INWARD CLEARING[A-Z0-9 ]*?-\s*([A-Za-z][A-Za-z .&'-]+?)(?:-|$)",
                   d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "INF/INFT/040122564661/52203340 /MOKESHWARANSUKUMAR /April Salary" —
+    #   ICICI internet banking with FOUR segments: reference, the beneficiary's
+    #   ACCOUNT, the beneficiary, then the remark. The existing INF/INFT rule
+    #   takes the last segment, which is the remark here, so a salary run was
+    #   named "April Salary". The name is the segment before it.
+    m = re.search(r"\bINF/INFT/\d+/\d+\s*/\s*([A-Za-z][A-Za-z .&'-]+?)\s*/", d)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "Auto Loan XX74039 EMI Spazeome" — the borrower is named after the EMI
+    #   marker, and nothing else on the row identifies anybody.
+    m = re.search(r"\bLoan\s+[A-Z0-9]+\s+EMI\s+([A-Za-z][A-Za-z .&'-]+)$", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
     #   IDBI writes the UTR and the payee as ONE run with no separator:
@@ -575,11 +603,13 @@ def extract_counterparty(desc: str, mode: str) -> str:
         m = re.search(r"SBIN\d+-\s*\w+\s+([A-Za-z][A-Za-z .]+?)\s+TRANSFER TO", d)
         if m:
             return _clean_segment(m.group(1))
-        # GIB/<ref>/GST /<ref> — government internet banking; the tax head
-        # is the only party there is.
-        m = re.search(r"\bGIB/\d+/([A-Z]+)\b", d)
-        if m:
-            return _clean_segment(m.group(1))
+        # GIB/<ref>/DTAX|ESIC|GST /<ref> — government internet banking. The tax
+        # HEAD is not a counterparty: the reviewer struck ESIC and six DTAX
+        # rows out across two labelled passes. The category already says what
+        # the payment was ("GST Payments", "Direct Tax"), so the party column
+        # was repeating the classification rather than naming anybody.
+        if re.search(r"\bGIB/\d+/[A-Z]+\b", d):
+            return ""
         # RTGS RETURN-<ref>-<NAME>-<reason> — a returned RTGS names its party.
         m = re.search(r"(?:RTGS|NEFT) RETURN-[A-Z0-9]+-([^-]+)", d, re.I)
         if m and not _REFNUM.match(m.group(1).strip()):
@@ -1101,7 +1131,7 @@ def _is_bank_name(up: str) -> bool:
 _PSP = ("PAYTM", "PHONEPE", "GPAY", "GOOGLEPAY", "BHARATPE", "AMAZONPAY",
         "MOBIKWIK", "FREECHARGE", "PAYZAPP", "PAYU", "RAZORPAY", "BHIM",
         "PAYTMQR", "OKAXIS", "OKICICI", "OKSBI", "OKHDFCBANK", "YBL", "IBL",
-        "AXL", "PTYS", "PTYB", "APL", "UPI")
+        "AXL", "PTYS", "PTYB", "APL", "UPI", "VYAPAR", "EAZYPAY")
 
 
 def _is_bare_psp(up: str) -> bool:

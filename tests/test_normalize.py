@@ -101,8 +101,12 @@ def test_counterparty_skips_reference_numbers_and_ifsc():
     # ICICI internet banking: the NAME is the LAST segment, after the remark.
     ("NET BANKING INF/INFT/044420726211/Amit payment /AMIT",
      "netbanking", "AMIT"),
-    # Government internet banking: the tax head is the only party there is.
-    ("GIB/002046036625/GST /25070700147871", "other", "GST"),
+    # Government internet banking. The tax HEAD is not a counterparty — the
+    # reviewer struck out ESIC and six DTAX rows across two labelled passes.
+    # The category already records what the payment was ("GST Payments",
+    # "Direct Tax"), so naming the party after it repeated the classification
+    # instead of naming anybody. This REVERSES the earlier rule deliberately.
+    ("GIB/002046036625/GST /25070700147871", "other", ""),
     ("RTGS RETURN-ICICR42026011900518516-S N S PRODUCTSPVT LTD-OPERATIONS SUSPENDED/R09",
      "other", "S N S PRODUCTSPVT LTD"),
     # SBI's prose narration — the account number rides along with the name.
@@ -171,8 +175,9 @@ def test_counterparty_from_real_statement_descriptors(desc, mode, party):
      "other", "SAROJA CHANDRA SHEKARAN"),
     ("By-Transfer Dividend Credit to A -4458-SAROJA CHANDRA SHEKARAN 9880241000 .",
      "other", "SAROJA CHANDRA SHEKARAN"),
-    # Tax remittances: the tax head is the only party there is (GIB/GST
-    # precedent).
+    # Tax remittances on OTHER banks, left as they are: these shapes were never
+    # reviewed, and only the GIB form was struck out. Flagged as an
+    # inconsistency to settle rather than changed unasked.
     ("TAX/21862550/139010640001/290526/1 :16", "other", "TAX"),
     ("SGST202602246815177075", "other", "SGST"),
     # HDFC one-offs: government e-pay merchant, STP tail.
@@ -975,3 +980,46 @@ def test_reviewer_idbi_pass_missed_names_and_number_plates():
     assert party("UPI/738979177827/BMTC BUS KA57F2446") == "BMTC BUS KA57F2446"
     assert _sanitise_party("KA01AR2798") == ""
     assert _sanitise_party("MADANLAL") == "MADANLAL"
+
+
+def test_reviewer_icici_second_pass():
+    """The reviewer's second labelled ICICI pass, run over the output of the
+    first. Three decisions, each reversing or refining something we do."""
+    from bsa.models import Txn
+    from bsa.normalize import (_sanitise_party, drop_useless_identifiers,
+                               extract_counterparty, detect_mode)
+
+    def party(d):
+        cp = _sanitise_party(extract_counterparty(d, detect_mode(d)))
+        t = Txn(date="2026-01-01", cheque_no="", description=d, amount=-1.0,
+                balance=0.0, mode="other", counterparty=cp, account_no="1")
+        drop_useless_identifiers([t])
+        return t.counterparty or ""
+
+    # A tax head is not a counterparty. Struck out seven times across two
+    # passes, and the category already records what the payment was.
+    assert party("GIB/002042128388/ESIC /05125117801229") == ""
+    assert party("GIB/002042203226/DTAX /25050701002270ICIC") == ""
+
+    # When the payee slot holds a bare QR or app handle, the REMARK comes back:
+    # it is at least what the money bought, and a weak label beats an empty
+    # cell. A named payee still wins outright.
+    assert party("UPI/512591578149/orangepurchase/paytmqr10gvpf@p//ICIb786") == \
+        "orangepurchase"
+    assert party("UPI/514695559392/sweetlimepurcha/gpay-1120688555//ICIf82") == \
+        "sweetlimepurcha"
+    assert party("MMT/IMPS/512118070249/transport/ZubariKhan/HDFC0000133") == \
+        "ZubariKhan"
+    # …and an app handle with nothing else on the row still names nobody
+    assert party("UPI/513121742444/UPI Pay/vyapar.17164938//ICI8cb8c96") == ""
+
+    # ICICI internet banking with FOUR segments: ref, the beneficiary's
+    # ACCOUNT, the beneficiary, then the remark. Taking the last named a whole
+    # salary run "April Salary".
+    assert party("INF/INFT/040122564661/52203340 /MOKESHWARANSUKUMAR /April "
+                 "Salary") == "MOKESHWARANSUKUMAR"
+    # the three-segment form still resolves to its last segment
+    assert party("NET BANKING INF/INFT/044420726211/Amit payment /AMIT") == "AMIT"
+
+    # the borrower named after an EMI marker
+    assert party("Auto Loan XX74039 EMI Spazeome") == "Spazeome"

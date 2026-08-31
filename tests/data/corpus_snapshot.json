@@ -474,8 +474,8 @@
    "files": 2,
    "mean_desc_len": 79.0,
    "not_reconciling": 0,
-   "party_nameable_pct": 90.5,
-   "party_named_pct": 89.9,
+   "party_nameable_pct": 92.8,
+   "party_named_pct": 92.2,
    "rows": 614,
    "top_categories": {
     "Business income": 9.8,
@@ -519,8 +519,8 @@
    "files": 2,
    "mean_desc_len": 52.3,
    "not_reconciling": 0,
-   "party_nameable_pct": 89.4,
-   "party_named_pct": 89.4,
+   "party_nameable_pct": 83.0,
+   "party_named_pct": 83.0,
    "rows": 94,
    "top_categories": {
     "Business income": 5.3,
