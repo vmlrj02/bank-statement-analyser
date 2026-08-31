@@ -324,6 +324,12 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"\bIMPS\s*P2[AMVP]\s+([A-Za-z][A-Za-z .&'-]+?)(?:\s*-|$)", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
+    #   Bank of Maharashtra: "UPI 707889175861/SBIN/KOLA SHEKHAR/Payment from
+    #   Ph". The reference follows UPI with a SPACE rather than a slash, and the
+    #   counterparty's bank code sits between the reference and the name.
+    m = re.search(r"\bUPI\s+\d{9,}\s*/\s*[A-Z]{4}\s*/\s*([A-Za-z][^/]*)", d)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
     #   Union Bank's "DETAILS OF STATEMENT" export writes the channel with a
     #   suffix and puts the direction in the middle:
     #   "UPIAR/435932534940/DR/KUMAR T /SBIN/ 9739696759@ax".

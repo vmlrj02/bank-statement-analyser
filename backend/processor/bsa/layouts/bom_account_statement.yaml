@@ -1,0 +1,46 @@
+# Layout descriptor: Bank of Maharashtra — "Statement for Account No … from … to"
+# export on a wide 978pt page. Columns: Sr No | Date | Particulars |
+# Cheque/Reference No | Debit | Credit | Balance | Channel.
+#
+# The trailing CHANNEL column ("UPI", "NEFT") is why tail_x_min matters here:
+# it sits to the RIGHT of the balance, and without a cutoff it would be swept
+# into the row as narration on every single line.
+#
+# Particulars wrap both above and below the dated amount line — "UPI
+# 696600221859/UBIN" over it, "using" under it — so a row is a centred block
+# and continuation is nearest.
+id: bom_account_statement
+bank: Bank of Maharashtra
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "MAHB0"
+    - "Statement for Account No"
+  any_of: []
+header:
+  account_line: 'Statement for Account No\s*(?P<account_no>\d+)\s*from\s*(?P<period_from>\d{2}/\d{2}/\d{4})\s*to\s*(?P<period_to>\d{2}/\d{2}/\d{4})'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Account Holder Names\s+([A-Z][A-Za-z .&]+?)\s+Primary'
+parse:
+  table_header_words: ["Debit", "Credit", "Balance"]
+  header_offset: 14
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: nearest
+  columns:
+    sl_no_x_max: 145            # drop the Sr No column (124-130)
+    date_x_max: 215             # Date 150-202
+    remarks_x_min: 215          # Particulars 222-379
+    remarks_x_max: 395
+    cheque_x_min: 395           # Cheque / Reference No 401-468
+    cheque_x_max: 500
+    withdrawal_x1_max: 600      # Debit   — right edge 577
+    deposit_x1_max: 700         # Credit  — right edge 667
+    balance_x1_max: 830         # Balance — right edge 801
+    tail_x_min: 840             # the Channel column, to the right of Balance
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Page"
