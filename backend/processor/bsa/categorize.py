@@ -482,6 +482,22 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                 r"\bLOAN\s*A\s*/?\s*C\b|\bLOAN\s*ACCOUNT\b|\bLOAN\s*DISB"
                 r"|\bDISBURS", d, re.I):
             tag = "Loan amount disbursal"
+        # A credit whose narration simply says "loan" — the word the payer or
+        # the customer typed into the remark, with no account number and no
+        # lender name to key on. "BY TRANSFER-INB loan- …", "…/ATTN/HAND LOAN",
+        # "IMPS/…/Loan/MOZASUMULT". The reviewer asked of one of these "might be
+        # a loan right?", and it was: every one of the sixteen such rows in the
+        # corpus is a genuine borrowing, ₹47 lakh of it — a ₹40 lakh hand loan
+        # among them — all of it counted as business income until now, which is
+        # precisely the turnover circularity gotcha 18 forbids.
+        #
+        # The exclusions are what make it safe. Repayment wording means money
+        # going the other way, and an EMI or interest remark on a credit is a
+        # reversal or a rebate, not a drawdown.
+        elif credit and re.search(r"(?<![A-Za-z])LOANS?(?![A-Za-z])", d, re.I) \
+                and not re.search(r"LOAN\s*REPAY|LOAN\s*REP\b|EMI|INTEREST"
+                                  r"|\bINT\b", d, re.I):
+            tag = "Loan amount disbursal"
         elif credit and lender:
             tag = "Loan amount disbursal"
         elif not credit and lender:

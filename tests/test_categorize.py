@@ -258,3 +258,39 @@ def test_a_plain_trade_credit_is_not_swept_up_by_the_loan_rule():
             balance=0.0, mode="neft", counterparty="ACME STEELS")
     categorize([t])
     assert t.category == "Regular credit"
+
+
+def test_a_credit_that_says_loan_is_not_business_income():
+    """The reviewer asked of "BY TRANSFER-INB loan- … TRANSFER FROM …": "might
+    be a loan right?" — and it was. Sixteen rows across the corpus carry a bare
+    "loan" in a credit narration with no loan-account number and no lender name
+    to key on, ₹47 lakh of it including a ₹40 lakh hand loan, and every one was
+    being counted as business income. Turnover is business credits (gotcha 18),
+    so a borrowing counted as trading receipts flatters the most leveraged
+    borrower by exactly the size of the loan."""
+    from bsa.models import Txn
+    from bsa.categorize import categorize
+
+    def tag(desc, amount):
+        t = Txn(date="2026-01-01", cheque_no="", description=desc, amount=amount,
+                balance=0.0, mode="other", counterparty="X", account_no="1")
+        categorize([t])
+        return t.category
+
+    assert tag("BY TRANSFER-INB loan- CIAAMVCKJ5 TRANSFER FROM 43256010643 "
+               "SPAZEOMERCHANDI SE PRIV", 150000.0) == "Loan amount disbursal"
+    assert tag("RTGS/IDFBR52025122900440961/Ms Ramyashree S/IDFC FIRST BANK "
+               "LTD//ATTN/HAND LOAN", 4000000.0) == "Loan amount disbursal"
+    assert tag("MOZASUMULT MMT/IMPS/600316791698/Loan/MOZASUMULT/Uni on Bank "
+               "Of I", 10000.0) == "Loan amount disbursal"
+
+    # The exclusions are what make it safe: repayment wording is money going the
+    # other way, an EMI or interest remark on a credit is a reversal or rebate,
+    # a debit is never a disbursal, and an ordinary trade receipt is untouched.
+    assert tag("UPI/CR/123/RAMESH/Loan Repayment received", 50000.0) \
+        != "Loan amount disbursal"
+    assert tag("NEFT/ABC/Loan EMI refund", 5000.0) != "Loan amount disbursal"
+    assert tag("ACH DR BAJAJ FINANCE LOAN EMI", -15000.0) != "Loan amount disbursal"
+    assert tag("UPI/CR/123/RAMESH/Payment for steel", 150000.0) == "Regular credit"
+    # "LOANS" as part of a longer word must not match ("SLOANE", "LOANEE")
+    assert tag("NEFT/XYZ/SLOANE SQUARE TRADING", 90000.0) == "Regular credit"

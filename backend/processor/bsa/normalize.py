@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime
 
 from .models import RawRow, StatementExtract, Txn
@@ -89,6 +90,10 @@ def _name_segments(raw: str) -> list[str]:
         if (not s or su in _CHANNEL_TOKENS or _IFSC.match(su)
                 or _REFNUM.match(su) or su.isdigit() or _ALNUM_REF.match(su)):
             continue
+        if _BANK_CODE.match(re.sub(r"(TRANSFER|TRF|IMPS|NEFT|RTGS|UPI)$", "", su)):
+            continue                     # "IDFB", "KKBKTransfer" — their bank
+        if not _strip_stamps(s):
+            continue                     # "IMPSAB", "P2A" — how, not who
         out.append(s)
     return out
 
@@ -285,8 +290,8 @@ def extract_counterparty(desc: str, mode: str) -> str:
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
     # 2. IMPS/P2A-<ref>-<Name>-<phone>. "Mr"/"Mrs" is a title, not the name.
-    m = re.search(r"IMPS/P2A-\d+-(?:MR|MRS|MS)\.?\s*([A-Za-z][A-Za-z .]*?)-\d"
-                  r"|IMPS/P2A-\d+-([A-Za-z][A-Za-z .]*?)-\d", d, re.I)
+    m = re.search(r"IMPS/P2A-\d+-(?:MR|MRS|MS)\.?\s*([A-Za-z][A-Za-z .]*?)(?:-\d|$)"
+                  r"|IMPS/P2A-\d+-([A-Za-z][A-Za-z .]*?)(?:-\d|$)", d, re.I)
     if m:
         name = m.group(1) or m.group(2)
         if name and sum(c.isalpha() for c in name) >= 3:
@@ -294,6 +299,68 @@ def extract_counterparty(desc: str, mode: str) -> str:
     # 3. EBANK:<ref>/<NAME>/<ref>. The slash run is greedy because the name
     #    segment is sometimes empty ("EBANK:1475338882///KSBCL").
     m = re.match(r"EBANK:\d+/+([A-Za-z][^/]*)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    # --- round 2: shapes found by ranking layouts on rows that COULD be named
+    # (narration carries a name-like word) rather than on rows merely unnamed.
+    # That re-ranking is the point — the biggest pile of unnamed rows was SBI's
+    # "TRANSFER- TRANSFER <account no>", which carries no name at all and is
+    # NONE by decision, not by failure.
+    #
+    #   Trf to EARTHCON DEVELOPERS PRIVATE LIMITED/960856     (IndusInd)
+    m = re.search(r"\bTrf to ([A-Za-z][A-Za-z .&'-]+?)\s*/\s*\d", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   UCR013913427589_EMI_05-11-2025_PIRAMAL PETROLEUM P    (Axis cash-credit)
+    m = re.search(r"_EMI_[\d\-/ ]+_([A-Za-z][A-Za-z .&'-]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   CLG/510811/011125/Bank Of Ba/AKASH — the payee is AFTER the presenting
+    #   bank, which is why the last segment wins here.
+    m = re.match(r"CLG/\d+/\d+/[^/]*/([A-Za-z][^/]*)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   IMPS/615963841356-IMPS P2A GAJANAND TOOLS MAYUR-H     (Karnataka)
+    m = re.search(r"\bIMPS\s*P2[AMVP]\s+([A-Za-z][A-Za-z .&'-]+?)(?:\s*-|$)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   MBS/by SYED MUQTHAR AHMED/0200853/02-06-2026          (Karnataka)
+    m = re.search(r"\bMBS/by ([A-Za-z][A-Za-z .&'-]+?)\s*/", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   NET BANKING /KOTHARILELEC — the whole tail is the payee.
+    m = re.search(r"\bNET BANKING\s*/\s*([A-Za-z][A-Za-z .&'-]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   TO ONL NEFT:UTR:CIUBH26094034984:SBIN0008531:SARAVANA:: SARAVANAN::00067
+    #   (City Union). Colon-delimited machinery with the payee printed twice —
+    #   abbreviated once, then in full. The LONGEST alphabetic segment is the
+    #   full one, which is why this takes the max rather than the first.
+    if re.search(r"\bONL\s+(?:NEFT|RTGS|IMPS)\b", d, re.I):
+        best = ""
+        for seg in re.split(r"[:/]+", d):
+            seg = seg.strip(" .-")
+            seg = _strip_stamps(seg)
+            if (sum(c.isalpha() for c in seg) >= 4 and not any(c.isdigit() for c in seg)
+                    and seg.upper() not in _CHANNEL_TOKENS
+                    and seg.upper() not in _REMARK_WORDS
+                    and not _is_bank_name(seg.upper())
+                    and len(seg) > len(best)):
+                best = seg
+        if best:
+            return _clean_segment(best)
+    #   I/W CHEQUE PAID-SAHILPOLYMERS-000000000035            (AU SFB)
+    m = re.search(r"CHEQUE PAID-([A-Za-z][A-Za-z .&'-]+?)-\d", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   ACHInwDr-ROVER FINANCE LIMITE/05-07-2025              (Karnataka)
+    #   A bank in that slot is dropped later by _is_bank_name, which is what
+    #   keeps "ACHInwDr-IDFC FIRST BANK/…" from naming a rail.
+    m = re.search(r"ACH\s*InwDr-([A-Za-z][A-Za-z .&'-]+?)\s*/", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   …UN79642505 02150625 by DNARENDR from Tally B         (ICICI combined)
+    m = re.search(r"\bby ([A-Za-z][A-Za-z .&'-]{2,}?) from\b", d)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
     # 4. A reversal keeps the original payee's VPA handle. Letters only: the
@@ -497,9 +564,24 @@ def extract_counterparty(desc: str, mode: str) -> str:
         return m.group(1)
     # IMPS/P2A|P2M/<ref>/<NAME>/<bank>  and  IMPS-<ref>-<NAME>-<bank>. The /+
     # skips an empty segment ("…/501323167432//TIMEZONE").
-    m = re.search(r"IMPS/P2[AM]/\d+/+([A-Za-z][^/]*)", d, re.I)
-    if m and not _REFNUM.match(m.group(1).strip()):
-        return _clean_segment(m.group(1))
+    # The segment after the ref is not always the name: some banks print the
+    # beneficiary's BANK there first ("IMPS/P2A/603518249052/IDFB/MOHD NAEEM/…"),
+    # so walk the remaining segments rather than taking the next one on faith.
+    m = re.search(r"IMPS/P2[AM]/\d+/+(.*)", d, re.I)
+    if m:
+        name = _first_name(_name_segments(m.group(1)))
+        if name and not _REFNUM.match(name.strip()):
+            return _clean_segment(name)
+    # "IMPSAB/<ref>/<NAME>/<phone>" — the channel is glued to a suffix, so no
+    # exact channel token matches and the whole stamp was reading as the party.
+    m = re.match(r"IMPS[A-Z]{1,3}/(.*)", d, re.I)
+    if m:
+        # _best_name, not _first_name: the ref segment here survives cleaning
+        # ("61250911975 T91321951 - 7") and would win on position alone. Scoring
+        # marks it down for its digits and the payee up for being bank-cased.
+        name = _best_name(_name_segments(m.group(1)))
+        if name and not _REFNUM.match(name.strip()):
+            return _clean_segment(name)
     m = re.search(r"\bIMPS-\d+-([^-]+)", d, re.I)
     if m and not _REFNUM.match(m.group(1).strip()):
         return _clean_segment(m.group(1))
@@ -966,6 +1048,36 @@ def drop_useless_identifiers(txns) -> None:
             t.counterparty = ""
 
 
+# Channel and transfer STAMPS that ride at the edge of a party name. The
+# reviewer flagged twelve of these in one pass: "SHAURY WDL TFR" (withdrawal
+# transfer), "ANURAG DEP TFR" (deposit transfer), "IMPS P2A GAJANAND TOOLS
+# MAYUR", "IMPSAB", "S TFR IMPS", a bare "CHG" for a charge. They are how the
+# money moved, never who was paid, and when one is all that is left the row has
+# no party at all. Stripped from EITHER END and repeatedly, because they stack
+# ("S TFR IMPS" is three of them).
+_STAMP_WORDS = (r"WDL|DEP|TFR|TRF|IMPS|NEFT|RTGS|UPI|ACH|NACH|ECS|P2A|P2M|"
+                r"IMPSAB|CHG|CHRG|CHRGS|CHARGES|SENDER|TRANSFER|PAYMENT|PAYME|"
+                r"CR|DR|INB|INF|TPT|BY|TO|FROM|SELF|CLG")
+_STAMP_HEAD = re.compile(rf"^(?:{_STAMP_WORDS})\b[\s./:-]*", re.I)
+_STAMP_TAIL = re.compile(rf"[\s./:-]*\b(?:{_STAMP_WORDS})$", re.I)
+# A trailing reference that rode along with the name ("AMRINA IQBAL W42268794").
+_REF_WORD_TAIL = re.compile(r"\s+[A-Z]?\d{5,}[A-Z0-9]*$", re.I)
+# A four-letter IFSC bank prefix standing alone, or glued to a channel word
+# ("IDFB", "KKBKTransfer") — the counterparty's bank, not the counterparty.
+_BANK_CODE = re.compile(r"^(?:SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
+                        r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|MAHB|AUBL|ESFB|"
+                        r"CIUB|SCBL|RATN|BKID|SIBL|PYTM)$", re.I)
+
+
+def _strip_stamps(p: str) -> str:
+    """Peel channel/transfer stamps off both ends until the name is bare."""
+    prev = None
+    while p and p != prev:
+        prev = p
+        p = _STAMP_TAIL.sub("", _STAMP_HEAD.sub("", p)).strip(" -/.:,")
+    return p
+
+
 def _sanitise_party(p: str) -> str:
     p = re.sub(r"\s+", " ", p or "").strip(" -/*.:")
     if not p:
@@ -987,7 +1099,20 @@ def _sanitise_party(p: str) -> str:
             if sum(c.isalpha() for c in seg) > sum(c.isalpha() for c in best):
                 best = seg
         p = best.strip(" -*.:")
+    p = _strip_stamps(p)
+    p = _REF_WORD_TAIL.sub("", p).strip(" -/*.:")
     up = p.upper()
+    # A bank's four-letter IFSC prefix, alone or glued to the channel that
+    # followed it ("IDFB", "KKBKTransfer"): the counterparty's BANK, not the
+    # counterparty. Same reasoning as _is_bank_name, one level more abbreviated.
+    if _BANK_CODE.match(re.sub(r"(?i)(TRANSFER|TRF|IMPS|NEFT|RTGS|UPI)$", "", up)):
+        return ""
+    # A VPA whose local part is only a phone number ("7895273091-3@ybl",
+    # "8817969839@ptyes") names nobody. The reviewer's instruction was plain:
+    # "don't show these kinds numbers in party name". A handle with letters in
+    # it still stands — it is at least a chosen identity.
+    if "@" in p and not any(c.isalpha() for c in p.split("@", 1)[0]):
+        return ""
     letters = sum(c.isalpha() for c in p)
     if letters <= 2 and not p.isdigit() and "@" not in p:
         return ""                                    # "NE", "DR", "S" — noise
@@ -1030,7 +1155,25 @@ def _fill_party_from_narration(txns: list[Txn]) -> None:
 
 
 _ID_IN_TEXT = re.compile(r"\b\d{9,18}\b")           # account-number-shaped runs
+# A name seen on this few rows may not be stamped on more than this multiple of
+# them. Loose on purpose: the cost of losing one fill is a blank cell, the cost
+# of a bad fill is a stranger's name on a lending report.
+_FILL_MIN = 3
+_FILL_RATIO = 3
 _VPA_IN_TEXT = re.compile(r"\b([A-Za-z0-9._-]{2,}@[A-Za-z]{2,})\b")
+
+
+def _row_ids(t: Txn, own: set) -> set:
+    """Every identifier a row offers as a join key: account-shaped digit runs
+    and UPI VPAs, from the narration and from the party field itself, minus the
+    account's own side."""
+    ids = set(_ID_IN_TEXT.findall(t.description)) - own
+    ids |= {v.lower() for v in _VPA_IN_TEXT.findall(t.description)}
+    if t.counterparty:
+        ids |= set(_ID_IN_TEXT.findall(t.counterparty)) - own
+        if "@" in t.counterparty:
+            ids.add(t.counterparty.lower())
+    return ids
 
 
 def resolve_identifiers(txns: list[Txn]) -> None:
@@ -1055,24 +1198,47 @@ def resolve_identifiers(txns: list[Txn]) -> None:
     for t in txns:
         if party_kind(t.counterparty, t.description) != "named":
             continue
-        ids = set(_ID_IN_TEXT.findall(t.description)) - own
-        ids |= {v.lower() for v in _VPA_IN_TEXT.findall(t.description)}
-        for i in ids:
+        for i in set(_ID_IN_TEXT.findall(t.description)) - own | {
+                v.lower() for v in _VPA_IN_TEXT.findall(t.description)}:
             id2names.setdefault(i, set()).add(t.counterparty)
     resolved = {i: next(iter(ns)) for i, ns in id2names.items() if len(ns) == 1}
+    if not resolved:
+        return
+    # THE EVIDENCE MUST SCALE WITH THE CLAIM. Count what each identifier would
+    # fill before filling anything, and drop the ones where a name learned from
+    # a handful of rows would be stamped on far more.
+    #
+    # Why: SBI prints "TRANSFER TO 4897690162095" on every UPI row — the same
+    # number on every SBI customer's statement, because it is SBI's pooled UPI
+    # nodal account, not anybody's account. It is not the statement's own
+    # account_no, so the `own` guard above never saw it. One row of 299 happened
+    # to carry a payee inline ("…/UTIB/amazonupi@/You a") and that single
+    # sighting then named 28 other rows Amazon. The reviewer found it exactly
+    # as it reads: "why is party amazon upi when description doesn't have any
+    # of that". Frequency alone does not separate the two cases (29 rows of 299
+    # is not obviously a rail), but the RATIO does: a genuine beneficiary
+    # account is named about as often as it is bare, while a rail is named once
+    # and bare everywhere.
+    would_fill: Counter = Counter()
+    for t in txns:
+        if party_kind(t.counterparty, t.description) in ("named", "na"):
+            continue
+        for i in _row_ids(t, own):
+            if i in resolved:
+                would_fill[i] += 1
+    for i, n in would_fill.items():
+        if n > _FILL_MIN and n > _FILL_RATIO * len(
+                [1 for t in txns
+                 if resolved[i] == t.counterparty
+                 and party_kind(t.counterparty, t.description) == "named"]):
+            del resolved[i]
     if not resolved:
         return
     for t in txns:
         kind = party_kind(t.counterparty, t.description)
         if kind in ("named", "na"):
             continue
-        ids = set(_ID_IN_TEXT.findall(t.description)) - own
-        ids |= {v.lower() for v in _VPA_IN_TEXT.findall(t.description)}
-        if t.counterparty:
-            ids |= set(_ID_IN_TEXT.findall(t.counterparty))
-            if "@" in t.counterparty:
-                ids.add(t.counterparty.lower())
-        names = {resolved[i] for i in ids if i in resolved}
+        names = {resolved[i] for i in _row_ids(t, own) if i in resolved}
         if len(names) == 1:
             t.counterparty = names.pop()
 

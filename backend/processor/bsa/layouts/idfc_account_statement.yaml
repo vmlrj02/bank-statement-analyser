@@ -36,3 +36,9 @@ parse:
   footer_markers:
     - "This is a system generated"
     - "IDFC FIRST Bank Limited"
+    # The terms-and-conditions block on the last page carries no "system
+    # generated" line above it, so the whole disclaimer was being appended to
+    # the final row's narration — the reviewer read one and asked "is this even
+    # correct description". Anchored on the heading, which is printed before it.
+    - "IMPORTANT MESSAGE"
+    - "Unless the constituent notifies"

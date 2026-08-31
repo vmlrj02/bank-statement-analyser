@@ -302,6 +302,44 @@ noise), and NON_TURNOVER is the set of credits that are not business turnover.
     all-inflow figures and stay that way — they are simply not called turnover.
     Pinned by tests/test_credit_summary.py and tests/test_taxonomy_master.py.
 
+19. A PARTY NAME IS WHO WAS PAID, NEVER HOW. The reviewer's labelled passes
+    keep finding the same four impostors sitting in the name slot, and every
+    one of them reads as a customer's counterparty on a lending report:
+      * the TRANSFER TYPE glued to the name — SBI's "WDL TFR" (withdrawal
+        transfer) and "DEP TFR" (deposit transfer). "SHAURY WDL TFR" is
+        SHAURY; a row that is only "WDL TFR" has no party at all.
+      * the CHANNEL stamped a second time inside the name slot ("IMPS P2A
+        shakeel", "IMPSAB", "S TFR IMPS", "CHG" for a charge).
+      * the counterparty's BANK, often as a bare four-letter IFSC prefix in
+        the segment BEFORE the name ("…/IDFB/MOHD NAEEM/…", "KKBKTransfer").
+        Never take the segment after the reference on faith — walk them.
+      * a VPA whose local part is only a phone number ("8817969839@ptyes").
+        A handle with letters still stands; a number names nobody.
+    normalize._strip_stamps peels these off both ends of a candidate, and it
+    runs AFTER the slash-junk recovery — stripping a trailing "/UPI" first
+    leaves one slash, and the recovery that finds the inner name needs two.
+    Pinned by tests/test_normalize.py::test_reviewer_round2_party_corrections.
+
+20. IDENTIFIER RESOLUTION NEEDS EVIDENCE THAT SCALES WITH THE CLAIM. Filling a
+    bare row from a sibling row that named the same account is worth real
+    coverage, but SBI prints "TRANSFER TO 4897690162095" on every UPI row —
+    the SAME number on every SBI customer's statement, because it is SBI's
+    pooled UPI nodal account rather than anybody's. It is not the statement's
+    own account_no, so the "never map our own side" guard never saw it, and
+    one row of 299 that happened to carry a payee inline named 28 rows after
+    it Amazon. Frequency alone does not separate the cases (29 rows of 299 is
+    not obviously a rail); the RATIO does — a genuine beneficiary account is
+    named about as often as it is bare, a rail is named once and bare
+    everywhere. resolve_identifiers now counts what each identifier WOULD fill
+    before filling anything and drops the disproportionate ones.
+
+21. A FALLING party_named_pct CAN BE THE IMPROVEMENT. Removing 245 rows whose
+    "party" was only "WDL TFR" drops the measured rate while making the report
+    honest, and the 856 rows the same change repaired ("MAHEND WDL TFR" →
+    "MAHEND") do not move it at all, because they were already counted as
+    named. Read the corpus-snapshot drift by looking at WHICH names changed,
+    not at the direction of the percentage.
+
 ## Data residency — the gate that was blocking real customers
 
 An LLM call is the only thing in this pipeline that can send statement data

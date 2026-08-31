@@ -424,7 +424,101 @@ def test_party_sanitiser_kills_reviewer_visible_junk():
     ) == "SAHU CONSTRUCTION AND BORWELLS"
     assert _sanitise_party("KKBK/chitrarama/UPI") == "chitrarama"
     assert _sanitise_party("RAMESH KUMAR") == "RAMESH KUMAR"    # real names pass
-    assert _sanitise_party("9963059528@ybl") == "9963059528@ybl"  # handles kept
+    assert _sanitise_party("nusarthgi@bpunity") == "nusarthgi@bpunity"  # a handle
+    # …but a handle that is only a phone number names nobody. The reviewer's
+    # second labelling pass rejected both of these with "don't show these kinds
+    # numbers in party name", which reverses the earlier "handles kept" rule for
+    # the numeric case only.
+    assert _sanitise_party("9963059528@ybl") == ""
+    assert _sanitise_party("7895273091-3@ybl") == ""
+
+
+def test_reviewer_round2_party_corrections():
+    """Every party the reviewer marked wrong in the second labelled pass, with
+    the answer they gave. These are the cases, not a paraphrase of them: each
+    line is one row of the review file, so a rule that regresses fails here with
+    the statement text that caught it.
+
+    Four things were being read as counterparties that never are: the transfer
+    TYPE glued to the name (SBI's "WDL TFR" withdrawal-transfer, "DEP TFR"
+    deposit-transfer), the CHANNEL stamped a second time inside the name slot
+    ("IMPS P2A shakeel"), the counterparty's BANK in the slot before the name
+    ("…/IDFB/MOHD NAEEM/…", "KKBKTransfer"), and a CHARGE marker ("CHG")."""
+    from bsa.normalize import _sanitise_party, extract_counterparty, detect_mode
+
+    def party(d):
+        return _sanitise_party(extract_counterparty(d, detect_mode(d)))
+
+    # the transfer type is how, not who — and alone it is nobody
+    assert party("UPI/DR/088852923500/SHAURY WDL TFR") == "SHAURY"
+    assert party("UPI/DR/191010604854/SAHU WDL TFR") == "SAHU"
+    assert party("UPI/DR/555106059004/ANURAG DEP TFR") == "ANURAG"
+    assert party("UPI/DR/396055740677/M/S. WDL TFR") == ""
+    assert party("CHEQUE TRANSFER TO WDL TFR") == ""
+    assert party("To-S TFR IMPS - STAN : 000496 - RRN : 606517000496") == ""
+    assert party("IMPS- CHG/61281716 0616/SBIN001 0831/31837838 407") == ""
+
+    # the channel, stamped again inside the name slot
+    assert party("IMPS/615963841356-IMPS P2A GAJANAND TOOLS MAYUR-H") == \
+        "GAJANAND TOOLS MAYUR"
+    assert party("IMPS/615562987924-IMPS P2A shakeel-IDFB0081105-10") == "shakeel"
+
+    # the counterparty's BANK sits where the name is expected
+    assert party("IMPS/P2A/603518249052/IDFB/MOHD NAEEM/794278554") == "MOHD NAEEM"
+    assert party("MMT/IMPS/514818409623/KKBKTransfer/VEL MURUGA/Kotak "
+                 "Mahindra") == "VEL MURUGA"
+    assert party("IMPSAB/61250911975 T91321951 - 7/ARUNKUMAR B/8680843648") == \
+        "ARUNKUMAR B"
+
+    # names that were being missed entirely
+    assert party("IMPS/P2A-603513988896-SYED ZAYYAN AHMED") == "SYED ZAYYAN AHMED"
+    assert party("MBS/by SYED MUQTHAR AHMED/0200853/02-06-2026 14:") == \
+        "SYED MUQTHAR AHMED"
+    assert party("NET BANKING /KOTHARILELEC") == "KOTHARILELEC"
+    # the EMI date wraps mid-line, so it carries a space the old pattern refused
+    assert party("UCR013913299695_EMI_01-12- 2025_HINDUSTAN PETROCHEM") == \
+        "HINDUSTAN PETROCHEM"
+    # City Union prints the payee twice, abbreviated then in full
+    assert party("TO ONL NEFT:UTR:CIUBH26094034984:SBIN0008531:ALANGIR:: "
+                 "ALANGIR::00067") == "ALANGIR"
+    # a reference riding behind the name
+    assert party("NEFT:AMRINA IQBAL W42268794 Sender CNRBH00130597691 "
+                 "No:CNRBH00130 597691") == "AMRINA IQBAL"
+    # a VPA that is only a phone number
+    assert party("YBS5124188157637 UPI/082777828978/From:7895273091-3@ybl/ "
+                 "To:073663700000687@YESB0000736.ifsc.npci/ Payment from "
+                 "PhonePe") == ""
+
+
+def test_a_name_seen_once_is_not_stamped_on_the_whole_statement():
+    """SBI prints "TRANSFER TO 4897690162095" on every UPI row — the same number
+    on every SBI customer's statement, because it is SBI's pooled UPI nodal
+    account rather than anybody's. It is not the statement's own account number,
+    so the `own` guard never saw it, and one row of 299 that happened to carry a
+    payee inline named 28 other rows after it. The reviewer found it exactly as
+    it reads: "why is party amazon upi when description doesn't have any of
+    that". The evidence has to scale with the claim."""
+    from bsa.normalize import resolve_identifiers
+    from bsa.models import Txn
+
+    def t(desc, cp):
+        return Txn(date="2026-01-01", cheque_no="", description=desc, amount=-10.0,
+                   balance=0.0, mode="upi", counterparty=cp, account_no="345288465")
+
+    rail = "4897690162095"
+    rows = [t(f"TO TRANSFER- UPI/DR/1/Amazon Pay/UTIB/amazonupi@/You-"
+              f"TRANSFER TO {rail}", "Amazon Pay")]
+    rows += [t(f"TRANSFER- TRANSFER {rail}", "") for _ in range(28)]
+    resolve_identifiers(rows)
+    assert [r.counterparty for r in rows[1:]] == [""] * 28
+
+    # …while a beneficiary account named about as often as it is bare still
+    # fills, which is the whole point of the mechanism.
+    good = [t("TRANSFER TO 4698150044305 SUKUMAR", "SUKUMAR"),
+            t("TRANSFER TO 4698150044305 SUKUMAR", "SUKUMAR"),
+            t("TRANSFER TO 4698150044305", "")]
+    resolve_identifiers(good)
+    assert good[2].counterparty == "SUKUMAR"
 
 
 def test_upi_purpose_token_never_beats_the_human_name():
@@ -686,3 +780,36 @@ def test_the_number_survives_long_enough_to_resolve_a_name_first():
     drop_useless_identifiers([named, bare])
     assert named.counterparty == "ACME STEELS"   # a real name is untouched
     assert bare.counterparty == ""               # an unresolved number is not
+
+
+# --- round 2: shapes found by ranking on OPPORTUNITY, not on absence ---------
+# The naive ranking put SBI savings top with 462 unnamed rows. 329 of them are
+# "TRANSFER- TRANSFER 4897693162093" — a bare account number, which carries no
+# name and is NONE by decision. Re-ranking on rows whose narration actually
+# contains a name-like word moved the target to these shapes instead.
+
+@pytest.mark.parametrize("desc,want", [
+    ("Trf to EARTHCON DEVELOPERS PRIVATE LIMITED/960856",
+     "EARTHCON DEVELOPERS PRIVATE LIMITED"),
+    ("UCR013913427589_EMI_05-11-2025_PIRAMAL PETROLEUM P",
+     "PIRAMAL PETROLEUM P"),
+    # The payee sits AFTER the presenting bank, so the last segment wins.
+    ("CLG/510811/011125/Bank Of Ba/AKASH", "AKASH"),
+    ("I/W CHEQUE PAID-SAHILPOLYMERS-000000000035", "SAHILPOLYMERS"),
+    ("ACHInwDr-ROVER FINANCE LIMITE/05-07-2025", "ROVER FINANCE LIMITE"),
+    ("INF/NEFT/ICICN4202/HDFC0000361/UN79642505 02150625 by DNARENDR "
+     "from Tally B", "DNARENDR"),
+])
+def test_round_two_party_shapes(desc, want):
+    from bsa.normalize import detect_mode, extract_counterparty
+
+    assert extract_counterparty(desc, detect_mode(desc)) == want
+
+
+def test_the_same_slot_holding_a_bank_still_yields_nothing():
+    """ACHInwDr- carries a lender on one row and a BANK on the next. The
+    extraction rule is identical; _is_bank_name is what separates them, which
+    is why a finance company survives and a rail does not."""
+    assert _party("ACHInwDr-IDFC FIRST BANK/03-07-2025") == ""
+    assert _party("ACHInwDr-ROVER FINANCE LIMITE/05-07-2025") == \
+        "ROVER FINANCE LIMITE"
