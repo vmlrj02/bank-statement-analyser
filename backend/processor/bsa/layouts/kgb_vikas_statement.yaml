@@ -1,0 +1,54 @@
+# Layout descriptor: Karnataka Grameena Bank (formerly Karnataka Vikas Grameena
+# Bank) — the migration-era "Statement of Account Period From … : Migration
+# Date" export. Columns: Trn Date | Description | Particulars | Cheq No |
+# DEBIT | CREDIT | BALANCE, with a Cr/Dr token after the balance.
+#
+# A DIFFERENT BANK from Karnataka Bank, despite the name and despite arriving
+# filed in a customer's ICICI folder. Karnataka Bank is KARB0 and already has
+# two descriptors; this one is PKGB0. Fingerprinted on the bank's own migration
+# line, which is the only place either name is printed in full.
+#
+# Description and Particulars are two separate columns that both carry
+# narration ("To TRANSFER" + "SMS CHARGES"), so the remarks window spans both —
+# splitting them would drop half of every row's description.
+id: kgb_vikas_statement
+bank: Karnataka Grameena Bank
+layout_name: Statement of Account (migration)
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "Grameena Bank"
+    - "Statement of Account Period From"
+  any_of: []
+header:
+  # the period line is printed ABOVE the account line, so the pattern reads in
+  # that order — reversed, it never matches and the statement has no account
+  # number, which would merge it with whatever else the upload carried
+  account_line: 'Period From\s*(?P<period_from>\d{2}/\d{2}/\d{4})\s*To\s*(?P<period_to>\d{2}/\d{2}/\d{4})[\s\S]*?A/c No\s*:\s*\S*\s*(?P<account_no>\d{6,})'
+  period_date_format: "%d/%m/%Y"
+  account_name: 'Name\s*:\s*([A-Z][A-Za-z .&]+)'
+parse:
+  table_header_words: ["DEBIT", "CREDIT", "BALANCE"]
+  header_offset: 12
+  row_anchor: '^\d{2}/\d{2}/\d{4}$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  columns:
+    date_x_max: 55              # Trn Date 1-52; Description starts 57
+    remarks_x_min: 55           # Description AND Particulars both hold narration
+    remarks_x_max: 295          # stops before Cheq No (301)
+    cheque_x_min: 295
+    cheque_x_max: 380
+    withdrawal_x1_max: 435      # DEBIT   — right edge 421
+    deposit_x1_max: 505         # CREDIT  — right edge 492
+    balance_x1_max: 578         # BALANCE — right edge 557
+    balance_crdr_band: [560, 590]   # the Cr/Dr token printed after the balance
+    tail_x_min: 99999
+  skip_rows:
+    - "Opening Balance"
+    - "Closing Balance"
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Page"
