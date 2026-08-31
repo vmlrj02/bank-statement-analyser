@@ -23,7 +23,10 @@ fingerprints:
     - "Statement for A/c"
   any_of: []
 header:
-  account_line: 'Statement for A/c\s*(?P<account_no>[X\d]+)\s*for the period\s*(?P<period_from>\d{2}-\w{3}-\d{4})\s*to\s*(?P<period_to>\d{2}-\w{3}-\d{4})'
+  # Canara writes the same line two ways — "for the period X to Y" and
+  # "between X and Y". Matching only the first left the statement with no
+  # account number at all, and reports group by account (gotcha 11).
+  account_line: 'Statement for A/c\s*(?P<account_no>[X\d]+)\s*(?:for the period|between)\s*(?P<period_from>\d{2}-\w{3}-\d{4})\s*(?:to|and)\s*(?P<period_to>\d{2}-\w{3}-\d{4})'
   period_date_format: "%d-%b-%Y"
   account_name: '(?m)^Name\s+([A-Z][A-Z .&]+?)(?:\s+Branch|$)'
 parse:
