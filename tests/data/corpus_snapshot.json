@@ -457,8 +457,8 @@
    "files": 1,
    "mean_desc_len": 34.4,
    "not_reconciling": 0,
-   "party_nameable_pct": 88.8,
-   "party_named_pct": 47.7,
+   "party_nameable_pct": 90.5,
+   "party_named_pct": 48.1,
    "rows": 545,
    "top_categories": {
     "Bank Penalties & Non-Maintenance": 3.5,
@@ -474,8 +474,8 @@
    "files": 2,
    "mean_desc_len": 79.0,
    "not_reconciling": 0,
-   "party_nameable_pct": 97.7,
-   "party_named_pct": 94.1,
+   "party_nameable_pct": 90.5,
+   "party_named_pct": 89.9,
    "rows": 614,
    "top_categories": {
     "Business income": 9.8,
@@ -519,8 +519,8 @@
    "files": 2,
    "mean_desc_len": 52.3,
    "not_reconciling": 0,
-   "party_nameable_pct": 88.3,
-   "party_named_pct": 88.3,
+   "party_nameable_pct": 89.4,
+   "party_named_pct": 89.4,
    "rows": 94,
    "top_categories": {
     "Business income": 5.3,
@@ -565,7 +565,7 @@
    "mean_desc_len": 60.0,
    "not_reconciling": 0,
    "party_nameable_pct": 78.6,
-   "party_named_pct": 63.1,
+   "party_named_pct": 68.3,
    "rows": 388,
    "top_categories": {
     "Business income": 30.7,
@@ -599,7 +599,7 @@
    "mean_desc_len": 47.5,
    "not_reconciling": 0,
    "party_nameable_pct": 97.7,
-   "party_named_pct": 96.3,
+   "party_named_pct": 96.5,
    "rows": 569,
    "top_categories": {
     "Business income": 48.0,
@@ -731,7 +731,7 @@
    "mean_desc_len": 35.8,
    "not_reconciling": 0,
    "party_nameable_pct": 7.4,
-   "party_named_pct": 7.3,
+   "party_named_pct": 7.4,
    "rows": 565,
    "top_categories": {
     "Business income": 9.6,
@@ -830,8 +830,8 @@
    "files": 2,
    "mean_desc_len": 110.1,
    "not_reconciling": 0,
-   "party_nameable_pct": 80.9,
-   "party_named_pct": 56.0,
+   "party_nameable_pct": 80.7,
+   "party_named_pct": 59.6,
    "rows": 562,
    "top_categories": {
     "Business income": 75.3,
