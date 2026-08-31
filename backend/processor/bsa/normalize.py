@@ -324,6 +324,19 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"\bIMPS\s*P2[AMVP]\s+([A-Za-z][A-Za-z .&'-]+?)(?:\s*-|$)", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
+    #   Union Bank's "DETAILS OF STATEMENT" export writes the channel with a
+    #   suffix and puts the direction in the middle:
+    #   "UPIAR/435932534940/DR/KUMAR T /SBIN/ 9739696759@ax".
+    m = re.search(r"\bUPIA[A-Z]?/\d+/(?:DR|CR)/([A-Za-z][^/]*)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "NEFT:BHOX AIRGAS X14432989 Sender PRIVATE LTD No:SBIN5250921" — the
+    #   payee runs from the colon to the first reference token. Without this the
+    #   ENTIRE string was the party, reference and all, which is what the
+    #   reviewer keeps flagging as machinery in the party column.
+    m = re.match(r"NEFT:\s*([A-Za-z][A-Za-z .&'-]+?)\s+[A-Z]?\d{6,}", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
     #   Canara's branch export: "FUNDS TRANSFER DEBIT 04781010002434 - ADARSH
     #   CONSTRUCTIONS", and the same form without the account number. The payee
     #   follows the dash; the account number between is not part of the name.

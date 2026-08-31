@@ -17,11 +17,17 @@ fingerprints:
     - "Base Branch"
   any_of: []
 header:
-  account_line: 'Statement of Transactions in .*?Account\s+(?P<account_no>[X\d]+)\s+in INR for the period\s+(?P<period_from>[A-Za-z]+ \d{2}, \d{4})\s*-\s*(?P<period_to>[A-Za-z]+ \d{2}, \d{4})'
+  # one rendering writes "…Account 0364 in INR…", the other
+  # "…Account Number: 777701537799 in INR…" — the label is optional
+  account_line: 'Statement of Transactions in .*?Account\s+(?:Number:\s*)?(?P<account_no>[X\d]+)\s+in INR for the period\s+(?P<period_from>[A-Za-z]+ \d{2}, \d{4})\s*-\s*(?P<period_to>[A-Za-z]+ \d{2}, \d{4})'
   period_date_format: "%B %d, %Y"
   account_name_line: 1
 parse:
-  table_header_words: ["DATE", "MODE", "PARTICULARS", "DEPOSITS", "WITHDRAWALS", "BALANCE"]
+  # "MODE" is deliberately NOT required: one rendering prints it as "MODE**"
+  # (with a footnote marker), and an exact-token match then never finds the
+  # table header at all — the file parsed to zero rows with no error. The other
+  # five words locate the header unambiguously on their own.
+  table_header_words: ["DATE", "PARTICULARS", "DEPOSITS", "WITHDRAWALS", "BALANCE"]
   header_offset: 12
   row_anchor: '^\d{2}-\d{2}-\d{4}$'
   date_format: "%d-%m-%Y"
@@ -32,10 +38,15 @@ parse:
     remarks_x_max: 345          # before DEPOSITS (~355)
     cheque_x_min: 99999
     cheque_x_max: 99999
+    # Two renderings of this same export sit in the sample set and their
+    # columns are shifted ~18pt apart (right edges 406/489/564 in one, 427/505/583
+    # in the other). The bands are widened to hold both rather than split into
+    # two near-identical descriptors; they stay disjoint, so a value still lands
+    # in exactly one role.
     amount_bands:
-      deposit:    [352, 412]    # DEPOSITS right edge ~406
-      withdrawal: [445, 498]    # WITHDRAWALS right edge ~489
-      balance:    [512, 572]    # BALANCE right edge ~564
+      deposit:    [345, 435]    # DEPOSITS    right edge ~406 or ~427
+      withdrawal: [440, 515]    # WITHDRAWALS right edge ~489 or ~505
+      balance:    [520, 595]    # BALANCE     right edge ~564 or ~583
     tail_x_min: 99999
   skip_rows:
     - "B/F"

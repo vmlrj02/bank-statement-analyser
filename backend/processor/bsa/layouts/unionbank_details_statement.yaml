@@ -1,0 +1,52 @@
+# Layout descriptor: Union Bank of India — "DETAILS OF STATEMENT" export.
+# Columns: SI | Date | Particulars | Chq Num | Withdrawal | Deposit | Balance,
+# with a Cr/Dr suffix printed AFTER the balance rather than a negative sign.
+#
+# Union Bank's second shape — unionbank_account_statement is a different export
+# entirely. Both of the protected Union Bank statements in the August sample
+# drop are this one, and both were failing at the door rather than here: their
+# passwords are printed in their own file names and the candidate generator had
+# no pattern for that shape. They only became a layout problem once it did.
+#
+# The particulars wrap ABOVE and BELOW the dated amount line, so a row is a
+# centred block — continuation: nearest.
+id: unionbank_details_statement
+bank: Union Bank of India
+layout_name: Details of Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "UBIN0"
+    - "DETAILS OF STATEMENT"
+  any_of: []
+header:
+  account_line: 'Account Number\s*:\s*(?P<account_no>[X\d]+)[\s\S]*?FOR THE PERIOD FROM\s*(?P<period_from>\d{2}-\d{2}-\d{4})\s*TO\s*(?P<period_to>\d{2}-\d{2}-\d{4})'
+  period_date_format: "%d-%m-%Y"
+parse:
+  table_header_words: ["Withdrawal", "Deposit", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: nearest
+  columns:
+    sl_no_x_max: 45             # drop the SI column (31-40)
+    date_x_max: 100             # Date 50-92
+    cheque_x_min: 99999         # Chq Num is empty on every row seen
+    cheque_x_max: 99999
+    remarks_x_min: 100
+    remarks_x_max: 350          # stops before Withdrawal (values end 395)
+    withdrawal_x1_max: 410      # Withdrawal — right edge 395
+    deposit_x1_max: 500         # Deposit    — right edge 475
+    balance_x1_max: 575         # Balance    — right edge 560
+    # the sign lives in a Cr/Dr token printed after the balance, not in the
+    # number itself
+    balance_crdr_band: [558, 590]
+    tail_x_min: 99999
+  skip_rows:
+    - "Opening Balance"
+    - "Closing Balance"
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Page"

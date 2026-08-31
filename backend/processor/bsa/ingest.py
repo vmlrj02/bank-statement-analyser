@@ -82,6 +82,18 @@ _PW_LABELLED = re.compile(
 # between "_" and a digit and bank exports are full of
 # "Acct_Statement_XXXX9675_12052026.pdf".
 _PW_BARE = re.compile(r"(?<!\d)(\d{6,12})(?!\d)")
+# The commonest convention of all, and the one we were missing: the first few
+# letters of the account holder's name glued to a few digits — "PRAD2597" for a
+# PRADEEP, "NETH1112" for a NETHRA, "SRAM1006", "NKES0301". Banks mail it that
+# way and the customer forwards the file under the name it arrived with, so the
+# password is sitting on the file we were handed. Four statements in the August
+# sample drop failed on this alone.
+#
+# The token must be letters IMMEDIATELY followed by digits with a non-alphanumeric
+# boundary either side, which is what keeps it from firing on ordinary export
+# names: "Bankstatement_10085925401" separates them with an underscore, and
+# "OpTransactionHistory27" has too many letters to match.
+_PW_NAME_DIGITS = re.compile(r"(?<![A-Za-z0-9])([A-Za-z]{3,6}\d{3,6})(?![A-Za-z0-9])")
 # Trying every guess on a big encrypted file is the only way this could get
 # slow, so the list is bounded. Six covers every shape seen in the corpus.
 MAX_PASSWORD_GUESSES = 6
@@ -106,6 +118,13 @@ def password_candidates(name: str | None) -> list[str]:
     for text in (base, parent):
         for m in _PW_LABELLED.finditer(text or ""):
             add(m.group(1))
+    # Name+digits before bare digits: it is the more specific shape, and a
+    # filename that carries one usually carries several digit runs too (an
+    # account number, a date) that would otherwise crowd it out of the cap.
+    for text in (stem, parent):
+        for m in _PW_NAME_DIGITS.finditer(text or ""):
+            add(m.group(1))
+            add(m.group(1).upper())          # banks print these in caps
     for text in (stem, parent):
         for m in _PW_BARE.finditer(text or ""):
             add(m.group(1))
