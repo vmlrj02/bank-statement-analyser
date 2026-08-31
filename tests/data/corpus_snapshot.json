@@ -391,7 +391,7 @@
   },
   "cityunion_account_statement": {
    "files": 1,
-   "mean_desc_len": 69.3,
+   "mean_desc_len": 56.8,
    "not_reconciling": 0,
    "party_nameable_pct": 100.0,
    "party_named_pct": 100.0,

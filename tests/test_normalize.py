@@ -431,6 +431,12 @@ def test_party_sanitiser_kills_reviewer_visible_junk():
     # the numeric case only.
     assert _sanitise_party("9963059528@ybl") == ""
     assert _sanitise_party("7895273091-3@ybl") == ""
+    # A website is never a payee. City Union prints its registered office and
+    # URL below the table; the footer marker that let the block bleed into the
+    # last row was a layout bug, but nothing downstream should have accepted
+    # "www.cityunionbank.com" as a counterparty either.
+    assert _sanitise_party("www.cityunionbank.com") == ""
+    assert _sanitise_party("Website: www.hdfcbank.com") == ""
 
 
 def test_reviewer_round2_party_corrections():

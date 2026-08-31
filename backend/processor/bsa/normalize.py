@@ -1064,6 +1064,11 @@ _STAMP_TAIL = re.compile(rf"[\s./:-]*\b(?:{_STAMP_WORDS})$", re.I)
 _REF_WORD_TAIL = re.compile(r"\s+[A-Z]?\d{5,}[A-Z0-9]*$", re.I)
 # A four-letter IFSC bank prefix standing alone, or glued to a channel word
 # ("IDFB", "KKBKTransfer") — the counterparty's bank, not the counterparty.
+# A web address or an email domain, wherever it leaked in from. City Union
+# prints its own website below the table and it reached a party column as
+# "www.cityunionbank.com"; the footer marker that let it in was a layout bug,
+# but nothing downstream should have accepted it as a name either.
+_URLISH = re.compile(r"\bwww\.|https?://|\.(?:com|in|net|org|co\.in)\b", re.I)
 _BANK_CODE = re.compile(r"^(?:SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
                         r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|MAHB|AUBL|ESFB|"
                         r"CIUB|SCBL|RATN|BKID|SIBL|PYTM)$", re.I)
@@ -1125,6 +1130,8 @@ def _sanitise_party(p: str) -> str:
         return ""                                    # an IFSC is a bank, not a party
     if _is_bank_name(up):
         return ""                                    # nor is the bank itself
+    if _URLISH.search(p):
+        return ""                                    # a website, not a payee
     return p
 
 

@@ -35,3 +35,11 @@ parse:
   footer_markers:
     - "This is a computer generated"
     - "End of Statement"
+    # The bank prints its registered office, CIN and website AFTER the table,
+    # in caps, so "End of Statement" (title case) never matched it and the
+    # whole block was appended to the last row's narration — where the party
+    # extractor then read "www.cityunionbank.com" as the counterparty.
+    - "END OF STATEMENT"
+    - "Statement Downloaded By"
+    - "Regd. Office"
+    - "Website:"
