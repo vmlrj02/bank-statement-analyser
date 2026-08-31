@@ -143,15 +143,28 @@ def _complete_year(day_month: str, meta) -> str:
     pf = getattr(meta, "period_from", "") or ""
     pt = getattr(meta, "period_to", "") or ""
     years = [y for y in (pf[:4], pt[:4]) if y.isdigit()]
+    # How the year rejoins depends on how the bank separates the date. SBI
+    # wraps "17 Aug" and wants a space; Bandhan wraps "05-JUN-" — the separator
+    # is already there, so a space would produce "05-JUN- 2025". Candidates are
+    # tried in order and the first that parses AND lands inside the period wins.
+    stem = day_month.rstrip()
+    if stem.endswith(("-", "/", ".")):
+        joins = [(stem, "%d-%b-%Y"), (stem, "%d/%b/%Y"), (stem, "%d.%b.%Y"),
+                 (stem, "%d-%B-%Y")]
+    else:
+        joins = [(f"{stem} ", "%d %b %Y"), (f"{stem} ", "%d %B %Y")]
     for y in dict.fromkeys(years):                       # de-dup, keep order
-        for fmt in ("%d %b %Y", "%d %B %Y"):
+        for prefix, fmt in joins:
             try:
-                iso = datetime.strptime(f"{day_month} {y}", fmt).date().isoformat()
+                iso = datetime.strptime(f"{prefix}{y}", fmt).date().isoformat()
             except ValueError:
                 continue
             if (not pf or iso >= pf) and (not pt or iso <= pt):
-                return f"{day_month} {y}"
-    return f"{day_month} {years[0]}" if years else day_month
+                return f"{prefix}{y}"
+    if not years:
+        return day_month
+    prefix = joins[0][0]
+    return f"{prefix}{years[0]}"
 
 
 # Slack on "this line reached the cell's right edge". The last glyph's width

@@ -1,0 +1,55 @@
+# Layout descriptor: Canara Bank — "STATEMENT OF ACCOUNT" branch export, the
+# one headed by the branch block (IFSC / MICR / WhatsApp Banking Num).
+# Columns: TRANS DATE | VALUE DATE | BRANCH | REF/CHQ.NO | DESCRIPTION |
+# WITHDRAWS | DEPOSIT | BALANCE.
+#
+# This is Canara's SECOND shape, not a variant of canara_account_statement:
+# different page size, different header, a three-token month date
+# ("01-AUG-26") instead of 01-08-2025, and two date columns rather than one.
+# Bank is not layout — Canara exports three different files, which is the same
+# surprise ICICI and SBI have already produced.
+#
+# Both dates are printed, so date_x_max stops after the FIRST (TRANS DATE); the
+# value date, branch code and reference all fall in the gap before the
+# description and are ignored by the column scan.
+id: canara_soa_statement
+bank: Canara Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "CANARA BANK"
+    - "STATEMENT OF ACCOUNT"
+    - "CNRB0"
+  any_of:
+    - "WhatsApp Banking Num"
+    - "Product Name :"
+header:
+  account_line: 'Account No\s*:\s*(?P<account_no>\d+)[\s\S]*?Period\s*:\s*(?P<period_from>\d{2}-\d{2}-\d{4})\s*To\s*(?P<period_to>\d{2}-\d{2}-\d{4})'
+  period_date_format: "%d-%m-%Y"
+  account_name: 'Account Title\s*:\s*([A-Z][A-Za-z .&]+)'
+parse:
+  table_header_words: ["WITHDRAWS", "DEPOSIT", "BALANCE"]
+  header_offset: 12
+  row_anchor: '^\d{2}-[A-Za-z]{3}-\d{2}$'
+  date_format: "%d-%b-%y"
+  continuation: below
+  columns:
+    date_x_max: 70              # TRANS DATE 23-64; VALUE DATE starts at 77 and
+                                # is deliberately left outside the date field
+    cheque_x_min: 160           # REF/CHQ.NO ~190-208
+    cheque_x_max: 240
+    remarks_x_min: 240          # DESCRIPTION ~269 onward
+    remarks_x_max: 355          # stops before WITHDRAWS (values end 381)
+    amount_bands:
+      withdrawal: [358, 412]    # WITHDRAWS — right edge 381
+      deposit:    [425, 495]    # DEPOSIT   — right edge 464
+      balance:    [520, 600]    # BALANCE   — right edge 586
+    tail_x_min: 99999
+  skip_rows:
+    - "B/F"
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Page"

@@ -819,3 +819,34 @@ def test_the_same_slot_holding_a_bank_still_yields_nothing():
     assert _party("ACHInwDr-IDFC FIRST BANK/03-07-2025") == ""
     assert _party("ACHInwDr-ROVER FINANCE LIMITE/05-07-2025") == \
         "ROVER FINANCE LIMITE"
+
+
+def test_narration_shapes_from_the_new_bank_layouts():
+    """Kotak, Canara and Bandhan each print a payee in a form no earlier bank
+    used. Added with their descriptors — a layout that reads every row but names
+    nobody is only half a layout.
+
+    "Recd:IMPS" is the one worth keeping honest about: without a rule the stem
+    itself was being returned as the counterparty, which is the same class of
+    mistake as a channel stamp in the party column (gotcha 19)."""
+    from bsa.normalize import _sanitise_party, extract_counterparty, detect_mode
+
+    def party(d):
+        return _sanitise_party(extract_counterparty(d, detect_mode(d)))
+
+    # Kotak
+    assert party("MB: SENT TO PRASEEJA ASHOKAN M") == "PRASEEJA ASHOKAN M"
+    assert party("Recd:IMPS/534311801758/SREEJITH K/KKBK/X9365/IMPS") == "SREEJITH K"
+    assert party("NEFT IN12534713810084 SREEJITH KUMAR P ICIC0SF000") == \
+        "SREEJITH KUMAR P"
+    # Canara's branch export — the account number between dash and name is not
+    # part of the name
+    assert party("FUNDS TRANSFER DEBIT 04781010002434 - ADARSH CONSTRUCTIONS") == \
+        "ADARSH CONSTRUCTIONS"
+    assert party("FUNDS TRANSFER DEBIT - ADARSH CONSTRUCTIONS") == \
+        "ADARSH CONSTRUCTIONS"
+    # the cheque drawer, with and without Bandhan's clearing zone in between
+    assert party("CHQ PAID-MICR INWARD CLEARING-ARJUN SOUHARDHA PATHIN-FEDERAL "
+                 "BANK") == "ARJUN SOUHARDHA PATHIN"
+    assert party("CHQ PAID-CTS INWARD CLEARING ZONE 8- BEHARILAL G H") == \
+        "BEHARILAL G H"

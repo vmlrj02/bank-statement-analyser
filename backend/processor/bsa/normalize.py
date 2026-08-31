@@ -324,6 +324,39 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"\bIMPS\s*P2[AMVP]\s+([A-Za-z][A-Za-z .&'-]+?)(?:\s*-|$)", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
+    #   Canara's branch export: "FUNDS TRANSFER DEBIT 04781010002434 - ADARSH
+    #   CONSTRUCTIONS", and the same form without the account number. The payee
+    #   follows the dash; the account number between is not part of the name.
+    m = re.search(r"FUNDS TRANSFER\s*(?:DEBIT|CREDIT)?\s*\d*\s*-\s*"
+                  r"([A-Za-z][A-Za-z .&'-]+)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "CHQ PAID-MICR INWARD CLEARING-ARJUN SOUHARDHA PATHIN-FEDERAL BANK" —
+    #   the drawer sits between the clearing stamp and the presenting bank.
+    #   Bandhan puts a zone between the stamp and the dash ("CHQ PAID-CTS
+    #   INWARD CLEARING ZONE 8- BEHARILAL G H"), Canara does not.
+    m = re.search(r"INWARD CLEARING[A-Z0-9 ]*?-\s*([A-Za-z][A-Za-z .&'-]+?)(?:-|$)",
+                  d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   Kotak prints three shapes no other bank does.
+    #   "MB: SENT TO PRASEEJA ASHOKAN M"  — mobile-banking transfer, the payee
+    #   is the whole tail.
+    m = re.search(r"\bMB:\s*(?:SENT TO|RECEIVED FROM)\s+([A-Za-z][A-Za-z .&'-]+)",
+                  d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "Recd:IMPS/534311801758/SREEJITH K/KKBK/X9365/IMPS" — without this the
+    #   "Recd:IMPS" stem itself was reading as the counterparty.
+    m = re.search(r"\bRecd:(?:IMPS|NEFT|RTGS|UPI)/\d+/([A-Za-z][^/]*)", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "NEFT IN12534713810084 SREEJITH KUMAR P ICIC0SF000" — the name sits
+    #   between the UTR and the beneficiary bank's IFSC.
+    m = re.search(r"\bNEFT\s+[A-Z]{2}\d{8,}\s+([A-Za-z][A-Za-z .&'-]+?)"
+                  r"(?=\s+[A-Z]{4}\d|\s*$)", d)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
     #   MBS/by SYED MUQTHAR AHMED/0200853/02-06-2026          (Karnataka)
     m = re.search(r"\bMBS/by ([A-Za-z][A-Za-z .&'-]+?)\s*/", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:

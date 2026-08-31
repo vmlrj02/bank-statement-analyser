@@ -1,0 +1,42 @@
+# Layout descriptor: Ujjivan Small Finance Bank — "Statement Of Account from …"
+# export. Columns: Tran Date | Value Date | Particular | Debit | Credit |
+# Balance | Amount. Standard two-amount-column shape, generic parser.
+#
+# Fingerprinted on the IFSC prefix because the bank's NAME does not appear
+# anywhere in the export — not in a header, not in a footer. Karnataka Bank had
+# the same property and is matched the same way.
+id: ujjivan_soa_statement
+bank: Ujjivan Small Finance Bank
+layout_name: Statement of Account
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "UJVN0"
+    - "Statement Of Account from"
+  any_of: []
+header:
+  account_line: 'Statement Of Account from (?P<period_from>\d{2}-\d{2}-\d{4}) to (?P<period_to>\d{2}-\d{2}-\d{4})[\s\S]*?Account Number\s*:\s*(?P<account_no>\d+)'
+  period_date_format: "%d-%m-%Y"
+  account_name: 'Name\s*:\s*([A-Z][A-Za-z .&]+?)\s+Customer Id'
+parse:
+  table_header_words: ["Debit", "Credit", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: below
+  columns:
+    date_x_max: 90              # Tran Date 29-81; Value Date starts at 99
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    remarks_x_min: 160          # Particular ~205 onward
+    remarks_x_max: 380
+    amount_bands:
+      withdrawal: [385, 450]    # Debit   — right edge ~430
+      deposit:    [470, 525]    # Credit  — right edge ~507
+      balance:    [540, 600]    # Balance — right edge ~575
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Page"

@@ -1,0 +1,55 @@
+# Layout descriptor: Kotak Mahindra Bank — "Account Statement" export.
+# Columns: # | Date | Description | Chq/Ref. No. | Withdrawal (Dr.) |
+# Deposit (Cr.) | Balance. A standard two-amount-column export, so the generic
+# parser handles it with no new machinery.
+#
+# The date prints as three tokens ("09 Dec 2025"), hence date_parts, and the
+# Chq/Ref value wraps mid-token onto the line below ("KMBT1112251634562" then
+# "1"), which continuation: below reassembles.
+#
+# Fingerprinted on the IFSC prefix rather than the bank's name: KKBK0 appears on
+# every export, while "Kotak" is absent from some pages entirely. Paired with
+# the export's own section heading so a Kotak NEFT row inside ANOTHER bank's
+# statement cannot match this descriptor.
+id: kotak_account_statement
+bank: Kotak Mahindra Bank
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "KKBK0"
+    - "Account Statement"
+  any_of:
+    - "Savings Account Transactions"
+    - "Current Account Transactions"
+    - "Account Transactions"
+header:
+  # The period is printed on its own line ABOVE the account number, so one
+  # pattern spans both — account_line is the only header regex the parser reads.
+  account_line: '(?P<period_from>\d{2} \w{3} \d{4})\s*-\s*(?P<period_to>\d{2} \w{3} \d{4})[\s\S]*?Account No\.\s*(?P<account_no>\d+)'
+  period_date_format: "%d %b %Y"
+parse:
+  table_header_words: ["Withdrawal", "Deposit", "Balance"]
+  header_offset: 12
+  date_parts: 3                   # "09 Dec 2025" prints as three tokens
+  row_anchor: '^\d{2} [A-Za-z]{3} \d{4}$'
+  date_format: "%d %b %Y"
+  continuation: below
+  columns:
+    sl_no_x_max: 60               # drop the leading "#" serial (x0 39-47) so the
+                                  # date is the first token the scan sees
+    date_x_max: 115               # date right edge 110.7; Description starts 119.2
+    remarks_x_min: 115
+    remarks_x_max: 270            # stops before Chq/Ref. No. (values from 274.7)
+    cheque_x_min: 270
+    cheque_x_max: 352
+    withdrawal_x1_max: 425        # Withdrawal (Dr.) — right edge 418
+    deposit_x1_max: 495           # Deposit (Cr.)    — right edge 487
+    balance_x1_max: 565           # Balance          — right edge 556
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a system generated"
+    - "computer generated"
+    - "Registered Office"
+    - "Page"

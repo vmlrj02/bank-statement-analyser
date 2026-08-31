@@ -1,0 +1,51 @@
+# Layout descriptor: Canara Bank — "Statement for A/c … for the period" export.
+# Columns: Date | Particulars | Deposits | Withdrawals | Balance.
+#
+# Two things make this bank its own shape rather than a copy of an existing one.
+#
+# DEPOSITS SITS LEFT OF WITHDRAWALS, which is the reverse of most exports, so
+# the ordered *_x1_max form would read every credit as a debit. amount_bands
+# names each role by its own right-edge window instead — the same reason the
+# ICICI combined and monthly descriptors use it.
+#
+# THE NARRATION SURROUNDS THE AMOUNT LINE. Canara prints the particulars over
+# several lines ABOVE the dated row and continues BELOW it with the UPI
+# timestamp and a "Chq:" reference, so continuation: nearest assigns each
+# fragment to the row it is closest to rather than to whatever came before.
+id: canara_account_statement
+bank: Canara Bank
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "CNRB0"
+    - "Statement for A/c"
+  any_of: []
+header:
+  account_line: 'Statement for A/c\s*(?P<account_no>[X\d]+)\s*for the period\s*(?P<period_from>\d{2}-\w{3}-\d{4})\s*to\s*(?P<period_to>\d{2}-\w{3}-\d{4})'
+  period_date_format: "%d-%b-%Y"
+  account_name: '(?m)^Name\s+([A-Z][A-Z .&]+?)(?:\s+Branch|$)'
+parse:
+  table_header_words: ["Deposits", "Withdrawals", "Balance"]
+  header_offset: 12
+  row_anchor: '^\d{2}-\d{2}-\d{4}$'
+  date_format: "%d-%m-%Y"
+  continuation: nearest
+  columns:
+    date_x_max: 100             # date 27-88; Particulars starts 107
+    remarks_x_min: 100
+    remarks_x_max: 310          # stops before the Deposits column (values ~342+)
+    cheque_x_min: 99999         # the cheque ref is printed inside the narration
+    cheque_x_max: 99999         # as "Chq: …", not in a column of its own
+    amount_bands:               # right edges; DEPOSITS is the leftmost column
+      deposit:    [330, 410]    # Deposits    — right edge 396
+      withdrawal: [430, 500]    # Withdrawals — right edge 490
+      balance:    [520, 595]    # Balance     — right edge 581
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Opening Balance"
+    - "Closing Balance"
+    - "Page"

@@ -331,3 +331,29 @@ def test_a_layout_without_narration_strip_is_untouched():
     assert _join_narration([("NEFT-YESAP52740277381-ONE 97", 0.0),
                             ("COMMUNICATIONS LIMITE", 0.0)]) == \
         "NEFT-YESAP52740277381-ONE 97 COMMUNICATIONS LIMITE"
+
+
+def test_a_wrapped_year_rejoins_with_the_separator_the_bank_used():
+    """Two banks wrap the YEAR of a date onto the next line, and they do not
+    agree on how the date is punctuated. SBI prints "17 Aug" and needs a space
+    before the year; Bandhan prints "05-JUN-" where the separator is already
+    there, so a space would build "05-JUN- 2025" and the row would fail to
+    parse. The separator the bank used decides the join."""
+    from bsa.extract.generic_layout import _complete_year
+
+    class M:
+        period_from = "2025-06-05"
+        period_to = "2026-06-04"
+
+    assert _complete_year("05-JUN-", M()) == "05-JUN-2025"
+    assert _complete_year("04-JUN-", M()) == "04-JUN-2026"   # picks the year
+                                                             # that lands in range
+    assert _complete_year("17 Aug", M()) == "17 Aug 2025"    # SBI is unchanged
+
+    class NoPeriod:
+        period_from = ""
+        period_to = ""
+
+    # No period to reason from: return the input and let the row fail loudly
+    # rather than silently misdate it.
+    assert _complete_year("05-JUN-", NoPeriod()) == "05-JUN-"

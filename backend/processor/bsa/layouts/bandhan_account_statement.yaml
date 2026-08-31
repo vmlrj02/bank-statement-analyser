@@ -1,0 +1,53 @@
+# Layout descriptor: Bandhan Bank — account statement export.
+# Columns: TRANS DATE | VALUE DATE | CHEQUE / INSTRUMENT | DESCRIPTION |
+# DEBITS | CREDITS | BALANCE.
+#
+# The date WRAPS: a row prints "10-JUL-" on the anchor line and "2025" on the
+# line below, exactly the shape SBI's savings export has, so the year is left
+# optional in the anchor and completed from the statement period
+# (infer_year_from_period). Without that the anchor never matches and the whole
+# statement reads as one row.
+#
+# Amount columns are unusually clean — every value right-aligns at 399 / 479 /
+# 560 across the whole file — so the ordered cutoffs are unambiguous here.
+id: bandhan_account_statement
+bank: Bandhan Bank
+layout_name: Account Statement
+version: 1
+parser: generic
+fingerprints:
+  all_of:
+    - "BDBL0"
+    - "Account No:"
+  any_of:
+    - "Account Title:"
+    - "Branch of Ownership:"
+header:
+  # the period is needed, not decorative: the wrapped year is completed from it
+  account_line: 'Account No:\s*(?P<account_no>\d+)[\s\S]*?From Date:\s*(?P<period_from>\d{2}-\w{3}-\d{4})\s*To Date:\s*(?P<period_to>\d{2}-\w{3}-\d{4})'
+  period_date_format: "%d-%b-%Y"
+  account_name: 'Account Title:\s*([A-Z][A-Za-z .&]+)'
+parse:
+  table_header_words: ["DEBITS", "CREDITS", "BALANCE"]
+  header_offset: 14
+  # the year is optional: it wraps onto the following line on every row
+  row_anchor: '^\d{2}-[A-Za-z]{3}-(\d{4})?$'
+  infer_year_from_period: true
+  date_format: "%d-%b-%Y"
+  continuation: below
+  skip_rows:
+    - "B/F"
+  columns:
+    date_x_max: 80              # TRANS DATE 36-64; VALUE DATE starts at 86
+    cheque_x_min: 130           # CHEQUE / INSTRUMENT ~135-215
+    cheque_x_max: 215
+    remarks_x_min: 215          # DESCRIPTION from 220
+    remarks_x_max: 370
+    withdrawal_x1_max: 410      # DEBITS  — right edge 399
+    deposit_x1_max: 490         # CREDITS — right edge 479
+    balance_x1_max: 575         # BALANCE — right edge 560
+    tail_x_min: 99999
+  footer_markers:
+    - "This is a computer generated"
+    - "computer generated statement"
+    - "Page"
