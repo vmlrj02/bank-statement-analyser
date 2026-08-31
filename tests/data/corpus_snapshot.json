@@ -679,7 +679,8 @@
    "rows": 17,
    "top_categories": {
     "Bank Penalties & Non-Maintenance": 17.6,
-    "Business income": 47.1,
+    "Business income": 41.2,
+    "Loan Disbursal": 5.9,
     "Misc. credit": 5.9,
     "OD / CC Interest & Renewal Fees": 17.6,
     "Supplier / Vendor Settlements": 11.8
@@ -745,7 +746,7 @@
    "party_named_pct": 90.1,
    "rows": 575,
    "top_categories": {
-    "Business income": 21.7,
+    "Business income": 21.6,
     "Commercial Rent & Utilities": 1.7,
     "Loan EMIs": 1.2,
     "Misc. debit": 0.5,
