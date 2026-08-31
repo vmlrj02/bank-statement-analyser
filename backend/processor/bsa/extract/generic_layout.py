@@ -606,8 +606,13 @@ def extract(pdf_path: str, source_file: str, layout: dict) -> StatementExtract:
                     for w in rest:
                         if w["x0"] >= active.get("tail_x_min", 1e9):
                             continue                  # trailing branch/init code
+                        # Perfios renders IDFC's flag with a full stop
+                        # ("Dr." / "Cr."). Safe to accept everywhere: the test
+                        # only fires for a token already inside the layout's
+                        # declared type_band.
                         if tb and tb[0] <= w["x0"] < tb[1] and w["text"] in (
-                                "DR", "CR", "Dr", "Cr", "D", "C"):
+                                "DR", "CR", "Dr", "Cr", "D", "C",
+                                "DR.", "CR.", "Dr.", "Cr."):
                             dir_flag = w["text"]
                             continue
                         # A Cr./Dr. token in its own column marks the balance's

@@ -1,0 +1,53 @@
+# Layout descriptor: IDFC FIRST Bank — Perfios-rendered statement.
+# Columns: Srl No | Txn Date | Value Date | Description | Cheque CC |
+# CR/DR | Amount (INR) | Balance (INR).
+#
+# NOT the same shape as au_perfios_statement despite the same renderer: AU's
+# export has separate Debit and Credit columns, this one has a SINGLE amount
+# column whose sign comes from a Dr./Cr. flag in its own band — the same
+# arrangement as the Axis cash-credit report.
+#
+# Two wrinkles the export itself introduces. The txn date is followed by a
+# TIME in the same column, so date_parts stays 1 and the time falls into the
+# gap before the description. And Perfios does not render every row's date the
+# same way — most are 21/04/2026, a few come out ISO as 2026-04-21 — so the
+# anchor accepts both and normalize parses whichever arrives.
+id: idfc_perfios_statement
+bank: IDFC FIRST Bank
+layout_name: Statement (Perfios)
+version: 1
+parser: generic
+priority: 12
+fingerprints:
+  all_of:
+    - "Amount (INR)"
+    - "Balance (INR)"
+  any_of:
+    - "Primary Account Holder Name"
+    - "YOUR A/C STATUS"
+header:
+  account_line: 'Transaction Date From\s*:\s*(?P<period_from>\d{2}/\d{2}/\d{4}) to:\s*(?P<period_to>\d{2}/\d{2}/\d{4})\s*A/C NO:\s*(?P<account_no>\d+)'
+  period_date_format: "%d/%m/%Y"
+parse:
+  table_header_words: ["Amount", "Balance"]
+  header_offset: 14
+  row_anchor: '^(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})$'
+  date_format: "%d/%m/%Y"
+  continuation: below
+  columns:
+    sl_no_x_max: 65             # drop the Srl No column (51-59)
+    date_x_max: 104             # Txn Date 68-103; the TIME follows at 105
+    cheque_x_min: 99999
+    cheque_x_max: 99999
+    remarks_x_min: 205          # Description from 210
+    remarks_x_max: 445          # stops before the Dr./Cr. flag at 454
+    type_band: [450, 472]       # the Dr./Cr. flag sits in a column of its own
+    amount_x1_max: 570          # Amount (INR)  — right edge 555
+    balance_x1_max: 645         # Balance (INR) — right edge 625
+    tail_x_min: 99999
+    # read from the COLUMN config, not from parse:
+    debit_flags: ["Dr.", "DR.", "DR", "Dr", "D"]
+  footer_markers:
+    - "This is a computer generated"
+    - "system generated"
+    - "Page"
