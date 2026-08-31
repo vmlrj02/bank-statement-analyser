@@ -391,6 +391,16 @@ def extract_counterparty(desc: str, mode: str) -> str:
                   d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
+    #   IDBI writes the UTR and the payee as ONE run with no separator:
+    #   "APGBR52025073112360149 MADHAVA BOYALLA", "FDRLR52025080100772664
+    #   YARAVA SEETHAMMA". Nothing delimited the name, so the row had no party.
+    m = re.match(r"[A-Z]{4,5}\d{15,}\s+([A-Za-z][A-Za-z .&'-]+)$", d)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    #   "SIDDAMURTHY RADHA RE 2613" — the payee, then a bare instrument number.
+    m = re.match(r"([A-Za-z][A-Za-z .&'-]+?)\s+RE\s+\d+$", d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
     #   Kotak prints three shapes no other bank does.
     #   "MB: SENT TO PRASEEJA ASHOKAN M"  — mobile-banking transfer, the payee
     #   is the whole tail.
@@ -1154,6 +1164,11 @@ _REF_WORD_TAIL = re.compile(r"\s+[A-Z]?\d{5,}[A-Z0-9]*$", re.I)
 # "www.cityunionbank.com"; the footer marker that let it in was a layout bug,
 # but nothing downstream should have accepted it as a name either.
 _URLISH = re.compile(r"\bwww\.|https?://|\.(?:com|in|net|org|co\.in)\b", re.I)
+# An Indian vehicle registration standing alone — "KA01AR2798", "KA01AR0396".
+# It is what was PAID FOR (a fuel or parking UPI), never who was paid, and the
+# reviewer struck both out of the IDBI pass. Only when it is the WHOLE party:
+# "BMTC BUS KA57F2446" names a real operator and he left that one alone.
+_VEHICLE_REG = re.compile(r"^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$", re.I)
 _BANK_CODE = re.compile(r"^(?:SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
                         r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|MAHB|AUBL|ESFB|"
                         r"CIUB|SCBL|RATN|BKID|SIBL|PYTM)$", re.I)
@@ -1235,6 +1250,8 @@ def _sanitise_party(p: str) -> str:
         return ""                                    # nor is the bank itself
     if _URLISH.search(p):
         return ""                                    # a website, not a payee
+    if _VEHICLE_REG.match(p):
+        return ""                                    # a number plate, not a payee
     return p
 
 

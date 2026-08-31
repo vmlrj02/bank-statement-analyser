@@ -947,3 +947,31 @@ def test_a_handle_is_tidied_but_a_name_is_left_alone():
     assert _sanitise_party("RAMESH KUMAR") == "RAMESH KUMAR"
     # and a VPA that is only a phone number still goes entirely
     assert _sanitise_party("9963059528@ybl") == ""
+
+
+def test_reviewer_idbi_pass_missed_names_and_number_plates():
+    """The six corrections from the reviewer's IDBI (Perfios) pass.
+
+    Two classes. IDBI runs the UTR straight into the payee with no separator,
+    so nothing delimited the name and the row had no party at all. And a bare
+    Indian vehicle registration was being shown as a counterparty — it is what
+    the money was spent ON (a fuel or parking UPI), never who was paid.
+
+    The plate rule fires only when the registration is the WHOLE party:
+    "BMTC BUS KA57F2446" names a real bus operator and the reviewer left that
+    row alone, which is the line the rule has to respect."""
+    from bsa.normalize import _sanitise_party, extract_counterparty, detect_mode
+
+    def party(d):
+        return _sanitise_party(extract_counterparty(d, detect_mode(d)))
+
+    assert party("APGBR52025073112360149 MADHAVA BOYALLA") == "MADHAVA BOYALLA"
+    assert party("FDRLR52025080100772664 YARAVA SEETHAMMA") == "YARAVA SEETHAMMA"
+    assert party("SIDDAMURTHY RADHA RE 2613") == "SIDDAMURTHY RADHA"
+
+    assert party("UPI/640866106724/KA01AR2798") == ""
+    assert party("UPI/949620605975/KA01AR0396") == ""
+    # …but a named operator carrying a plate stays whole
+    assert party("UPI/738979177827/BMTC BUS KA57F2446") == "BMTC BUS KA57F2446"
+    assert _sanitise_party("KA01AR2798") == ""
+    assert _sanitise_party("MADANLAL") == "MADANLAL"
