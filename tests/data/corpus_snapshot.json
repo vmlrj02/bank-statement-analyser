@@ -56,6 +56,11 @@
    "path": "bob/BOB 1-4-25 to 30-6-25 Nandini agro.pdf"
   },
   {
+   "bank": "Canara",
+   "layout": "canara_account_statement",
+   "path": "Canara/canara_statement_2026-07-08 173637.322393.pdf"
+  },
+  {
    "bank": "City union bank",
    "layout": "cityunion_account_statement",
    "path": "City union bank/TransNum_May_04_151636 (1).pdf"
@@ -357,18 +362,18 @@
   },
   "axis_statement_of_account": {
    "files": 1,
-   "mean_desc_len": 55.1,
+   "mean_desc_len": 55.2,
    "not_reconciling": 0,
-   "party_nameable_pct": 96.7,
-   "party_named_pct": 95.7,
+   "party_nameable_pct": 95.9,
+   "party_named_pct": 94.8,
    "rows": 1240,
    "top_categories": {
-    "Business income": 34.7,
-    "Cash Withdrawals": 2.0,
-    "Commercial Rent & Utilities": 1.4,
-    "Misc. credit": 0.9,
-    "Misc. debit": 7.6,
-    "Supplier / Vendor Settlements": 51.1
+    "Business income": 35.4,
+    "Cash Withdrawals": 2.5,
+    "Commercial Rent & Utilities": 1.2,
+    "Loan EMIs": 1.1,
+    "Misc. debit": 7.4,
+    "Supplier / Vendor Settlements": 49.8
    },
    "unreadable_files": 0
   },
@@ -376,8 +381,8 @@
    "files": 2,
    "mean_desc_len": 45.9,
    "not_reconciling": 0,
-   "party_nameable_pct": 62.6,
-   "party_named_pct": 56.7,
+   "party_nameable_pct": 60.3,
+   "party_named_pct": 54.6,
    "rows": 766,
    "top_categories": {
     "Business income": 29.8,
@@ -386,6 +391,23 @@
     "Loan EMIs": 0.5,
     "Misc. debit": 4.3,
     "Supplier / Vendor Settlements": 61.4
+   },
+   "unreadable_files": 0
+  },
+  "canara_account_statement": {
+   "files": 1,
+   "mean_desc_len": 103.7,
+   "not_reconciling": 1,
+   "party_nameable_pct": 69.3,
+   "party_named_pct": 66.4,
+   "rows": 548,
+   "top_categories": {
+    "Business income": 10.4,
+    "Cash Withdrawals": 6.2,
+    "Loan Disbursal": 2.9,
+    "Loan EMIs": 1.5,
+    "Misc. debit": 5.3,
+    "Supplier / Vendor Settlements": 71.2
    },
    "unreadable_files": 0
   },
