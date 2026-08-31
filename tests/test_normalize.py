@@ -1023,3 +1023,44 @@ def test_reviewer_icici_second_pass():
 
     # the borrower named after an EMI marker
     assert party("Auto Loan XX74039 EMI Spazeome") == "Spazeome"
+
+
+def test_reviewer_third_pass_iob_and_icici():
+    """Corrections from the reviewer's pass over three banks at once."""
+    from bsa.models import Txn
+    from bsa.normalize import (_is_bare_psp, _sanitise_party,
+                               drop_useless_identifiers, extract_counterparty,
+                               detect_mode)
+
+    def party(d):
+        cp = _sanitise_party(extract_counterparty(d, detect_mode(d)))
+        t = Txn(date="2026-01-01", cheque_no="", description=d, amount=-1.0,
+                balance=0.0, mode="other", counterparty=cp, account_no="1")
+        drop_useless_identifiers([t])
+        return t.counterparty or ""
+
+    # IOB puts REV (a reversal) where other banks put DR or CR, so nothing
+    # skipped it and the marker itself was returned as the party.
+    assert party("UPI/136488286360/REV/SANTOSH B SANK/IOB") == "SANTOSH B SANK"
+    # a till number and a truncated bank code are not counterparties
+    assert party("UPI/090923495025/DR/ POS 1/YES/PAYMENT F") == ""
+    assert _sanitise_party("POS 3") == ""
+    assert _sanitise_party("RAT") == ""
+
+    # "KotakMahindra" runs the words together; requiring a trailing space made
+    # the pattern miss it and the remark won.
+    assert party("MMT/IMPS/514413785168/PURCHASE D/VEL MURUGA/KotakMahindra") == \
+        "VEL MURUGA"
+
+    # An ICICI match is FINAL, including "no party": falling through let a
+    # weaker rule hand back the very order id we had just rejected.
+    assert party("UPI/285340608897/OidPT00007YGNE1/paytm-53817591@/YES BANK") == ""
+
+    # longest PSP prefix wins, or "yespay.bizs.biz" matches the short "YESPAY",
+    # leaves "BIZSBIZ", and the "a real word follows" escape lets a gateway
+    # handle through as a counterparty
+    assert _is_bare_psp("YESPAY.BIZS.BIZ") is True
+    assert _is_bare_psp("PAYTMQR10GVPF") is True
+    # …while a genuinely named service stays nameable
+    assert _is_bare_psp("GPAYRECHARGE") is False
+    assert _is_bare_psp("PHONEPEMERCHANT") is False

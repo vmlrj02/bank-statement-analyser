@@ -315,10 +315,17 @@ def extract_counterparty(desc: str, mode: str) -> str:
     #     or the payee's bank — so a bank that prints the name first (Kotak:
     #     "UPI/SULGIRI MALLES/519258796756/UPI") cannot match, and neither can
     #     a direction flag in that slot (IOB: "UPI/794684068531/DR/ PHONEPE").
-    for pat in (r"\bUPI/\d{6,}/(?!DR/|CR/)([^/]*)/([^/]+?)//ICI",
+    #   "UPI/136488286360/REV/SANTOSH B SANK/IOB" — IOB puts REV (a reversal)
+    #   where other banks put DR or CR, so nothing skipped it and the marker
+    #   itself was returned as the counterparty.
+    m = re.search(r"\bUPI/\d{6,}/(?:REV|RET|REF)/\s*([A-Za-z][A-Za-z .&'-]+?)\s*/",
+                  d, re.I)
+    if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+        return _clean_segment(m.group(1))
+    for pat in (r"\bUPI/\d{6,}/(?!DR/|CR/|REV/)([^/]*)/([^/]+?)//ICI",
                 r"\bUPI/\d{6,}/(?!DR/|CR/)([^/]*)/([^/]+?)/[A-Za-z][A-Za-z ]*"
                 r"(?:BANK|LTD|Bank|Ltd)",
-                r"\bMMT/IMPS/\d{6,}/([^/]*)/([^/]+?)/(?:[A-Z]{4}\d|[A-Z][a-z]+ )"):
+                r"\bMMT/IMPS/\d{6,}/([^/]*)/([^/]+?)/(?:[A-Z]{4}\d|[A-Z][a-z]+)"):
         m = re.search(pat, d)
         if not m:
             continue
@@ -333,10 +340,14 @@ def extract_counterparty(desc: str, mode: str) -> str:
         # ("gpayRECHARGE"). Stripping them first made every QR handle look like
         # the latter.
         stem = payee.split("@")[0].upper()
-        cand = remark if (_is_bare_psp(stem)
-                          or not any(c.isalpha() for c in payee)) else payee
-        if sum(c.isalpha() for c in cand) >= 3:
-            return _clean_segment(cand)
+        letters = sum(c.isalpha() for c in remark)
+        remark_is_word = (letters >= 3
+                          and letters >= 0.6 * len(remark.replace(" ", ""))
+                          and not re.search(r"\d{4,}", remark))
+        cand = payee
+        if _is_bare_psp(stem) or not any(c.isalpha() for c in payee):
+            cand = remark if remark_is_word else ""
+        return _clean_segment(cand) if sum(c.isalpha() for c in cand) >= 3 else ""
     # 2. IMPS/P2A-<ref>-<Name>-<phone>. "Mr"/"Mrs" is a title, not the name.
     m = re.search(r"IMPS/P2A-\d+-(?:MR|MRS|MS)\.?\s*([A-Za-z][A-Za-z .]*?)(?:-\d|$)"
                   r"|IMPS/P2A-\d+-([A-Za-z][A-Za-z .]*?)(?:-\d|$)", d, re.I)
@@ -1131,13 +1142,19 @@ def _is_bank_name(up: str) -> bool:
 _PSP = ("PAYTM", "PHONEPE", "GPAY", "GOOGLEPAY", "BHARATPE", "AMAZONPAY",
         "MOBIKWIK", "FREECHARGE", "PAYZAPP", "PAYU", "RAZORPAY", "BHIM",
         "PAYTMQR", "OKAXIS", "OKICICI", "OKSBI", "OKHDFCBANK", "YBL", "IBL",
-        "AXL", "PTYS", "PTYB", "APL", "UPI", "VYAPAR", "EAZYPAY")
+        "AXL", "PTYS", "PTYB", "APL", "UPI", "VYAPAR", "EAZYPAY", "YESPAY", "YESPAYBIZS")
 
 
 def _is_bare_psp(up: str) -> bool:
-    """True when the "party" is only a payment app / PSP handle."""
+    """True when the "party" is only a payment app / PSP handle.
+
+    LONGEST PREFIX FIRST. "yespay.bizs.biz" matched the short "YESPAY", left
+    "BIZSBIZ" behind, and the "a real word follows, so this is a named service"
+    escape below let it through as a counterparty. Checking the longer token
+    first closes that door without weakening the escape, which is what keeps
+    "gpayRECHARGE" nameable."""
     core = re.sub(r"[^A-Z0-9]", "", up)
-    for app in _PSP:
+    for app in sorted(_PSP, key=len, reverse=True):
         if core.startswith(app):
             rest = core[len(app):]
             rest = re.sub(r"^(QR|ME|MERCHANT)", "", rest)
@@ -1198,6 +1215,10 @@ _URLISH = re.compile(r"\bwww\.|https?://|\.(?:com|in|net|org|co\.in)\b", re.I)
 # It is what was PAID FOR (a fuel or parking UPI), never who was paid, and the
 # reviewer struck both out of the IDBI pass. Only when it is the WHOLE party:
 # "BMTC BUS KA57F2446" names a real operator and he left that one alone.
+# Banks that print the counterparty's bank truncated into its own column (IOB
+# cuts to three characters), so the fragment lands where a name is expected.
+_BANK_FRAGMENTS = {"RAT", "UTI", "SBI", "IOB", "YES", "KKB", "HDF", "ICI",
+                   "PUN", "CNR", "BAR", "IDF", "IND", "KAR", "UBI", "MAH"}
 _VEHICLE_REG = re.compile(r"^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$", re.I)
 _BANK_CODE = re.compile(r"^(?:SBIN|HDFC|ICIC|UTIB|KKBK|PUNB|CNRB|BARB|IDIB|"
                         r"IOBA|UBIN|INDB|YESB|IDFB|FDRL|KVBL|MAHB|AUBL|ESFB|"
@@ -1282,6 +1303,10 @@ def _sanitise_party(p: str) -> str:
         return ""                                    # a website, not a payee
     if _VEHICLE_REG.match(p):
         return ""                                    # a number plate, not a payee
+    if re.fullmatch(r"POS\s*\d+", p, re.I):
+        return ""                                    # a till number, not a payee
+    if up in _BANK_FRAGMENTS:
+        return ""                                    # a truncated bank code
     return p
 
 
