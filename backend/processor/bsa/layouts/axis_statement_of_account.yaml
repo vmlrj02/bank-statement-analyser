@@ -25,7 +25,18 @@ parse:
   header_offset: 16
   row_anchor: '^\d{2}-\d{2}-\d{4}$'
   date_format: "%d-%m-%Y"
-  continuation: below
+  # ABOVE, not below. Axis bottom-aligns the date in its cell, so a wrapped
+  # narration's FIRST line is printed above the dated line and only its last
+  # line sits beside the date. Read as "below", every wrap was attached to the
+  # PREVIOUS row and the whole description column shifted by one — row 572 read
+  # "Paymen/CANARA BANK UPI/P2A/776389830343/RAVI SHAN/FEDERAL", the tail of one
+  # payment glued to the head of the next.
+  #
+  # Nothing downstream could see it: the amounts and the balance are on the
+  # dated line, so every row reconciled and validate() passed with zero issues
+  # on 1,240 rows. The reviewer found it by reading the PDF beside the CSV and
+  # asking why a bordered table was being parsed wrongly.
+  continuation: above
   skip_rows:
     - "OPENING BALANCE"
     - "CLOSING BALANCE"

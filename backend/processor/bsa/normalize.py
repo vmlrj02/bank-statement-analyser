@@ -100,7 +100,12 @@ def _name_segments(raw: str) -> list[str]:
 
 # Words that mark a segment as a REMARK / purpose the sender typed, not the
 # recipient — used to tell the two apart when their order is not fixed.
-_REMARK_WORDS = {"PAY", "PAYME", "PAYMENT", "PAYMENTS", "TRANSFER", "TRF", "FUND",
+# "PAYMEN" is not a typo: Axis truncates the remark at the cell edge and the
+# reviewer found it twice in one hundred rows, once naming a row "Paymen" that
+# should have read ASHISH and once where the row has no party at all. The other
+# truncations of the same word are already here — this was the missing length.
+_REMARK_WORDS = {"PAY", "PAYM", "PAYME", "PAYMEN", "PAYMENT", "PAYMENTS",
+                 "TRANSFER", "TRF", "FUND",
                  "FUNDS", "TXN", "BILL", "PYMT", "TRF.", "SALARY", "RENT", "GST",
                  # UPI request/collect PURPOSE tokens. They sit in the same slot
                  # a name occupies and are mixed-case like a typed remark, so
@@ -236,7 +241,10 @@ def extract_counterparty(desc: str, mode: str) -> str:
         if sum(c.isalpha() for c in name) >= 3:
             return _clean_segment(name)
     #   MOB/TPFT/VIKAS VASANTH /925010004538960   (mobile-banking transfer)
-    m = re.match(r"MOB/(?:TPFT|TPT|FT)/([^/]+)", d, re.I)
+    # search, not match: Axis prints the remark and the counterparty's bank
+    # BEFORE the transfer stamp on some rows ("RATHORE/Paymen/State Bank Of
+    # India MOB/TPFT/ASHISH"), so anchoring at the start missed the name.
+    m = re.search(r"\bMOB/(?:TPFT|TPT|FT)/([^/]+)", d, re.I)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
     #   BRN-CLG-CHQ PAID TO Vishwanath B/KARNATAKA BANK  → the payee, not the

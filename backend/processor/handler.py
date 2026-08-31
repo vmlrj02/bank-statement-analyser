@@ -506,8 +506,15 @@ def lambda_handler(event, _ctx):
                 # Cross-statement identifier resolution: with every statement of
                 # the account in one list, a party named in March fills the
                 # bare-account-number rows of January.
-                from bsa.normalize import resolve_identifiers
+                from bsa.normalize import (drop_useless_identifiers,
+                                            resolve_identifiers)
                 resolve_identifiers(txns)
+                # …and clear again afterwards. resolve_identifiers deliberately
+                # KEEPS a bare account number as a join key, so the pair must
+                # stay together: normalize runs both per statement, and the
+                # merged pass here was running only the first half. A number is
+                # never a party name — the reviewer's instruction, twice.
+                drop_useless_identifiers(txns)
                 categorize(txns, related_parties=related)
 
                 # Mask only after uid, dedup and validation have used the real

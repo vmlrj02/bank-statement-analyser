@@ -850,3 +850,42 @@ def test_narration_shapes_from_the_new_bank_layouts():
                  "BANK") == "ARJUN SOUHARDHA PATHIN"
     assert party("CHQ PAID-CTS INWARD CLEARING ZONE 8- BEHARILAL G H") == \
         "BEHARILAL G H"
+
+
+def test_a_party_name_is_never_a_number():
+    """The reviewer's instruction, given twice: "emit account number no use,
+    none", then "party name should never be a number".
+
+    This is an INVARIANT, not a rule that fires somewhere — it has to hold on
+    whatever comes out the far end. The subtlety is that resolve_identifiers
+    deliberately keeps a bare account number alive as a JOIN KEY (an account
+    named in March fills January's bare rows), so the number is legitimate
+    mid-pipeline and must be cleared after. That pairing is easy to half-apply:
+    the processor's merged-account pass was calling resolve without the drop.
+    """
+    from bsa.normalize import drop_useless_identifiers, resolve_identifiers
+    from bsa.models import Txn
+
+    def t(desc, cp):
+        return Txn(date="2026-01-01", cheque_no="", description=desc, amount=-10.0,
+                   balance=0.0, mode="other", counterparty=cp, account_no="1")
+
+    rows = [t("TRANSFER TO 4698150044305", "4698150044305"),
+            t("TRANSFER TO 43465553898", "43465553898"),
+            t("NEFT 1186", "1186"),
+            t("UPI to 9739696759", "9739696759"),
+            t("CHQ 000012345", "000012345"),
+            t("REF 4897-6921-62094", "4897-6921-62094"),   # punctuation is not letters
+            t("PAYMENT TO 3D INTERIOR", "3D INTERIOR")]     # digits + letters: a real name
+    drop_useless_identifiers(rows)
+    assert [r.counterparty for r in rows[:-1]] == [""] * 6
+    assert rows[-1].counterparty == "3D INTERIOR"
+
+    # the join key still works: a number named in one row fills the bare ones,
+    # and only what never resolved is cleared
+    pair = [t("TRANSFER TO 4698150044305 SUKUMAR", "SUKUMAR"),
+            t("TRANSFER TO 4698150044305 SUKUMAR", "SUKUMAR"),
+            t("TRANSFER TO 4698150044305", "4698150044305")]
+    resolve_identifiers(pair)
+    drop_useless_identifiers(pair)
+    assert pair[2].counterparty == "SUKUMAR"
