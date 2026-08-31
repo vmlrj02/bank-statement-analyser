@@ -889,3 +889,61 @@ def test_a_party_name_is_never_a_number():
     resolve_identifiers(pair)
     drop_useless_identifiers(pair)
     assert pair[2].counterparty == "SUKUMAR"
+
+
+def test_icici_prints_the_remark_before_the_counterparty():
+    """The single biggest party-naming error found so far, and the reviewer's
+    whole labelled ICICI pass is about it: 62 of his 63 corrections were this.
+
+    ICICI writes the PURPOSE the payer typed first and the payee second —
+    "transport", "onionpurchase", "April Salary", "babycornandmush" — so a
+    salary run named nine different employees "April Salary" on a lending
+    report. Scoring cannot separate the two: both segments are digit-free and
+    neither is upper-case, so the earliest won. Position can, because ICICI's
+    order is fixed, and the rules anchor on what FOLLOWS the payee (ICICI's own
+    trailing reference, or the payee's bank) so banks that print the name first
+    cannot match."""
+    from bsa.normalize import _sanitise_party, extract_counterparty, detect_mode
+
+    def party(d):
+        return _sanitise_party(extract_counterparty(d, detect_mode(d)))
+
+    assert party("MMT/IMPS/512118070249/transport/ZubariKhan/HDFC0000133") == \
+        "ZubariKhan"
+    assert party("MMT/IMPS/512212728502/April Salary/HarshaS/IDIB000M213") == "HarshaS"
+    assert party("MMT/IMPS/512613372800/onionpurchase/VarahiTrad/SBIN0040656") == \
+        "VarahiTrad"
+    assert party("MMT/IMPS/512815497447/PURCHASE/VEL MURUGA/Kotak Mahindra") == \
+        "VEL MURUGA"
+    assert party("UPI/512591944336/PayviaRazorpay/thetamilchamber/ICICI Bank "
+                 "LTD/") == "thetamilchamber"
+
+    # a bank that prints the NAME first must be untouched by these
+    assert party("UPI/SULGIRI MALLES/519258796756/UPI") == "SULGIRI MALLES"
+    # …and so must a direction flag sitting in the remark's slot
+    assert party("UPI/794684068531/DR/ PHONEPE/YES/PAYMENT F") != "YES"
+
+
+def test_a_handle_is_tidied_but_a_name_is_left_alone():
+    """Three cleanups the reviewer wrote out by hand in the same pass. Each
+    fires only on a SINGLE token, which is what keeps a real multi-word name
+    ("VEL MURUGA", "MOZASU MULTI PRODUCTS") out of their reach."""
+    from bsa.normalize import _sanitise_party
+
+    # a serial glued to a handle
+    assert _sanitise_party("manjunath311982") == "manjunath"
+    assert _sanitise_party("sathishss702271") == "sathishss"
+    # a VPA whose domain was cut off at the column edge
+    assert _sanitise_party("jagannadhiah1@y") == "jagannadhiah1"
+    assert _sanitise_party("smenon760-2@oka") == "smenon"
+    # the account's own bank glued to a self-transfer handle
+    assert _sanitise_party("Mokeshicici") == "Mokesh"
+    assert _sanitise_party("SpazioicicCA") == "Spazio"
+    # one digit is not a serial — the reviewer kept it
+    assert _sanitise_party("jagannadhiah1") == "jagannadhiah1"
+    # real names, multi-word or not, are untouched
+    assert _sanitise_party("VEL MURUGA") == "VEL MURUGA"
+    assert _sanitise_party("MOZASU MULTI PRODUCTS") == "MOZASU MULTI PRODUCTS"
+    assert _sanitise_party("RAMESH KUMAR") == "RAMESH KUMAR"
+    # and a VPA that is only a phone number still goes entirely
+    assert _sanitise_party("9963059528@ybl") == ""

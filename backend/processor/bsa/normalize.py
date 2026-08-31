@@ -297,6 +297,31 @@ def extract_counterparty(desc: str, mode: str) -> str:
     m = re.search(r"@[\w.\-]+\(([A-Za-z][^)]*)", d)
     if m and sum(c.isalpha() for c in m.group(1)) >= 3:
         return _clean_segment(m.group(1))
+    # 1b. ICICI PRINTS THE SENDER'S REMARK BEFORE THE COUNTERPARTY.
+    #
+    #     "UPI/512172520936/babycornandmush/manjunath311982//ICI4210e7a2…"
+    #     "MMT/IMPS/512118070249/transport/ZubariKhan/HDFC0000133"
+    #     "UPI/512591944336/PayviaRazorpay/thetamilchamber/ICICI Bank LTD/"
+    #
+    #     The first segment after the reference is the PURPOSE the payer typed
+    #     — "transport", "onionpurchase", "April Salary", "babycornandmush" —
+    #     and the payee is the one after it. Scoring cannot separate them: both
+    #     are digit-free and neither is upper-case, so the earliest won and the
+    #     report named a customer's counterparty "April Salary" nine times.
+    #     Position can, because ICICI's order is fixed. 62 of the 63 party
+    #     corrections in the reviewer's labelled pass were this one mistake.
+    #
+    #     Anchored on what FOLLOWS the payee — ICICI's own trailing reference,
+    #     or the payee's bank — so a bank that prints the name first (Kotak:
+    #     "UPI/SULGIRI MALLES/519258796756/UPI") cannot match, and neither can
+    #     a direction flag in that slot (IOB: "UPI/794684068531/DR/ PHONEPE").
+    for pat in (r"\bUPI/\d{6,}/(?!DR/|CR/)[^/]*/([^/]+?)//ICI",
+                r"\bUPI/\d{6,}/(?!DR/|CR/)[^/]*/([^/]+?)/[A-Za-z][A-Za-z ]*"
+                r"(?:BANK|LTD|Bank|Ltd)",
+                r"\bMMT/IMPS/\d{6,}/[^/]*/([^/]+?)/(?:[A-Z]{4}\d|[A-Z][a-z]+ )"):
+        m = re.search(pat, d)
+        if m and sum(c.isalpha() for c in m.group(1)) >= 3:
+            return _clean_segment(m.group(1))
     # 2. IMPS/P2A-<ref>-<Name>-<phone>. "Mr"/"Mrs" is a title, not the name.
     m = re.search(r"IMPS/P2A-\d+-(?:MR|MRS|MS)\.?\s*([A-Za-z][A-Za-z .]*?)(?:-\d|$)"
                   r"|IMPS/P2A-\d+-([A-Za-z][A-Za-z .]*?)(?:-\d|$)", d, re.I)
@@ -1178,6 +1203,24 @@ def _sanitise_party(p: str) -> str:
     # it still stands — it is at least a chosen identity.
     if "@" in p and not any(c.isalpha() for c in p.split("@", 1)[0]):
         return ""
+    # --- handle tidying, from the reviewer's labelled ICICI pass -------------
+    # These only ever fire on a SINGLE token (no spaces), so a real name like
+    # "VEL MURUGA" or "MOZASU MULTI PRODUCTS" cannot be touched by them.
+    if " " not in p:
+        # A VPA whose domain was cut off by the column edge: "jagannadhiah1@y",
+        # "smenon760-2@oka". The local part is the identity; the stump is noise.
+        p = re.sub(r"@[A-Za-z]{0,4}$", "", p)
+        # A serial glued to a handle: "manjunath311982" -> manjunath,
+        # "sathishss702271" -> sathishss, "smenon760-2" -> smenon. Two or more
+        # digits, so "jagannadhiah1" keeps its 1 — which is what the reviewer
+        # wrote.
+        p = re.sub(r"^([A-Za-z][A-Za-z.]{2,}?)[-._]?\d{2,}(?:-\d+)?$", r"\1", p)
+        # The account holder's OWN bank glued to a self-transfer handle:
+        # "Mokeshicici" -> Mokesh, "SpazioicicCA" -> Spazio.
+        p = re.sub(r"(?i)^([A-Za-z]{4,}?)"
+                   r"(icici|icic|hdfc|sbin?|axis|kotak|yesb|pnb|canara)"
+                   r"(ca|sb|cc|sa|od)?$", r"\1", p)
+        p = p.strip(" -/*.:")
     letters = sum(c.isalpha() for c in p)
     if letters <= 2 and not p.isdigit() and "@" not in p:
         return ""                                    # "NE", "DR", "S" — noise

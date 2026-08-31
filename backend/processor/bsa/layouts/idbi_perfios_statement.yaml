@@ -1,4 +1,10 @@
-# Layout descriptor: IDFC FIRST Bank — Perfios-rendered statement.
+# Layout descriptor: IDBI Bank — Perfios-rendered statement.
+#
+# IDBI, not IDFC, however the customer filed it: the statement says "IDBI Bank"
+# 151 times and "IDFC" not once. It was written as IDFC because the sample sat
+# in a folder named for that bank, which is exactly the mistake gotcha 22 warns
+# about in the other direction — the folder is the customer's filing, not the
+# bank's identity.
 # Columns: Srl No | Txn Date | Value Date | Description | Cheque CC |
 # CR/DR | Amount (INR) | Balance (INR).
 #
@@ -12,8 +18,8 @@
 # gap before the description. And Perfios does not render every row's date the
 # same way — most are 21/04/2026, a few come out ISO as 2026-04-21 — so the
 # anchor accepts both and normalize parses whichever arrives.
-id: idfc_perfios_statement
-bank: IDFC FIRST Bank
+id: idbi_perfios_statement
+bank: IDBI Bank
 layout_name: Statement (Perfios)
 version: 1
 parser: generic
@@ -26,6 +32,10 @@ fingerprints:
     - "Primary Account Holder Name"
     - "YOUR A/C STATUS"
 header:
+  # The last page prints "Dr Count | Cr Count | Debits | Credits", which lets
+  # completeness.py prove no row was dropped rather than inferring it from a
+  # balance chain that would reconcile even if a whole day went missing.
+  summary_totals: 'Dr Count\s+Cr Count\s+Debits\s+Credits\s+\d+\s+\d+\s+(?P<sum_debits>\d+)\s+(?P<sum_credits>\d+)'
   account_line: 'Transaction Date From\s*:\s*(?P<period_from>\d{2}/\d{2}/\d{4}) to:\s*(?P<period_to>\d{2}/\d{2}/\d{4})\s*A/C NO:\s*(?P<account_no>\d+)'
   period_date_format: "%d/%m/%Y"
 parse:
@@ -51,3 +61,24 @@ parse:
     - "This is a computer generated"
     - "system generated"
     - "Page"
+    # The final page carries a Statement Summary table and a long disclaimer
+    # BELOW the transactions, and this export runs newest-first — so the whole
+    # block was appended to the OLDEST transaction, which is row 1 of the sheet
+    # a reader opens. The reviewer found it that way, with the PDF beside the
+    # CSV.
+    #
+    # Markers are tested against what lands in the NARRATION column, not the
+    # whole page. The summary is a bordered table, so "Dr Count" and "Cr Count"
+    # sit to the LEFT of the description band and never reach the line being
+    # matched — only "Debits Credits" and the sentence beneath it do. Listing
+    # the left-hand cells too costs nothing and documents the shape.
+    - "Statement Summary"
+    - "Dr Count"
+    - "Debits Credits"
+    - "does not require signature"
+    - "Important Information"
+    - "Contents of this statement"
+    - "reported in writing immediately"
+    - "DO NOT reply"
+    - "Service Tax Registration"
+    - "Regd. Office"
