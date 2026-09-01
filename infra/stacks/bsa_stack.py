@@ -45,6 +45,10 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # string; a GSI cannot be renamed without replacing it.
 OWNER_INDEX = "owner-created_at-index"
 
+# The repository allowed to assume the CI deploy role. Override with
+#   cdk deploy -c github_repo=owner/name
+GITHUB_REPO = "vmlrj02/bank-statement-analyser"
+
 
 class BsaStack(Stack):
     def __init__(self, scope: Construct, cid: str, **kwargs) -> None:
@@ -506,6 +510,65 @@ class BsaStack(Stack):
             ],
         )
 
+        # ---------- CI deploy identity: GitHub Actions via OIDC ----------
+        # Every deploy this project ever had was run by hand, because the
+        # workflow's deploy job died on "Configure AWS credentials" — the
+        # repository secrets it wanted were never created. 33 of 33 runs on
+        # main failed that way while every branch run went green, because the
+        # deploy job only runs on main.
+        #
+        # The fix is not to paste a long-lived key into a PUBLIC repository's
+        # settings. GitHub signs a short-lived OIDC token per run; this role
+        # trusts that token and nothing else, so there is no secret to leak or
+        # rotate.
+        #
+        # The trust is scoped twice over: `aud` must be sts.amazonaws.com, and
+        # `sub` must be this repository on refs/heads/main. A fork, a pull
+        # request, or any other branch produces a token this role refuses.
+        github_repo = self.node.try_get_context("github_repo") or GITHUB_REPO
+        gh_oidc = iam.CfnOIDCProvider(
+            self, "GitHubOidc",
+            url="https://token.actions.githubusercontent.com",
+            client_id_list=["sts.amazonaws.com"],
+            # AWS validates GitHub's certificate chain itself now, but the
+            # field is still part of the resource; these are GitHub's two
+            # published intermediate thumbprints.
+            thumbprint_list=[
+                "6938fd4d98bab03faadb97b34396831e3780aea1",
+                "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
+            ],
+        )
+        gh_deploy_role = iam.Role(
+            self, "GitHubDeployRole",
+            role_name="bsa-github-deploy",
+            description="Assumed by GitHub Actions on main to run cdk deploy",
+            max_session_duration=Duration.hours(1),
+            assumed_by=iam.WebIdentityPrincipal(
+                gh_oidc.attr_arn,
+                {
+                    "StringEquals": {
+                        "token.actions.githubusercontent.com:aud":
+                            "sts.amazonaws.com",
+                    },
+                    "StringLike": {
+                        "token.actions.githubusercontent.com:sub":
+                            f"repo:{github_repo}:ref:refs/heads/main",
+                    },
+                },
+            ),
+        )
+        # NOT AdministratorAccess. A CDK deploy works entirely through the
+        # bootstrap roles, so the only permission this identity needs is to
+        # assume them — CloudFormation then acts under cfn-exec-role, whose
+        # own policy is the real ceiling.
+        gh_deploy_role.add_to_policy(iam.PolicyStatement(
+            actions=["sts:AssumeRole"],
+            resources=[
+                f"arn:aws:iam::{self.account}:role/cdk-hnb659fds-*"
+                f"-{self.account}-{self.region}",
+            ],
+        ))
+
         CfnOutput(self, "SiteUrl", value=f"https://{dist.distribution_domain_name}")
         CfnOutput(self, "ApiUrl", value=api.api_endpoint)
         CfnOutput(self, "DataBucketName", value=data_bucket.bucket_name)
@@ -514,3 +577,5 @@ class BsaStack(Stack):
         CfnOutput(self, "AuthTableName", value=auth_table.table_name)
         CfnOutput(self, "SweeperFunctionName", value=sweeper.function_name)
         CfnOutput(self, "ProcessorFailureQueue", value=failures.queue_url)
+        # Paste this into .github/workflows/deploy.yml as role-to-assume.
+        CfnOutput(self, "GitHubDeployRoleArn", value=gh_deploy_role.role_arn)

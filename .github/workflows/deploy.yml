@@ -3,9 +3,13 @@
 # broken parser reaches real statements, so the deploy job depends on the test
 # job and CloudFormation is never reached if a test fails.
 #
-# Setup (one time): add repository secrets AWS_ACCESS_KEY_ID and
-# AWS_SECRET_ACCESS_KEY (Settings -> Secrets and variables -> Actions).
-# Better long-term: switch to OIDC role assumption instead of access keys.
+# Credentials are OIDC, not stored keys. GitHub mints a short-lived token per
+# run and the role in infra/stacks/bsa_stack.py (bsa-github-deploy) trusts only
+# this repository on refs/heads/main. There is no AWS secret in this repo's
+# settings to leak or rotate -- which matters here, because the repo is public.
+#
+# The role is created BY this stack, so it has to exist before CI can use it:
+# run one `cdk deploy` by hand after merging this, then CI is self-sustaining.
 name: deploy
 
 on:
@@ -91,6 +95,13 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # id-token lets the runner request the OIDC token the role trusts; without
+    # it the assume-role call fails with "Not authorized to perform
+    # sts:AssumeRoleWithWebIdentity". contents:read is what checkout needs once
+    # the default permissions are narrowed by naming any of them.
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -108,8 +119,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::681832767155:role/bsa-github-deploy
+          role-session-name: gha-bsa-deploy
           aws-region: ap-south-1
 
       - name: Deploy
