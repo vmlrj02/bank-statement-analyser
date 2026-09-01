@@ -67,9 +67,14 @@ def check_completeness(n_extracted: int, n_debits: int, n_credits: int,
     complete = True
     notes: list[str] = []
 
-    # (a) Count check — the total count is the hard signal. The per-direction
-    # split is only informational: a reversal posted in the withdrawal column
-    # nets to a positive amount, so our Dr/Cr split can legitimately differ.
+    # (a) Count check — the total count is the hard signal.
+    #
+    # The per-direction split USED to be excused here, on the grounds that "a
+    # reversal posted in the withdrawal column nets to a positive amount, so
+    # our Dr/Cr split can legitimately differ". That excuse was the bug: the
+    # split differed because we counted by SIGN while the bank counts by
+    # COLUMN. Txn.side carries the column now and publish counts with it, so a
+    # remaining difference is a real one and worth reporting.
     expected = declared.get("n_txns")
     if expected is None and "n_debits" in declared and "n_credits" in declared:
         expected = declared["n_debits"] + declared["n_credits"]

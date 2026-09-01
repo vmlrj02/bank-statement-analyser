@@ -78,7 +78,15 @@ credit:
     sheet: ""
     tags: [return / refund, Regular credit]
     patterns: [GST REFUND, ITR REFUND, INCOME TAX REFUND, CUSTOMS DRAWBACK,
-               DRAWBACK, REFUND OF TAX, TDS REFUND, IT REFUND, CBDT]
+               DRAWBACK, REFUND OF TAX, TDS REFUND, IT REFUND, CBDT,
+               # "subsidy go to tax & duty refunds" — the reviewer, 1 Sep. A
+               # state subsidy is a government receipt on the same footing as a
+               # refund, and counting it as Business income overstates turnover,
+               # which is the circularity gotcha 18 exists to prevent. The LPG
+               # subsidy is the common one ("APBSC-HPCLLPGSUBSIDY-P1125028DE535",
+               # eleven rows split between Misc. credit and Business income);
+               # PAHAL and DBTL are its scheme names.
+               SUBSIDY, PAHAL, DBTL]
 
   - name: Loan Disbursal
     group: Capital & Financing
@@ -118,6 +126,19 @@ credit:
     sheet: Cash Deposit Xns
     tags: [cash deposit]
     patterns: []
+
+  # Added 1 Sep from the reviewer's "right category" column. Eight HDFC credits
+  # reading "REV-UPI-16401530008360-REDDYIREDDY@YBL-…" were landing on Outward
+  # Cheque / Mandate Returns, which is the CHEQUE line and carries the Outward
+  # Bounced Xns sheet — a failed UPI push is neither a cheque nor a mandate.
+  # Priority 10 so REV- decides the row: the outward line also lists REVERSAL,
+  # and at equal priority the longer pattern would have won it.
+  - name: Reversals & refunds
+    priority: 10
+    group: Contra / Technical
+    sheet: ""
+    tags: [return / refund, Regular credit]
+    patterns: [REV-UPI, RVSL, UPI REVERSAL, PAYMENT REVERSAL]
 
   - name: Outward Cheque / Mandate Returns
     group: Contra / Technical
@@ -165,7 +186,20 @@ debit:
     sheet: Regular Debits
     tags: [Regular debit, ECS transaction]
     patterns: [RENT, LEASE, ELECTRICITY, BESCOM, MSEB, TNEB, TELECOM, AIRTEL,
-               JIO, VODAFONE, BSNL, WATER, BBPS, UTILITY, GAS BILL,
+               JIO, VODAFONE, BSNL, WATER, BBPS,
+               # "BBPS is always bill payments" — the reviewer. The bare
+               # acronym is four characters, so it only matches a WHOLE token
+               # (see SHORT_PATTERN), and PhonePe prints it glued into the
+               # payee handle: "UPI-PHONEPE-BBPSBP@YBL-…". Spelling the glued
+               # form out is what lets the rule reach it.
+               BBPSBP, BBPS BP,
+               # "recharge came as vendor payment". JIO and the other telco
+               # names are three or four characters, so they only match a WHOLE
+               # token — and the narration glues them: "UPI-JIORECHARGE-
+               # JIOINAPPDIRECT1@AXL-…". RECHARGE is eight characters and says
+               # the same thing on its own, whichever operator it names.
+               RECHARGE,
+               UTILITY, GAS BILL,
                BROADBAND, INTERNET BILL,
                # The monthly rental on a payment provider's QR speaker
                # ("SOUNDBOXRENTALJUN25EJD927"). A fixed overhead, so it belongs
@@ -198,7 +232,29 @@ debit:
     sheet: Regular Debits
     tags: [Regular debit, ECS transaction]
     patterns: [OLTAS, CHALLAN 281, CHALLAN 280, TDS, ADVANCE TAX, INCOME TAX,
-               SELF ASSESSMENT TAX, TCS PAYMENT]
+               SELF ASSESSMENT TAX, TCS PAYMENT,
+               # ICICI pays statutory dues through "GIB/<ref>/<HEAD>/<challan>"
+               # — Government Internet Banking. GIB is only the CHANNEL; the
+               # third field names the head, and it is the head that decides.
+               # "GIB/002042128388/ESIC" already reached Labour Welfare on the
+               # ESIC pattern, while its DTAX sibling had nothing to match and
+               # fell to Supplier / Vendor Settlements.
+               DTAX]
+
+  # Added 1 Sep after the reviewer put a new line in the master to catch FSSAI.
+  # The food-safety licence fee had been reading as a bank penalty, on a "MAB"
+  # token taken out of the payee's VPA (see sme_taxonomy._TOKEN). Fixing the
+  # token alone would have left it as a generic supplier payment, which is not
+  # what a licence renewal is: it is a statutory cost of staying open, and an
+  # underwriter reads it as such. NAME NOT YET CONFIRMED against the master's
+  # own spelling — flagged to the reviewer.
+  - name: Statutory Licences & Regulatory Fees
+    group: Statutory & Compliance
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [FSSAI, FOOD SAFETY, FOODSAFETY, TRADE LICENCE, TRADE LICENSE,
+               MUNICIPAL, MCA21, POLLUTION CONTROL, DRUG LICENCE,
+               DRUG LICENSE, SHOPS AND ESTAB, LABOUR LICENCE]
 
   - name: Labour Welfare (PF / ESIC)
     group: Statutory & Compliance
@@ -215,6 +271,27 @@ debit:
     tags: []
     patterns: []
     max_abs_amount: 50
+
+  # Added 1 Sep from the reviewer's "right category" column. Eight HDFC fee rows
+  # — quarterly SMS-alert charges and the per-transaction ATM fee — were sitting
+  # in Misc. debit purely because each is under the ₹50 ceiling, which says
+  # nothing about what they are.
+  #
+  # The group is Operating Expenses, NOT Banking Friction & Penal, and that is
+  # deliberate: gotcha 5 is explicit that a routine service fee is not penal,
+  # and filing these beside minimum-balance penalties would inflate the very
+  # friction signal a lender reads. The tag list excludes the penal tags for
+  # the same reason, so this line can never take a genuine penalty.
+  - name: Bank Charges & Processing Fees
+    priority: 20
+    group: Operating Expenses (OpEx)
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [INSTAALERT, INSTA ALERT, SMS CHG, SMS CHRG, ALERT CHG,
+               FEE-ATMCASH, FEE-ATMNONCASH, ATMCASH, ATMNONCASH,
+               NEFT CHG, NEFT CHRG, RTGS CHG, IMPS CHG, CHQ BOOK,
+               FOLIO CHG, CARD FEE, ANNUAL FEE, PROCESSING FEE,
+               SERVICE CHG, INCIDENTAL CHARGES]
 
   - name: Cash Withdrawals
     group: Cash & Non-Operating
@@ -257,7 +334,14 @@ debit:
     sheet: Bounced-Penal Xns
     tags: [other penal charges, inward bounce penal charges, Outward Bounced Xns,
            Regular debit, ECS transaction]
-    patterns: [CHQ RTN CHG, CHQ RTRN CHRGS, CHQ RTRN CHRG, CHEQUE RETURN CHG,
+    patterns: [# The bank does not always leave a space, and the instrument is
+               # not always named: "ATD-1xx8273-RTNCHGSMay25GST" is a ₹59
+               # return charge on a failed auto-debit and was reading as a
+               # supplier payment. RTN and CHG TOGETHER are what make it a
+               # return charge — "RTN" alone is a reference stamp and "CHG"
+               # alone is an ordinary fee, so neither could be used.
+               RTN CHG,
+               CHQ RTN CHG, CHQ RTRN CHRGS, CHQ RTRN CHRG, CHEQUE RETURN CHG,
                ECS RET CHG, ECS RETURN CHG, NACH BOUNCE CHGS, NACH BOUNCE CHG,
                ACH RETURN CHG, NSF CHG, MIN BAL CHG, MAB CHG, NON MAINT CHG,
                LIMIT EXPIRY PENALTY, PENAL INT, EXCESS OD CHG, TOD PENALTY,

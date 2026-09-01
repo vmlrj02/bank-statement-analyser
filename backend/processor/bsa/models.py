@@ -104,11 +104,38 @@ class Txn:
     balance_inverted: bool = False
     balance_tolerance: float = 0.0   # see RawRow.balance_tolerance
     is_opening: bool = False         # see RawRow.is_opening — rebases the chain
+    # WHICH COLUMN the figure was printed in — "debit" | "credit", "" when the
+    # source could not say (the LLM path, which reports a signed amount only).
+    #
+    # Not the same thing as the sign, and the difference is the whole reason
+    # this exists. A REVERSAL is printed in the withdrawal column as a NEGATIVE
+    # withdrawal: HDFC's "ATW-…-P3ENTV02-HYDERABAD  -10,000.00" raises the
+    # balance by ₹10,000, so its money-flow amount is +10,000 and every check
+    # that reads the sign calls it a credit. The bank does not: its own summary
+    # says Dr Count 1546 / Cr Count 735, counting that row as a debit, and our
+    # 1544/737 was the reviewer's "2 debits went to credit".
+    #
+    # `amount` therefore keeps its money-flow sign, so the balance chain still
+    # reconciles by construction, and `side` carries the column. The debit total
+    # is then the ALGEBRAIC sum over debit-side rows, which is how the bank
+    # reaches 6,510,203.56 from rows that include a -10,000 one.
+    side: str = ""
 
     def compute_uid(self, account_no: str, occurrence: int) -> None:
         key = f"{account_no}|{self.date}|{self.description}|{self.amount:.2f}|{self.balance:.2f}|{occurrence}"
         self.uid = hashlib.sha256(key.encode()).hexdigest()[:16]
 
+
+
+def is_credit_side(t) -> bool:
+    """Which side of the statement a row belongs to.
+
+    The printed COLUMN when the extractor could tell us (see Txn.side), the
+    money-flow sign otherwise. Use this — not `amount > 0` — anywhere the
+    answer has to agree with the bank's own debit/credit split.
+    """
+    s = getattr(t, "side", "") or ""
+    return (s == "credit") if s else (getattr(t, "amount", 0) or 0) > 0
 
 @dataclass
 class ValidationIssue:

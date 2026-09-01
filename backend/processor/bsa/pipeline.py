@@ -9,7 +9,7 @@ from .extract.llm_providers import (
     NoLayoutError, ResidencyError, fallback_enabled, residency_block)
 from .ingest import ingest
 from .models import JobResult, StatementExtract
-from .normalize import normalize, dedup_merge
+from .normalize import normalize, dedup_merge, drop_opening_rows
 from .publish import publish
 from .registry import get_layout
 from .validate import validate
@@ -113,8 +113,12 @@ def run(paths: list[str], out_dir: str, password: str | None = None,
     extracts = [extract_one(p, password=password) for p in paths]
     txn_lists = [normalize(e) for e in extracts]
     txns = dedup_merge(txn_lists) if len(txn_lists) > 1 else txn_lists[0]
-    categorize(txns, related_parties=related_parties)
+    categorize(txns, related_parties=related_parties,
+               account_name=extracts[0].meta.account_name)
     report = validate(txns)
+    # After validate, never before: the chain needs the B/F row, the report
+    # must not have it.
+    txns = drop_opening_rows(txns)
     result = JobResult(meta=extracts[0].meta, txns=txns, validation=report)
     publish(result, out_dir, basename=basename)
     return result

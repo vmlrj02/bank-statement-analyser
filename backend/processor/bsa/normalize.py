@@ -31,7 +31,7 @@ MODE_RULES = [
     (r"\bMMT/IMPS|/IMPS/|\bIMPS[/:]", "imps"),
     (r"\bNEFT[-/:]", "neft"),
     (r"\bRTGS[-/:]", "rtgs"),
-    (r"\bECSRTN|\bRTN CHG|\bRET CHG", "ecs-return"),
+    (r"\bECSRTN|\bRTN\s*CHGS?|\bRET\s*CHGS?", "ecs-return"),
     # ACH mandates print as "ACH/…", "ACH-DR-…" and glued "ACHD-…" / "ACHC-…";
     # all are NACH so a lender debit reads as an EMI, not a generic payment.
     (r"\bACH[DC]?[-/]|\bNACH\b|\bECS(?!RTN)", "nach"),
@@ -42,7 +42,14 @@ MODE_RULES = [
     # it carries no "ATM" token at all, so it was falling through to Regular
     # debit and being read as a supplier payment — a cash withdrawal counted as
     # trade spend, which is the wrong answer twice over.
-    (r"NFS/CASH WDL|\bATM[-/ ]|ATM trxn|\bNWD-", "atm-cash"),
+    #
+    # NWD is only one of the three codes, and covering it alone left the other
+    # two doing exactly what NWD used to: the reviewer's words were "all these
+    # atm withdrawls came as vendor payment". ATW is the plain ATM withdrawal
+    # and EAW the one taken at another bank's machine. The separator differs by
+    # bank — HDFC prints "ATW-416021XXXXXX6777-P3ENTV02-HYDERABAD", Kotak
+    # "ATW/9800/Bollaram RoadKompalleTSIN211225/21:02" — so match either.
+    (r"NFS/CASH WDL|\bATM[-/ ]|ATM trxn|\b(NWD|ATW|EAW)[-/]", "atm-cash"),
     (r"\bCLG/", "clearing"),
     (r"BY CASH|CASH ?DEP|\bCDM\b|CASHDEP", "cash-deposit"),
     (r"\bCMS/", "cms"),
@@ -961,10 +968,13 @@ def normalize(extract: StatementExtract) -> list[Txn]:
         if r.withdrawal is not None and r.deposit is not None:
             # both printed (rare OCR error) — trust the balance delta later
             amount = (r.deposit or 0) - (r.withdrawal or 0)
+            side = "credit" if amount > 0 else "debit"
         elif r.withdrawal is not None:
             amount = -r.withdrawal
+            side = "debit"          # even when the figure itself is negative
         elif r.deposit is not None:
             amount = r.deposit
+            side = "credit"
         else:
             continue  # balance-only row (B/F etc.) — not a transaction
         desc = re.sub(r"\s+", " ", scrub_control(r.description)).strip()
@@ -979,7 +989,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
                 f"(page {r.page}): {desc[:60]}") from None
         txns.append(Txn(
             date=iso_date, cheque_no=scrub_control(r.cheque_no), description=desc,
-            amount=round(amount, 2), balance=r.balance, mode=mode,
+            amount=round(amount, 2), balance=r.balance, mode=mode, side=side,
             counterparty=extract_counterparty(desc, mode),
             page=r.page, source_file=extract.meta.source_file,
             account_no=extract.meta.account_no, bank=extract.meta.bank,
@@ -1020,6 +1030,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     # account in the processor, where it sees every statement at once.
     resolve_identifiers(txns)
     drop_useless_identifiers(txns)
+    name_instrument_parties(txns)
 
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
@@ -1233,6 +1244,87 @@ def _strip_stamps(p: str) -> str:
         p = _STAMP_TAIL.sub("", _STAMP_HEAD.sub("", p)).strip(" -/.:,")
     return p
 
+
+
+# Some rows have no counterparty because there IS no counterparty. The bank
+# charging its own SMS-alert fee, an ATM levying its own withdrawal fee, a UPI
+# payment reversing itself, the state paying an LPG subsidy — none of these has
+# a trading partner, and "unknown party" is the wrong answer twice over: it
+# reads as a failure to extract, and it drags the party-quality number down for
+# rows that were never nameable.
+#
+# The reviewer wrote the wanted values himself, in a "revised party name"
+# column beside the categories, so these strings are his, not ours.
+#
+# These OVERRIDE an existing name rather than only filling a blank, which the
+# reversal case requires: "REV-UPI-16401530008360-REDDYIREDDY@YBL-…" reverses a
+# payment that WAS made to Reddy I Reddy, so the payee is extractable and wrong
+# — the money came back from a failed transfer, and the row's counterparty is
+# the reversal itself.
+_INSTRUMENT_PARTY = [
+    # HDFC's "JANMAR25INSTAALERTCHG14SMS040425-MIR…" — the quarterly SMS-alert
+    # fee, priced per message.
+    (re.compile(r"INSTA\s*ALERT|SMS\s*CH(G|RG)|ALERT\s*CH(G|RG)", re.I),
+     "Bank SMS charges"),
+    # "FEE-ATMCASH(1TXN)28/09/25-AOR…" and its FEE-ATMNONCASH twin: the charge
+    # for a withdrawal beyond the free monthly count. NOT the withdrawal — that
+    # is a Cash Withdrawal and keeps its own row.
+    (re.compile(r"FEE-?ATM|\bATM\s*(CASH|NONCASH)\b|ATM\s*FEE", re.I),
+     "ATM withdrawal fees"),
+    (re.compile(r"\bREV-UPI|\bRVSL", re.I), "Reversals & refunds"),
+    # A subsidy or a tax refund is paid by the state. Naming the sponsoring
+    # scheme ("APBSC-HPCLLPGSUBSIDY-…") as a trade counterparty would put the
+    # government into the Top-10 party list, which is gotcha 22's complaint in
+    # a different costume.
+    (re.compile(r"SUBSIDY|\bPAHAL\b|\bDBTL\b|\bCBDT\b|"
+                r"(INCOME\s*TAX|GST|IT|TDS)\s*REFUND", re.I),
+     "Government / Statutory Body"),
+]
+
+# The same idea, but FILL-ONLY. A Bharat BillPay row is a bill payment — the
+# reviewer's "BBPS is always bill payments" — and where the biller is not
+# printed ("UPI-PHONEPE-BBPSBP@YBL-…") the honest name is the act, not the app
+# that carried it. But BBPS narrations often DO name the biller, and a real
+# biller is worth more than the label, so this never overwrites one.
+_INSTRUMENT_PARTY_FILL = [
+    (re.compile(r"\bBBPS", re.I), "Bill payment"),
+]
+
+
+
+def drop_opening_rows(txns: list[Txn]) -> list[Txn]:
+    """Every row that is a transaction, and nothing else.
+
+    A "balance brought forward" line carries a balance and no movement. It has
+    to reach validate(), because a multi-period statement re-bases its running
+    chain on each period's own B/F (gotcha 12) — but it is not a transaction,
+    and the reviewer was blunt about it: "this is just an opening balance
+    entry… only txns to be captured". It was being published as a ₹0.00 row
+    tagged Misc. debit, which is also a row in every count and every mix.
+
+    Call this AFTER validate() and before anything that reports.
+    """
+    return [t for t in txns if not getattr(t, "is_opening", False)]
+
+def name_instrument_parties(txns: list[Txn]) -> None:
+    """Name the INSTRUMENT where there is no counterparty to name.
+
+    Called at the end of normalize() and again on the merged account in the
+    processor, because the merged pass re-runs the identifier resolution that
+    can otherwise put a payee back onto a reversal.
+    """
+    for t in txns:
+        for pat, name in _INSTRUMENT_PARTY:
+            if pat.search(t.description):
+                t.counterparty = name
+                break
+        else:
+            if t.counterparty:
+                continue
+            for pat, name in _INSTRUMENT_PARTY_FILL:
+                if pat.search(t.description):
+                    t.counterparty = name
+                    break
 
 def _sanitise_party(p: str) -> str:
     p = re.sub(r"\s+", " ", p or "").strip(" -/*.:")

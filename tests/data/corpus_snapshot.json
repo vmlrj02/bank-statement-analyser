@@ -300,8 +300,8 @@
    "party_named_pct": 44.1,
    "rows": 1006,
    "top_categories": {
-    "Business income": 36.7,
-    "Cheque Clearances (Inward)": 12.7,
+    "Business income": 36.5,
+    "Cheque Clearances (Inward)": 12.6,
     "Inward Cheque / Mandate Bounces": 1.8,
     "Outward Cheque / Mandate Returns": 4.0,
     "POS / Merchant / QR Settlements": 12.4,
@@ -317,8 +317,8 @@
    "party_named_pct": 93.5,
    "rows": 956,
    "top_categories": {
-    "Business income": 33.4,
-    "GST Payments": 0.9,
+    "Business income": 33.2,
+    "GST Payments": 0.8,
     "Labour Welfare (PF / ESIC)": 0.8,
     "Loan EMIs": 3.3,
     "Misc. debit": 1.6,
@@ -334,12 +334,12 @@
    "party_named_pct": 79.1,
    "rows": 1044,
    "top_categories": {
-    "Business income": 31.2,
+    "Bank Charges & Processing Fees": 7.1,
+    "Business income": 30.4,
     "Cheque Clearances (Inward)": 1.5,
-    "GST Payments": 6.9,
-    "Inward Cheque / Mandate Bounces": 0.4,
-    "Outward Cheque / Mandate Returns": 0.5,
-    "Supplier / Vendor Settlements": 58.7
+    "GST Payments": 3.4,
+    "Salary credited": 0.8,
+    "Supplier / Vendor Settlements": 54.9
    },
    "unreadable_files": 0
   },
@@ -351,12 +351,12 @@
    "party_named_pct": 62.2,
    "rows": 196,
    "top_categories": {
+    "Bank Charges & Processing Fees": 22.4,
     "Business income": 18.4,
-    "GST Payments": 16.8,
+    "GST Payments": 5.6,
     "Loan EMIs": 2.0,
-    "OD / CC Interest & Renewal Fees": 1.5,
-    "Outward Cheque / Mandate Returns": 0.5,
-    "Supplier / Vendor Settlements": 59.2
+    "Misc. debit": 2.0,
+    "Supplier / Vendor Settlements": 45.9
    },
    "unreadable_files": 0
   },
@@ -370,10 +370,10 @@
    "top_categories": {
     "Business income": 35.4,
     "Cash Withdrawals": 2.5,
-    "Commercial Rent & Utilities": 1.2,
-    "Loan EMIs": 1.1,
-    "Misc. debit": 7.4,
-    "Supplier / Vendor Settlements": 49.8
+    "Commercial Rent & Utilities": 1.1,
+    "Loan EMIs": 1.6,
+    "Misc. debit": 7.5,
+    "Supplier / Vendor Settlements": 49.4
    },
    "unreadable_files": 0
   },
@@ -389,8 +389,8 @@
     "Credit Card Payments": 0.9,
     "Direct Cash Deposits": 2.3,
     "Loan EMIs": 0.5,
-    "Misc. debit": 4.3,
-    "Supplier / Vendor Settlements": 61.4
+    "Misc. debit": 9.5,
+    "Supplier / Vendor Settlements": 55.9
    },
    "unreadable_files": 0
   },
@@ -398,16 +398,16 @@
    "files": 1,
    "mean_desc_len": 103.7,
    "not_reconciling": 1,
-   "party_nameable_pct": 78.3,
-   "party_named_pct": 75.0,
+   "party_nameable_pct": 85.0,
+   "party_named_pct": 81.4,
    "rows": 548,
    "top_categories": {
     "Business income": 10.4,
-    "Cash Withdrawals": 6.2,
+    "Cash Withdrawals": 6.4,
+    "Commercial Rent & Utilities": 2.0,
     "Loan Disbursal": 2.9,
-    "Loan EMIs": 1.5,
-    "Misc. debit": 5.3,
-    "Supplier / Vendor Settlements": 71.2
+    "Misc. debit": 6.4,
+    "Supplier / Vendor Settlements": 69.3
    },
    "unreadable_files": 0
   },
@@ -433,7 +433,8 @@
    "rows": 6,
    "top_categories": {
     "Business income": 66.7,
-    "Supplier / Vendor Settlements": 33.3
+    "Promoter Drawings / Remittances": 16.7,
+    "Supplier / Vendor Settlements": 16.7
    },
    "unreadable_files": 0
   },
@@ -445,11 +446,12 @@
    "party_named_pct": 78.1,
    "rows": 32,
    "top_categories": {
+    "Bank Charges & Processing Fees": 3.1,
     "Business income": 28.1,
     "Direct Cash Deposits": 9.4,
     "Loan EMIs": 25.0,
     "Misc. debit": 3.1,
-    "Supplier / Vendor Settlements": 34.4
+    "Supplier / Vendor Settlements": 31.2
    },
    "unreadable_files": 0
   },
@@ -466,7 +468,7 @@
     "Direct Cash Deposits": 11.4,
     "Inward Cheque / Mandate Bounces": 31.6,
     "OD / CC Interest & Renewal Fees": 3.5,
-    "Supplier / Vendor Settlements": 27.0
+    "Supplier / Vendor Settlements": 26.8
    },
    "unreadable_files": 0
   },
@@ -480,10 +482,10 @@
    "top_categories": {
     "Business income": 9.8,
     "Credit Card Payments": 1.0,
-    "GST Payments": 0.7,
-    "Misc. debit": 0.3,
-    "Payroll & Wages": 4.9,
-    "Supplier / Vendor Settlements": 82.1
+    "Direct Tax (TDS / Advance Tax)": 2.0,
+    "Misc. debit": 1.0,
+    "Payroll & Wages": 9.4,
+    "Supplier / Vendor Settlements": 74.6
    },
    "unreadable_files": 0
   },
@@ -528,7 +530,7 @@
     "Commercial Rent & Utilities": 6.4,
     "Labour Welfare (PF / ESIC)": 4.3,
     "Loan EMIs": 8.5,
-    "Supplier / Vendor Settlements": 66.0
+    "Supplier / Vendor Settlements": 64.9
    },
    "unreadable_files": 0
   },
@@ -552,9 +554,10 @@
    "party_named_pct": 28.1,
    "rows": 57,
    "top_categories": {
-    "Business income": 21.1,
+    "Business income": 19.3,
     "Interest & Treasury Income": 21.1,
     "Loan EMIs": 36.8,
+    "Misc. credit": 1.8,
     "Outward Cheque / Mandate Returns": 3.5,
     "Supplier / Vendor Settlements": 17.5
    },
@@ -564,8 +567,8 @@
    "files": 2,
    "mean_desc_len": 60.0,
    "not_reconciling": 0,
-   "party_nameable_pct": 78.6,
-   "party_named_pct": 68.3,
+   "party_nameable_pct": 79.8,
+   "party_named_pct": 69.3,
    "rows": 388,
    "top_categories": {
     "Business income": 30.7,
@@ -573,7 +576,7 @@
     "Direct Cash Deposits": 7.0,
     "Loan Disbursal": 3.1,
     "Loan EMIs": 2.6,
-    "Supplier / Vendor Settlements": 49.2
+    "Supplier / Vendor Settlements": 48.7
    },
    "unreadable_files": 0
   },
@@ -585,11 +588,11 @@
    "party_named_pct": 84.5,
    "rows": 1014,
    "top_categories": {
-    "Business income": 67.4,
+    "Business income": 67.3,
     "Cheque Clearances (Inward)": 1.9,
     "Direct Cash Deposits": 3.0,
     "Inward Cheque / Mandate Bounces": 0.4,
-    "Loan EMIs": 0.3,
+    "Misc. credit": 0.4,
     "Supplier / Vendor Settlements": 26.0
    },
    "unreadable_files": 0
@@ -619,10 +622,10 @@
    "party_named_pct": 89.0,
    "rows": 317,
    "top_categories": {
-    "Business income": 14.8,
-    "Commercial Rent & Utilities": 0.3,
+    "Business income": 14.5,
     "Direct Cash Deposits": 0.6,
     "Loan EMIs": 3.2,
+    "Misc. credit": 0.6,
     "Misc. debit": 4.4,
     "Supplier / Vendor Settlements": 75.7
    },
@@ -639,8 +642,9 @@
     "Business income": 6.4,
     "Commercial Rent & Utilities": 1.8,
     "Loan EMIs": 2.7,
+    "Misc. debit": 1.8,
     "Outward Cheque / Mandate Returns": 0.9,
-    "Supplier / Vendor Settlements": 88.2
+    "Supplier / Vendor Settlements": 86.4
    },
    "unreadable_files": 0
   },
@@ -652,8 +656,9 @@
    "party_named_pct": 85.7,
    "rows": 28,
    "top_categories": {
+    "Bank Charges & Processing Fees": 7.1,
     "Direct Cash Deposits": 7.1,
-    "Misc. debit": 17.9,
+    "Misc. debit": 10.7,
     "Supplier / Vendor Settlements": 75.0
    },
    "unreadable_files": 0
@@ -666,12 +671,12 @@
    "party_named_pct": 28.3,
    "rows": 46,
    "top_categories": {
+    "Bank Charges & Processing Fees": 15.2,
     "Business income": 15.2,
     "Cheque Clearances (Inward)": 2.2,
     "Inward Cheque / Mandate Bounces": 8.7,
     "Loan EMIs": 4.3,
-    "Misc. debit": 4.3,
-    "Supplier / Vendor Settlements": 58.7
+    "Supplier / Vendor Settlements": 47.8
    },
    "unreadable_files": 0
   },
@@ -679,16 +684,16 @@
    "files": 2,
    "mean_desc_len": 39.7,
    "not_reconciling": 0,
-   "party_nameable_pct": 68.5,
-   "party_named_pct": 52.8,
+   "party_nameable_pct": 68.9,
+   "party_named_pct": 53.1,
    "rows": 326,
    "top_categories": {
+    "Bank Charges & Processing Fees": 10.1,
     "Business income": 25.8,
     "Cash Withdrawals": 4.9,
     "Direct Cash Deposits": 6.7,
     "Loan EMIs": 4.3,
-    "Misc. debit": 4.6,
-    "Supplier / Vendor Settlements": 46.0
+    "Supplier / Vendor Settlements": 37.7
    },
    "unreadable_files": 0
   },
@@ -717,12 +722,12 @@
    "party_named_pct": 93.4,
    "rows": 412,
    "top_categories": {
-    "Bank Penalties & Non-Maintenance": 1.5,
-    "Business income": 8.7,
-    "Misc. credit": 0.2,
+    "Business income": 8.5,
+    "Misc. credit": 0.5,
     "Misc. debit": 0.7,
+    "Outward Cheque / Mandate Returns": 0.2,
     "POS / Merchant / QR Settlements": 0.5,
-    "Supplier / Vendor Settlements": 87.6
+    "Supplier / Vendor Settlements": 89.1
    },
    "unreadable_files": 0
   },
@@ -770,10 +775,10 @@
    "top_categories": {
     "Business income": 21.6,
     "Commercial Rent & Utilities": 1.7,
+    "Credit Card Payments": 0.3,
     "Loan EMIs": 1.2,
     "Misc. debit": 0.5,
-    "Supplier / Vendor Settlements": 72.3,
-    "Travel & Conveyance expenses": 0.5
+    "Supplier / Vendor Settlements": 72.7
    },
    "unreadable_files": 0
   },
@@ -781,14 +786,14 @@
    "files": 2,
    "mean_desc_len": 33.5,
    "not_reconciling": 0,
-   "party_nameable_pct": 73.6,
-   "party_named_pct": 66.3,
+   "party_nameable_pct": 75.3,
+   "party_named_pct": 67.8,
    "rows": 2231,
    "top_categories": {
-    "Business income": 10.8,
+    "Business income": 10.7,
     "Cash Withdrawals": 4.3,
     "Commercial Rent & Utilities": 0.9,
-    "Interest & Treasury Income": 0.3,
+    "Misc. credit": 0.3,
     "Misc. debit": 2.9,
     "Supplier / Vendor Settlements": 80.1
    },
@@ -834,12 +839,12 @@
    "party_named_pct": 76.9,
    "rows": 562,
    "top_categories": {
-    "Business income": 75.3,
-    "Commercial Rent & Utilities": 0.9,
-    "Misc. credit": 0.2,
+    "Business income": 75.1,
+    "Commercial Rent & Utilities": 1.1,
+    "Misc. credit": 0.4,
     "POS / Merchant / QR Settlements": 15.7,
     "Payroll & Wages": 2.3,
-    "Supplier / Vendor Settlements": 5.2
+    "Supplier / Vendor Settlements": 5.0
    },
    "unreadable_files": 0
   }

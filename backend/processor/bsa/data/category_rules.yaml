@@ -11,6 +11,14 @@
 # (the master: "non-emi payments to NBFCs"). A CREDIT that names one is a loan
 # disbursal. Matched case-insensitively, spaces ignored, anywhere in narration.
 lenders:
+  # KrazyBee Services / KreditBee — an RBI-registered NBFC, and the reviewer
+  # named it as one: "krazybee is a nbfc". Its UPI collections read
+  # "UPI-KRAZYBEE-CF.KRAZYBEE@ICICI-…-KREDITBEEPAYMENT", so both brand spellings
+  # are needed; the row was a supplier payment until now, which hides a real
+  # borrowing from a lender assessing exactly that. Safe under gotcha 24 — this
+  # is a finance company, not a bank.
+  - Krazybee
+  - Kreditbee
   - Kinara Capital
   - Clix Capital
   - Bajaj Fin

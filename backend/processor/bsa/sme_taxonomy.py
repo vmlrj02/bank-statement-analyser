@@ -51,6 +51,33 @@ def _squash(s: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
 
 
+# The bank/app that ROUTED a UPI payment, never the party who was paid or what
+# it was for. "OMEGAINC.PAYU@MAIRTEL" is Omega Inc paid via Airtel Payments
+# Bank — the reviewer's words: "transfer from Airtel money; not recharge
+# related. So it is a vendor payment" — but AIRTEL sat in the haystack and the
+# row read as a telecom utility. Masking the handle also stops "@paytm" and
+# "@okicici" claiming a POS-settlement or bank rule for the same wrong reason.
+#
+# ONLY the handle after the "@" is masked. The LOCAL part routinely names the
+# merchant ("AIRTELPREDIRECT1@YBL" really is an Airtel recharge), so blanking
+# it would lose the very rows this must keep.
+_PSP_HANDLE = re.compile(r"@[A-Za-z][A-Za-z0-9]*")
+
+
+def _mask_psp_handles(s: str) -> str:
+    return _PSP_HANDLE.sub(" ", s or "")
+
+
+# A token for WHOLE-TOKEN matching (see SHORT_PATTERN). A dot or an "@" BINDS:
+# "MAB.03724403966" is one payment handle, not the word "MAB" followed by a
+# number. Splitting on every non-alphanumeric — which is what this used to do —
+# manufactured a bare "MAB" token out of an Axis merchant-acquiring VPA, so
+# five UPI payments across HDFC, PNB and SBI were tagged as minimum-balance
+# penalties. categorize._is_penal already refused those rows for exactly this
+# reason; the sub-category had no such guard.
+_TOKEN = re.compile(r"[A-Z0-9]+(?:[._@][A-Z0-9]+)*")
+
+
 def _load() -> dict:
     global _CACHE
     if _CACHE is None:
@@ -98,16 +125,21 @@ def sme_subcategory(t) -> str:
     """The SME sub-category for one transaction. Never raises; returns "" only
     when the tag is unknown to the master."""
     data = _load()
-    side = "credit" if getattr(t, "amount", 0) > 0 else "debit"
+    # The printed column, not the sign — a reversal sits in the withdrawal
+    # column and must be sub-categorised as the debit it is (a reversed ATM
+    # withdrawal was reading as Business income).
+    from .models import is_credit_side
+    side = "credit" if is_credit_side(t) else "debit"
     tag = getattr(t, "category", "") or ""
-    text = f"{getattr(t, 'description', '')} {getattr(t, 'counterparty', '') or ''}"
+    text = _mask_psp_handles(
+        f"{getattr(t, 'description', '')} {getattr(t, 'counterparty', '') or ''}")
     hay = _squash(text)
     # A SHORT pattern must match a whole token, never a fragment. Squashing the
     # punctuation away is what makes "ACH-D/ GST-PMT" findable, but it also
     # buries short tokens inside longer words: "F&O" squashes to "FO", which
     # sits inside "EPFO", so a PF challan read as derivatives funding. This is
     # the same trap as the bare "AMB"/"POS" keywords in category_rules.yaml.
-    tokens = set(re.findall(r"[A-Z0-9]+", text.upper()))
+    tokens = set(_TOKEN.findall(text.upper()))
 
     amount = abs(float(getattr(t, "amount", 0) or 0))
 
@@ -151,8 +183,20 @@ def sme_subcategory(t) -> str:
             if best_score is None or score > best_score:
                 best_name, best_score = e["name"], score
             break
+    # "A named match always beats them, and they only outrank the generic trade
+    # default" — that was always the intent above, but the code made the Misc.
+    # lines a pure RESIDUAL, reachable only when nothing matched at all. The
+    # generic lines carry patterns too (Business income lists NEFT/RTGS/IMPS),
+    # so a bare channel word always beat the ceiling: the reviewer's ₹1
+    # "IMPS-…-CFD-CV LOANLINKACCOUNT" penny-drop read as Business income.
+    #
+    # Priority is what separates the two. The generic trade lines are the only
+    # entries below zero (Business income and Supplier / Vendor Settlements are
+    # both -10); every specifically-named line sits at zero or above. So the
+    # ceiling now outranks a negative-priority match and still loses to a real
+    # one — a ₹23 NEFT charge, a small penalty or a token EMI keeps its name.
+    if misc_name and (not best_name or best_score[0] < 0):
+        return misc_name
     if best_name:
         return best_name
-    if misc_name:
-        return misc_name
     return data["defaults"].get(tag, "")

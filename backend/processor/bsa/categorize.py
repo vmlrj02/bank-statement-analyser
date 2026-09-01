@@ -97,7 +97,7 @@ def high_risk_group(description: str) -> str | None:
     return None
 
 
-from .models import Txn
+from .models import Txn, is_credit_side
 from .narration import parse_narration
 
 _RULES_PATH = os.path.join(os.path.dirname(__file__), "data", "category_rules.yaml")
@@ -180,7 +180,53 @@ INVESTMENT_HINTS = [
 # "direct sal(es)" ("INB/RTGS/…/h pcl direct sal/HDFC BANK") — a ₹24-lakh fuel
 # purchase, not payroll. "HPCL DIRECT SALES" never matched (\b fails on SALES);
 # only the cut-off form did.
-SALARY_HINTS = [r"(?<!DIRECT )\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL"]
+SALARY_HINTS = [r"(?<!DIRECT )\bSAL\b", r"SALARY", r"\bSAL-", r"SAL CREDIT", r"PAYROLL",
+                # The marker is not always its own word. IMPS/UPI narrations
+                # glue it onto the payee alias or the pay period, and six such
+                # rows were reading as supplier payments — "KalusalingamSal",
+                # "JeyarajSal", "NithishSal", "6to10may2025sal". A bare \bSAL\b
+                # cannot see any of them.
+                #
+                # The lookbehinds are the whole safety of this: English words
+                # ending in -sal are what a naive suffix match would swallow,
+                # and REVERSAL is not hypothetical — "DEBITREVERSAL-KBLUPIRECON"
+                # is a real row in this corpus and is a return, not payroll. The
+                # {5,} run before SAL keeps short names ("Vatsal") out too.
+                r"[A-Za-z0-9]{5,}(?<!REVER)(?<!DISPO)(?<!PROPO)(?<!UNIVER)(?<!REHEAR)SAL\b",
+                # "aprilmonthsalar" — the stem, for when the word is truncated
+                # by the bank's field width before "salary" is complete.
+                r"SALAR",
+                # A WAGE PERIOD is a salary marker even when the word "salary"
+                # never appears: the purpose field carries the period the wage
+                # covers. "aprilmonth2025i" (truncated) is paid to the same
+                # people as "KalusalingamSal" and "aprilmonthsalar", and
+                # "6to10may2025sal" / "11to17may2025sa" are weekly wage runs.
+                # A month name alone is far too common to use — it has to be a
+                # month bound to "MONTH", or an explicit day range.
+                r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*MONTH",
+                r"MONTH[A-Z]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)",
+                r"\d{1,2}TO\d{1,2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)"]
+
+# A period token says WHEN, never WHAT. If the same narration also names a
+# non-payroll purpose, that purpose wins — "aprilmonthrent" is rent for April,
+# not wages. Without this the period patterns above would swallow any monthly
+# obligation the bank happens to stamp with its month.
+NOT_SALARY = [r"RENT", r"PURCHASE", r"FREIGHT", r"TRANSPORT", r"INVOICE",
+              r"\bINV\s*NO", r"\bEMI\b", r"\bLOAN\b", r"CREDITCARD",
+              r"CREDIT CARD", r"\bGST\b", r"\bTDS\b", r"ELECTRICITY"]
+
+
+# An IFSC is a ROUTING code — bank, then branch — and the branch half is a
+# place name that can spell anything. "BARB0GENSAL" is Bank of Baroda's Gensal
+# branch in Gujarat, and it ends in SAL, so the suffix rule above read an
+# ordinary NEFT as a salary payment. A routing code never says what a payment
+# was FOR, so it is masked out before any purpose keyword is read.
+_IFSC_CODE = re.compile(r"\b[A-Z]{4}0[A-Z0-9]{6}\b")
+
+
+def _is_salary(desc: str) -> bool:
+    d = _IFSC_CODE.sub(" ", desc or "")
+    return _any(d, SALARY_HINTS) and not _any(d, NOT_SALARY)
 # \bREFUND\b, not \bREF(UND)?\b: bare "REF" is a ubiquitous reference stamp in
 # NEFT/IMPS narrations ("…/INDIAN OVERSEAS BANK/REF/", "…-REF") — on real
 # statements nearly half the rows it tagged as refunds were ordinary credits.
@@ -264,6 +310,40 @@ BOUNCE_OUTWARD = [r"O/?W.*(RTN|RETURN|BOUNCE)", r"OUTWARD.*(RTN|RET)", r"CHQ.*BO
 
 _DICT_PATH = os.path.join(os.path.dirname(__file__), "data", "merchant_dictionary.json")
 
+
+# IFSC prefix -> the bank's display name. Used only where the routing code is
+# the sole thing that names a lender (see the repayment branch below).
+_IFSC_BANK = {
+    "SBIN": "State Bank of India", "HDFC": "HDFC Bank", "ICIC": "ICICI Bank",
+    "UTIB": "Axis Bank", "KKBK": "Kotak Mahindra Bank",
+    "PUNB": "Punjab National Bank", "CNRB": "Canara Bank",
+    "BARB": "Bank of Baroda", "IDIB": "Indian Bank",
+    "IOBA": "Indian Overseas Bank", "UBIN": "Union Bank of India",
+    "YESB": "YES Bank", "INDB": "IndusInd Bank", "IDFB": "IDFC FIRST Bank",
+    "FDRL": "Federal Bank", "RATN": "RBL Bank", "KARB": "Karnataka Bank",
+    "MAHB": "Bank of Maharashtra", "CBIN": "Central Bank of India",
+    "BKID": "Bank of India", "AUBL": "AU Small Finance Bank",
+    "ESFB": "Equitas Small Finance Bank", "CIUB": "City Union Bank",
+    "TMBL": "Tamilnad Mercantile Bank", "SCBL": "Standard Chartered Bank",
+}
+_IFSC_ANY = re.compile(r"\b([A-Z]{4})0[A-Z0-9]{6}\b")
+
+# The app that CARRIED a payment, which the party extractor sometimes captures
+# because the app's name is the only word in the VPA.
+_PAYMENT_APPS = {"GOOGLEINDIADIGITAL", "GOOGLEINDIA", "GPAY", "GOOGLEPAY",
+                 "PHONEPE", "PAYTM", "BHARATPE", "AMAZONPAY", "CRED", "MOBIKWIK"}
+
+
+def _bank_from_ifsc(desc: str) -> str:
+    for m in _IFSC_ANY.finditer(desc or ""):
+        name = _IFSC_BANK.get(m.group(1).upper())
+        if name:
+            return name
+    return ""
+
+
+def _is_payment_app(party: str) -> bool:
+    return re.sub(r"[^A-Z0-9]", "", (party or "").upper()) in _PAYMENT_APPS
 
 def _load_dictionary() -> dict:
     if os.path.exists(_DICT_PATH):
@@ -366,15 +446,85 @@ def _find_recurring_emi(txns: list[Txn]) -> set[str]:
     return emis
 
 
+# Words that say what KIND of company it is, never which one. Stripped before
+# the account holder's name is compared to a counterparty, or every "… PRIVATE
+# LIMITED" in the statement would look like the account holder.
+_LEGAL_FORM = {
+    "M", "S", "MS", "MESSRS", "THE", "PRIVATE", "PVT", "LIMITED", "LTD", "LLP",
+    "COMPANY", "CO", "AND", "CORPORATION", "CORP", "INC", "INDIA", "SONS",
+    "BROTHERS", "BROS", "ENTERPRISE", "ENTERPRISES", "TRADERS", "TRADING",
+    "INDUSTRIES", "SERVICES", "SOLUTIONS", "GROUP", "PROPRIETOR",
+}
+
+
+def holder_stems(account_name: str) -> list[str]:
+    """The distinctive words of the account holder's own name.
+
+    "M/S.SPAZEOMERCHANDISE PRIVATE LIMITED" -> ["SPAZEOMERCHANDISE"].
+    """
+    words = re.split(r"[^A-Za-z0-9]+", (account_name or "").upper())
+    return [w for w in words if len(w) >= 5 and w not in _LEGAL_FORM]
+
+
+def is_own_name(party: str, stems: list[str]) -> bool:
+    """Is this counterparty the account holder under another spelling?
+
+    The reviewer's rule, verbatim: "If there is INF/INFT along with transfer to
+    account name similar to SME name or Owner name, then we can consider it as
+    internal transfer." SIMILAR is the operative word and exact matching is not
+    enough — the holder is "M/S.SPAZEOMERCHANDISE PRIVATE LIMITED" and its own
+    ICICI current account prints as "SpazioicicCA", so the party reads "Spazio"
+    against a stem of "SPAZEO". One letter apart, and no substring test finds
+    it.
+
+    So: compare the party against the same number of leading characters of each
+    stem, and accept a close match. The floor of five characters is what keeps
+    this honest — three- and four-letter fragments collide with real vendors.
+    """
+    from difflib import SequenceMatcher
+    key = re.sub(r"[^A-Z0-9]", "", (party or "").upper())
+    if len(key) < 5:
+        return False
+    for stem in stems:
+        head = stem[:len(key)]
+        if len(head) < 5:
+            continue
+        if key == head or SequenceMatcher(None, key, head).ratio() >= 0.8:
+            return True
+    return False
+
+
+# "Pay to self", spelled the several ways banks spell it. Independent of any
+# name, so it works when we never learned the holder's name at all.
+#
+# A BARE "SELF" cannot be used, and the ground-truth harness said so
+# immediately: "CASH DEP-SELF-SELFGOMTINAGAR" is a self cash deposit, "CHQ
+# PAID-SELF-SELF" and "SAK/CASH WDL/…/SELF" are self cash withdrawals, and an
+# IMPS credit can carry "SELF" in a remark and still be ordinary income. All
+# four are cash or trade rows, not transfers between accounts. Only the phrases
+# that name the ACT of transferring to oneself are safe.
+_SELF_TRANSFER = [r"\bPAY\s*TO\s*SELF\b", r"\bSELF\s*TRANSFER\b",
+                  r"\bTRANSFER\s*TO\s*SELF\b", r"\bOWN\s*A/?C\b",
+                  r"\bOWN\s*ACCOUNT\b"]
+
+
 def categorize(txns: list[Txn], related_parties: list[str] | None = None,
-               use_llm: bool = False) -> list[Txn]:
+               use_llm: bool = False, account_name: str = "") -> list[Txn]:
     related = [re.sub(r"\s+", "", p).upper() for p in (related_parties or [])]
+    # The account holder is a related party TO ITSELF. Money moved between the
+    # business's own accounts, or to a promoter's, is not trade — treating it as
+    # a supplier payment overstates supplier reliance, and treating the inbound
+    # leg as revenue overstates turnover, which is gotcha 18's whole point.
+    # Owner and group-company names that are NOT the account name still come in
+    # through related_parties, which is the loan-application field that exists
+    # for exactly that.
+    own = holder_stems(account_name)
     dictionary = _load_dictionary()
     recurring_nach = _find_recurring_nach(txns)
     recurring_emi = _find_recurring_emi(txns)
 
     for t in txns:
-        d, credit = t.description, t.amount > 0
+        d, credit = t.description, is_credit_side(t)
         tag, src = "", "rule"
 
         # Match a lender against the STRUCTURED part of the narration, not the
@@ -458,10 +608,23 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # narrations keep their charge reading.
         # (?<![A-Z0-9])EMI(?![A-Z0-9]) rather than \bEMI\b: an underscore is a
         # \w character, so \b never fires in "UCR013913427589_EMI_05/11/2025".
+        # "\"repayment\" is the keyword" — the reviewer, on six GPay rows worth
+        # ₹2.4 lakh reading as supplier payments. A credit line repaid through
+        # an app names the app, never the lender, so nothing else on the row
+        # could have said it was borrowing.
         elif not credit and re.search(
-                r"(?<![A-Z0-9])EMI(?![A-Z0-9])|\bLOAN\s*REPAY|\bLOAN\s*REP\b",
+                r"(?<![A-Z0-9])EMI(?![A-Z0-9])|\bLOAN\s*REPAY|\bLOAN\s*REP\b"
+                r"|\bREPAYMENT\b",
                 d, re.I):
             tag = "EMI transaction"
+            # The lender is the counterparty on a repayment, and here the only
+            # thing naming it is the routing code — "GPAY-REPAYMENT@OKPAYAXIS-
+            # UTIB0000553" is Axis. This is the ONE place gotcha 22 gives way:
+            # a bank that lent the money IS the party, exactly as an NBFC in
+            # `lenders` already is. Only ever fills an app's name or a blank.
+            bank = _bank_from_ifsc(d)
+            if bank and (not t.counterparty or _is_payment_app(t.counterparty)):
+                t.counterparty = bank
         # A known NBFC / lender name decides both directions: a credit is a
         # loan disbursal; a debit is an EMI — however it was paid. A one-off
         # UPI/IMPS debit to a lender is overwhelmingly an EMI paid by hand
@@ -505,9 +668,9 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                    else "EMI transaction")
         elif credit and _any(d, [re.escape(x) for x in INVESTMENT_HINTS]):
             tag = "Investment return credited"
-        elif credit and _any(d, SALARY_HINTS):
+        elif credit and _is_salary(d):
             tag = "Salary credited"
-        elif not credit and _any(d, SALARY_HINTS):
+        elif not credit and _is_salary(d):
             tag = "Salary paid"
         elif credit and _any(d, REFUND_HINTS):
             tag = "return / refund"
@@ -555,6 +718,16 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
                                           for r in related):
             tag = "Related party credit" if credit else "Related party debit"
             src = "related-party"
+        # Only ever an UPGRADE of a row nothing else identified. A self cash
+        # withdrawal is a cash withdrawal; a reversal is a reversal; an EMI paid
+        # to a group company is still an EMI. Restricting this to the generic
+        # trade tags is what keeps an inferred rule from overwriting a measured
+        # one — unlike related_parties above, which a human supplied on purpose.
+        elif (tag in ("", "Regular credit", "Regular debit")
+              and ((own and is_own_name(t.counterparty, own))
+                   or _any(d, _SELF_TRANSFER))):
+            tag = "Related party credit" if credit else "Related party debit"
+            src = "own-account"
 
         # --- Tier 4: LLM batch classification (production) ---
         # In Phase 1 the unresolved merchants of a statement are classified in

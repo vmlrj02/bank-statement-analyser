@@ -24,7 +24,7 @@ from openpyxl.styles import Font
 from .categorize import category_detail
 from .credit_summary import credit_summary
 from .integrity import account_integrity
-from .models import JobResult, Txn
+from .models import JobResult, Txn, is_credit_side
 from .sme_taxonomy import group_of, sme_subcategory
 from .workbook_style import (style_avg_balances, style_eod, style_party_annual,
                              style_party_month, style_summary, style_xn_sheet)
@@ -400,8 +400,10 @@ def _avg_balances_sheet(ws, txns: list[Txn], bold) -> None:
             inflow, outflow, round(inflow - outflow, 2),
             sum(1 for t in rows if t.category == INWARD_BOUNCE),
             sum(1 for t in rows if t.category == OUTWARD_BOUNCE),
-            sum(1 for t in rows if t.amount > 0),
-            sum(1 for t in rows if t.amount < 0),
+            # "No of credit" / "No of debit" — the customer reads these against
+            # the statement's own counts, so they follow the printed column.
+            sum(1 for t in rows if is_credit_side(t)),
+            sum(1 for t in rows if not is_credit_side(t)),
         ])
     style_avg_balances(ws, ncols)
 
@@ -589,10 +591,17 @@ def write_workbook(result: JobResult, path: str) -> None:
     _append(ws, ["Balance reconciliation", result.validation.status,
                  "Integrity", integ["assessment"]])
     from .completeness import check_completeness
-    nd = sum(1 for t in txns if t.amount < 0)
-    nc = sum(1 for t in txns if t.amount > 0)
-    sd = sum(-t.amount for t in txns if t.amount < 0)
-    sc = sum(t.amount for t in txns if t.amount > 0)
+    # BY COLUMN, not by sign — this is the one place we hand our numbers to the
+    # bank's own and ask whether they agree, so it has to count the way the
+    # bank counts. A reversal printed in the withdrawal column is a debit row
+    # whose algebraic contribution to the debit total is negative, which is how
+    # HDFC gets 1546 debits totalling 6,510,203.56 out of rows that include a
+    # -10,000.00 one. completeness.py used to excuse the gap ("the per-direction
+    # split is only informational"); it no longer has to.
+    nd = sum(1 for t in txns if not is_credit_side(t))
+    nc = sum(1 for t in txns if is_credit_side(t))
+    sd = sum(-t.amount for t in txns if not is_credit_side(t))
+    sc = sum(t.amount for t in txns if is_credit_side(t))
     comp = check_completeness(len(txns), nd, nc,
                               getattr(result.meta, "declared_totals", None) or {},
                               sd, sc)

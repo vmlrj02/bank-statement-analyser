@@ -503,10 +503,16 @@ def lambda_handler(event, _ctx):
                     worst = "failed"
 
                 txns = dedup_merge(lists) if len(lists) > 1 else list(lists[0])
+                # validate() ran per statement just above and has had its look
+                # at the brought-forward rows; from here on they are not
+                # transactions and must appear in nothing.
+                from bsa.normalize import drop_opening_rows
+                txns = drop_opening_rows(txns)
                 # Cross-statement identifier resolution: with every statement of
                 # the account in one list, a party named in March fills the
                 # bare-account-number rows of January.
                 from bsa.normalize import (drop_useless_identifiers,
+                                            name_instrument_parties,
                                             resolve_identifiers)
                 resolve_identifiers(txns)
                 # …and clear again afterwards. resolve_identifiers deliberately
@@ -515,7 +521,11 @@ def lambda_handler(event, _ctx):
                 # merged pass here was running only the first half. A number is
                 # never a party name — the reviewer's instruction, twice.
                 drop_useless_identifiers(txns)
-                categorize(txns, related_parties=related)
+                # Re-assert the instrument names: resolve_identifiers above can
+                # put a payee back onto a reversal from a sibling statement.
+                name_instrument_parties(txns)
+                holder_name = next((m.account_name for m in metas if m.account_name), "")
+                categorize(txns, related_parties=related, account_name=holder_name)
 
                 # Mask only after uid, dedup and validation have used the real
                 # numbers — published outputs must never carry a full account no.
