@@ -1064,3 +1064,31 @@ def test_reviewer_third_pass_iob_and_icici():
     # …while a genuinely named service stays nameable
     assert _is_bare_psp("GPAYRECHARGE") is False
     assert _is_bare_psp("PHONEPEMERCHANT") is False
+
+
+def test_a_rejected_party_is_not_put_back_by_the_narration_fallback():
+    """normalize() runs several party passes, and an empty counterparty is
+    ambiguous between "nothing found" and "a rule decided this row has none".
+    _fill_party_from_narration was treating both as the first and refilling.
+
+    The reviewer struck out "27aprto3may2025" in TWO consecutive passes; both
+    times the ICICI rule returned no party and this fallback put the date range
+    straight back from the narration, so the delivered CSV never changed. The
+    fallback now runs its candidate through the same sanitiser the primary path
+    uses, which also closed a much bigger hole: it was the route by which
+    "WDL TFR" and bare bank fragments ("pnb", "BOB", "ICI") were still reaching
+    the party column after the rules that reject them had been added — 108 such
+    rows on a single SBI statement."""
+    from bsa.models import Txn
+    from bsa.normalize import _fill_party_from_narration
+
+    def t(desc):
+        return Txn(date="2026-01-01", cheque_no="", description=desc, amount=-1.0,
+                   balance=0.0, mode="other", counterparty="", account_no="1")
+
+    rows = [t("UPI/512383075435/27aprto3may2025/7319454750@ybl//ICIfbade"),
+            t("UPI/285340608897/OidPT00007YGNE1/paytm-53817591@/YES BANK"),
+            t("P04250227E934 HPCL LPG WDL TFR"),
+            t("IMPS/509420141534/pnb- DEBIT")]
+    _fill_party_from_narration(rows)
+    assert [r.counterparty for r in rows] == ["", "", "", ""]

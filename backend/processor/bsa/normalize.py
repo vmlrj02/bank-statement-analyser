@@ -1321,15 +1321,30 @@ def _fill_party_from_narration(txns: list[Txn]) -> None:
     Guards, because a wrong name is worse than none: the candidate must carry at
     least three letters, must not be mostly digits (a reference the parser
     misread as a name), must not be a channel/remark word, and must not be
-    un-nameable by nature (cash/ATM/settlement rows)."""
+    un-nameable by nature (cash/ATM/settlement rows).
+
+    IT MUST ALSO SURVIVE THE SANITISER. This runs after extract_counterparty,
+    so an empty party here can mean "nothing was found" OR "a rule looked at
+    this row and decided it has no counterparty". The two are indistinguishable
+    from an empty string, and this pass was silently overriding the second:
+    the reviewer struck out "27aprto3may2025" in two consecutive passes, the
+    ICICI rule duly returned no party both times, and this function put the
+    date range straight back from the narration. Running the candidate through
+    the same sanitiser the primary path uses makes a rejection stick.
+    """
     from .narration import parse_narration
     for t in txns:
         if t.counterparty or _UNNAMEABLE.search(t.description):
             continue
-        cand = _clean_segment(parse_narration(t.description).counterparty)
+        cand = _sanitise_party(_clean_segment(
+            parse_narration(t.description).counterparty))
         letters = sum(c.isalpha() for c in cand)
         digits = sum(c.isdigit() for c in cand)
         if letters < 3 or digits > letters:
+            continue
+        # A four-digit run is a year, a date range or a serial — "27aprto3may2025",
+        # "OidPT00007YGNE1" — never a counterparty's name.
+        if re.search(r"\d{4}", cand) or _is_bare_psp(cand.upper()):
             continue
         if cand.upper() in _REMARK_WORDS or cand.upper() in _CHANNEL_TOKENS:
             continue
