@@ -121,6 +121,31 @@ def group_of(name: str) -> str:
     return ""
 
 
+
+def _tokens_of(text: str) -> set:
+    """Whole tokens for SHORT_PATTERN matching, with the dot read both ways.
+
+    A dot BINDS when it joins a word to digits — "MAB.03724403966" is one Axis
+    merchant handle, and splitting it invented a bare "MAB" that read five UPI
+    payments as minimum-balance penalties.
+
+    A dot SEPARATES when both sides are words — "CRED.CLUB" is the CRED app and
+    "BILLDESKPG.AMEXCC" is an Amex bill, and binding those dropped ten credit
+    card payments into Supplier / Vendor Settlements. The corpus pass caught it;
+    the review files had none.
+
+    So the run is always offered whole, and its parts are offered as well only
+    when every part is alphabetic — which is what tells a handle glued to a
+    reference apart from two real words.
+    """
+    out = set()
+    for tok in _TOKEN.findall(text.upper()):
+        out.add(tok)
+        parts = re.split(r"[._@]", tok)
+        if len(parts) > 1 and all(p.isalpha() for p in parts if p):
+            out.update(p for p in parts if p)
+    return out
+
 def sme_subcategory(t) -> str:
     """The SME sub-category for one transaction. Never raises; returns "" only
     when the tag is unknown to the master."""
@@ -142,7 +167,7 @@ def sme_subcategory(t) -> str:
     # buries short tokens inside longer words: "F&O" squashes to "FO", which
     # sits inside "EPFO", so a PF challan read as derivatives funding. This is
     # the same trap as the bare "AMB"/"POS" keywords in category_rules.yaml.
-    tokens = set(_TOKEN.findall(text.upper()))
+    tokens = _tokens_of(text)
 
     amount = abs(float(getattr(t, "amount", 0) or 0))
 
