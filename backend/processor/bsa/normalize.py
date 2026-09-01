@@ -1369,14 +1369,17 @@ def name_from_identifier(txns: list[Txn]) -> None:
         if m:
             t.counterparty = m.group(1)
             continue
-        # An account number, but never the statement's OWN — resolve_identifiers
-        # already refuses to treat our side of the transfer as a party.
-        for m in _ACCT_NO.finditer(t.description):
-            cand = m.group(1)
-            if t.account_no and cand.endswith(str(t.account_no)[-4:]):
-                continue
-            t.counterparty = cand
-            break
+        # NO bare-number fallback. Gopi's list is "account or mobile number or
+        # upi id", and a long digit run in an Indian narration is far more
+        # often a REFERENCE: "NACH/TP ACH ICICI BANK/2093278335" is a mandate
+        # id, not anybody's account. Filling it did real damage -- those rows
+        # used to share a blank party, which is what let _find_recurring_nach
+        # see one monthly series and read them as loan EMIs; giving each row
+        # its own reference split the series and seven EMIs became supplier
+        # payments on a single IDFC statement. The corpus gate caught it.
+        #
+        # A VPA and a ten-digit mobile are self-identifying; an account number
+        # is not, so it waits for a real example rather than a guess.
 
 def drop_opening_rows(txns: list[Txn]) -> list[Txn]:
     """Every row that is a transaction, and nothing else.

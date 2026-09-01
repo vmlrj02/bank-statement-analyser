@@ -743,16 +743,22 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # to a group company is still an EMI. Restricting this to the generic
         # trade tags is what keeps an inferred rule from overwriting a measured
         # one — unlike related_parties above, which a human supplied on purpose.
-        # Gopi's rule, verbatim: "name match + INF". A fuzzy match needs the
-        # channel to agree; an EXACT match does not, because "K M P STEELS"
-        # paying "K M P STEELS" is not a guess whatever rail carried it. A TPT
-        # is a third-party transfer by definition and is never own-account.
+        # Gopi's rule, verbatim: "name match + INF". BOTH halves, always.
+        #
+        # An earlier version let an exact match stand on its own, on the theory
+        # that "K M P STEELS" paying "K M P STEELS" needs no corroboration. The
+        # corpus gate showed what that costs: an Indian Overseas Bank account
+        # held by a proprietor whose first name is Santosh had seven ordinary
+        # credits from a "SANTOSH" reclassified as his own money moving between
+        # his own accounts. A first name is not an identity, and stems match on
+        # a PREFIX, so any Santosh matches every Santosh. The channel is the
+        # only thing that separates the two readings, which is presumably why
+        # Gopi named it. A TPT is a third-party transfer by definition.
         elif (tag in ("", "Regular credit", "Regular debit")
               and not _THIRD_PARTY_CHANNEL.search(d)
               and (_any(d, _SELF_TRANSFER)
-                   or (own and is_own_name(t.counterparty, own)
-                       and (_OWN_CHANNEL.search(d)
-                            or is_own_name(t.counterparty, own, exact=True))))):
+                   or (own and _OWN_CHANNEL.search(d)
+                       and is_own_name(t.counterparty, own)))):
             tag = "Related party credit" if credit else "Related party debit"
             src = "own-account"
 

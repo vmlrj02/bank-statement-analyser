@@ -197,9 +197,15 @@ debit:
     group: Operating Expenses (OpEx)
     sheet: Regular Debits
     tags: [Regular debit, ECS transaction]
+    # Only wording that says STAFF on its face. The food-delivery brands were
+    # in a first draft of this and the corpus gate caught them: Swiggy and
+    # Blinkit moved 89 rows on one SBI statement -- 15.5% of it -- on a bank
+    # nobody had flagged. Whether a Blinkit order is the office pantry or the
+    # promoter's groceries is a judgement the reviewer has to make, not one a
+    # brand name can carry. Raised with Praveen rather than guessed.
     patterns: [STAFF WELFARE, PANTRY, CANTEEN, CATERING, CATERERS,
-               REFRESHMENT, SNACKS, TEA SUPPLY, MESS BILL, STAFF FOOD,
-               SWIGGY, ZOMATO, BLINKIT, INSTAMART, BIGBASKET, DUNZO]
+               REFRESHMENT, TEA SUPPLY, MESS BILL, STAFF FOOD,
+               EMPLOYEE WELFARE, STAFF REFRESHMENT]
 
   - name: Commercial Rent & Utilities
     group: Operating Expenses (OpEx)
