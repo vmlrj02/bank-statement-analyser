@@ -124,6 +124,9 @@ def group_of(name: str) -> str:
 def sme_subcategory(t) -> str:
     """The SME sub-category for one transaction. Never raises; returns "" only
     when the tag is unknown to the master."""
+    override = getattr(t, "sub_category", "") or ""
+    if override:
+        return override
     data = _load()
     # The printed column, not the sign — a reversal sits in the withdrawal
     # column and must be sub-categorised as the debit it is (a reversed ATM

@@ -512,6 +512,7 @@ def lambda_handler(event, _ctx):
                 # the account in one list, a party named in March fills the
                 # bare-account-number rows of January.
                 from bsa.normalize import (drop_useless_identifiers,
+                                            name_from_identifier,
                                             name_instrument_parties,
                                             resolve_identifiers)
                 resolve_identifiers(txns)
@@ -524,6 +525,7 @@ def lambda_handler(event, _ctx):
                 # Re-assert the instrument names: resolve_identifiers above can
                 # put a payee back onto a reversal from a sibling statement.
                 name_instrument_parties(txns)
+                name_from_identifier(txns)
                 holder_name = next((m.account_name for m in metas if m.account_name), "")
                 categorize(txns, related_parties=related, account_name=holder_name)
 

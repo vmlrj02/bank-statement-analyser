@@ -100,7 +100,11 @@ credit:
     tags: [Regular credit, Related party credit]
     patterns: [CAPITAL CONTRIB, CAPITAL INTRO, SHARE APPLICATION,
                EQUITY INFUSION, PROMOTER CONTRIB, PARTNER CAPITAL,
-               DIRECTOR CONTRIB]
+               DIRECTOR CONTRIB,
+               # Gopi, 31 Aug: a "transfer to self" is Promoter Drawings when
+               # it leaves and Promoter / Equity Infusion when it arrives —
+               # the same wording, read by the direction of the money.
+               TRANSFER TO SELF, SELF TRANSFER, PAY TO SELF]
 
   - name: OD / CC Drawdowns
     group: Capital & Financing
@@ -118,8 +122,12 @@ credit:
   - name: Related Party / Group Inflows
     group: Transfers & Adjustments
     sheet: ""
-    tags: [Related party credit]
-    patterns: []
+    # Regular credit accepted too: the wording below identifies the row on its
+    # own, without waiting for a related-party tag it may never get.
+    tags: [Related party credit, Regular credit]
+    # ...and "transfer to family" arriving is a group inflow, where the same
+    # words leaving are a drawing (Gopi, 31 Aug).
+    patterns: [TRANSFER TO FAMILY, FAMILY TRANSFER, TRANSFER FROM FAMILY]
 
   - name: Direct Cash Deposits
     group: Transfers & Adjustments
@@ -180,6 +188,18 @@ debit:
     sheet: Regular Debits
     tags: [Regular debit, ECS transaction]
     patterns: [NEFT, RTGS, IMPS, VENDOR, SUPPLIER, PURCHASE, PAYABLE]
+
+  # Praveen, 1 Sep: "This should not go to Supplier / Vendor Settlements. This
+  # should go to Staff Welfare, Food & Pantry." Canteen, pantry and staff-meal
+  # spend is an employee cost, not a trade payable, and lumping it in with
+  # suppliers overstates supplier reliance the same way bank fees did.
+  - name: Staff Welfare, Food & Pantry
+    group: Operating Expenses (OpEx)
+    sheet: Regular Debits
+    tags: [Regular debit, ECS transaction]
+    patterns: [STAFF WELFARE, PANTRY, CANTEEN, CATERING, CATERERS,
+               REFRESHMENT, SNACKS, TEA SUPPLY, MESS BILL, STAFF FOOD,
+               SWIGGY, ZOMATO, BLINKIT, INSTAMART, BIGBASKET, DUNZO]
 
   - name: Commercial Rent & Utilities
     group: Operating Expenses (OpEx)
@@ -304,7 +324,13 @@ debit:
     sheet: ""
     tags: [Related party debit, Regular debit]
     patterns: [DRAWINGS, PARTNER DRAW, DIRECTOR REMUN, PROPRIETOR,
-               DIRECTOR TRANSFER, PARTNER TRANSFER]
+               DIRECTOR TRANSFER, PARTNER TRANSFER,
+               # "all 'transfer to family' or 'transfer to self' must be
+               # Promoter Drawings / Remittances" — Gopi, 31 Aug, for DEBITS.
+               # Some banks print the category themselves, which is the
+               # cleanest signal we ever get for an own-account movement.
+               TRANSFER TO SELF, SELF TRANSFER, PAY TO SELF,
+               TRANSFER TO FAMILY, FAMILY TRANSFER]
 
   - name: Investments Outflows
     group: Cash & Non-Operating

@@ -466,7 +466,7 @@ def holder_stems(account_name: str) -> list[str]:
     return [w for w in words if len(w) >= 5 and w not in _LEGAL_FORM]
 
 
-def is_own_name(party: str, stems: list[str]) -> bool:
+def is_own_name(party: str, stems: list[str], exact: bool = False) -> bool:
     """Is this counterparty the account holder under another spelling?
 
     The reviewer's rule, verbatim: "If there is INF/INFT along with transfer to
@@ -489,7 +489,9 @@ def is_own_name(party: str, stems: list[str]) -> bool:
         head = stem[:len(key)]
         if len(head) < 5:
             continue
-        if key == head or SequenceMatcher(None, key, head).ratio() >= 0.8:
+        if key == head:
+            return True
+        if not exact and SequenceMatcher(None, key, head).ratio() >= 0.8:
             return True
     return False
 
@@ -505,7 +507,25 @@ def is_own_name(party: str, stems: list[str]) -> bool:
 # that name the ACT of transferring to oneself are safe.
 _SELF_TRANSFER = [r"\bPAY\s*TO\s*SELF\b", r"\bSELF\s*TRANSFER\b",
                   r"\bTRANSFER\s*TO\s*SELF\b", r"\bOWN\s*A/?C\b",
-                  r"\bOWN\s*ACCOUNT\b"]
+                  r"\bOWN\s*ACCOUNT\b",
+                  # "all 'transfer to family' or 'transfer to self' must be
+                  # Promoter Drawings / Remittances" — Gopi, 31 Aug. Which
+                  # LINE they land on then depends on the direction, and that
+                  # is decided by the patterns in sme_subcategories.yaml.
+                  r"\bTRANSFER\s*TO\s*FAMILY\b", r"\bFAMILY\s*TRANSFER\b",
+                  r"\bTRANSFER\s*FROM\s*FAMILY\b"]
+
+# Gopi corrected himself in the thread, and the correction matters: "sorry INF,
+# not INFT".
+#   INF  — internet fund transfer between LINKED / OWN accounts
+#   TPT  — third-party transfer, to someone else
+#   NEFT / IMPS / RTGS — inter-bank, either way
+# So INF is corroboration that a near-match really is the holder's own account;
+# TPT is evidence AGAINST it. A fuzzy name match alone is not enough, because
+# "almost the same name" is exactly what a similarly-named third party looks
+# like.
+_OWN_CHANNEL = re.compile(r"\bINF[/-]|\bINF\b(?!T)", re.I)
+_THIRD_PARTY_CHANNEL = re.compile(r"\bTPT[/-]|\bTPT\b", re.I)
 
 
 def categorize(txns: list[Txn], related_parties: list[str] | None = None,
@@ -723,9 +743,16 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # to a group company is still an EMI. Restricting this to the generic
         # trade tags is what keeps an inferred rule from overwriting a measured
         # one — unlike related_parties above, which a human supplied on purpose.
+        # Gopi's rule, verbatim: "name match + INF". A fuzzy match needs the
+        # channel to agree; an EXACT match does not, because "K M P STEELS"
+        # paying "K M P STEELS" is not a guess whatever rail carried it. A TPT
+        # is a third-party transfer by definition and is never own-account.
         elif (tag in ("", "Regular credit", "Regular debit")
-              and ((own and is_own_name(t.counterparty, own))
-                   or _any(d, _SELF_TRANSFER))):
+              and not _THIRD_PARTY_CHANNEL.search(d)
+              and (_any(d, _SELF_TRANSFER)
+                   or (own and is_own_name(t.counterparty, own)
+                       and (_OWN_CHANNEL.search(d)
+                            or is_own_name(t.counterparty, own, exact=True))))):
             tag = "Related party credit" if credit else "Related party debit"
             src = "own-account"
 
@@ -765,8 +792,69 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
             t.confidence = "medium"
         else:
             t.confidence = "low"
+    # Pair-level rules run last: they need every row categorised first.
+    flag_atm_reversals(txns)
+
     return txns
 
+
+
+def flag_atm_reversals(txns: list[Txn]) -> None:
+    """An ATM withdrawal and the instant credit that undoes it.
+
+    Gopi asked for this by name: "this is ATM withdrawl failure.. instant
+    credit after withdrawal debit. Ask claude to give a logic to capture these
+    immediate reversal of ATM debits. It is a very common occurrence due to
+    network failure, atm machine issue, etc".
+
+    Nothing in either row's own text can decide it. HDFC prints the pair
+    WORD FOR WORD identically -- same narration, same cheque reference, same
+    amount, same day -- and distinguishes them only by the sign of the figure
+    in the withdrawal column. So the pair is the unit of evidence, not the row,
+    and that is why this needs its own pass and a sub_category override.
+
+    Matching is deliberately tight: same account, same narration, same absolute
+    amount, and within a day. A machine that swallowed the cash reverses it in
+    seconds, not next week -- and a loose window would pair a genuine second
+    withdrawal of the same round amount, which is common at an ATM.
+
+    Only the money-IN leg is relabelled. The withdrawal itself stays a Cash
+    Withdrawal: it happened, the customer stood at the machine, and the report
+    should show it alongside the reversal rather than hide both.
+    """
+    from datetime import date
+
+    def _d(iso):
+        try:
+            y, m, dd = (int(x) for x in iso.split("-"))
+            return date(y, m, dd)
+        except Exception:                                   # noqa: BLE001
+            return None
+
+    buckets: dict[tuple, list] = {}
+    for t in txns:
+        if t.mode != "atm-cash":
+            continue
+        key = (t.account_no, t.description, round(abs(t.amount), 2))
+        buckets.setdefault(key, []).append(t)
+
+    for rows in buckets.values():
+        if len(rows) < 2:
+            continue
+        outs = [r for r in rows if r.amount < 0]
+        ins = [r for r in rows if r.amount > 0]
+        for cr in ins:
+            cd = _d(cr.date)
+            match = next((dr for dr in outs
+                          if _d(dr.date) and cd and abs((cd - _d(dr.date)).days) <= 1),
+                         None)
+            if not match:
+                continue
+            cr.category = "return / refund"
+            cr.category_source = "atm-reversal"
+            cr.sub_category = "Reversals & refunds"
+            cr.counterparty = "Reversals & refunds"
+            outs.remove(match)          # one reversal per withdrawal
 
 def category_detail(t: Txn) -> str:
     """Human-readable rendering, per the taxonomy's example column."""

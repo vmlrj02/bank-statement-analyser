@@ -120,6 +120,11 @@ class Txn:
     # is then the ALGEBRAIC sum over debit-side rows, which is how the bank
     # reaches 6,510,203.56 from rows that include a -10,000 one.
     side: str = ""
+    # Set only where a rule had to look at OTHER rows to decide. An ATM
+    # withdrawal and the instant credit that reverses it are word-for-word
+    # identical, so nothing in either row's own narration can say which is
+    # which -- only the pair can. sme_subcategory returns this verbatim.
+    sub_category: str = ""
 
     def compute_uid(self, account_no: str, occurrence: int) -> None:
         key = f"{account_no}|{self.date}|{self.description}|{self.amount:.2f}|{self.balance:.2f}|{occurrence}"

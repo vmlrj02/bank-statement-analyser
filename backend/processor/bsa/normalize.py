@@ -1031,6 +1031,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     resolve_identifiers(txns)
     drop_useless_identifiers(txns)
     name_instrument_parties(txns)
+    name_from_identifier(txns)
 
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
@@ -1292,6 +1293,91 @@ _INSTRUMENT_PARTY_FILL = [
 
 
 
+
+# A UPI handle, a mobile number, or an account number — the three things a
+# narration offers when it names no human at all.
+# Case-insensitive: HDFC prints the handle upper-case ("9014794319@PTYES")
+# and a lower-case-only class silently matched none of the twenty-six rows
+# Gopi flagged.
+# The LOCAL PART only -- not the bank's field in front of it. HDFC prints
+# "UPI-9014794319PTYES-9014794319@PTYES-IDIB000S063-...", where "-" is both the
+# field separator AND a legal character inside a handle. The split is that a
+# genuine handle prefix is lower-case ("gpay-1124261310", "ndka-1"), while the
+# bank's own field before it is upper-case or a bare code. Allowing a hyphen
+# only after a lower-case segment keeps "ndka-1@oksbi" whole and still yields
+# "9014794319@PTYES" rather than the whole narration up to the "@".
+_VPA_ANY = re.compile(
+    r"((?:[a-z][A-Za-z0-9._]*-)?[A-Za-z0-9._]+@[A-Za-z]{2,15})\b")
+_MOBILE = re.compile(r"(?<!\d)([6-9]\d{9})(?!\d)")
+_ACCT_NO = re.compile(r"(?<!\d)(\d{9,18})(?!\d)")
+
+
+
+# PhonePe glues its own transaction reference to the payer's handle, so
+# "SV251211225548293266847@AXL" is really 8293266847@AXL with SV2512112255 in
+# front. Gopi's revised column reads it that way, and a mobile-based handle is
+# always the last ten digits. Only applied when the tail IS a valid Indian
+# mobile, so "PHONEPEMERCHANT@YESBANK" and "ndka-1@oksbi" are left alone.
+# The reference length VARIES -- "SV251211225548293266847" carries an 11-digit
+# prefix and "SV2512112238344230219611" a 12-digit one -- so the prefix cannot
+# be matched by length. What is constant is that the handle is the LAST TEN
+# DIGITS, which is how Gopi read all four of them in his revised column.
+# Requires the local part to be entirely digits after the optional "SV", so a
+# named handle ("PHONEPEMERCHANT@YESBANK") and a worded one ("ndka-1@oksbi")
+# are never touched.
+_VPA_DIGIT_TAIL = re.compile(r"^(?:SV)?\d*?(\d{10})@([A-Za-z]{2,15})$", re.I)
+
+
+def _trim_vpa(vpa: str) -> str:
+    m = _VPA_DIGIT_TAIL.match(vpa or "")
+    return f"{m.group(1)}@{m.group(2)}" if m else vpa
+
+def name_from_identifier(txns: list[Txn]) -> None:
+    """When the narration names nobody, the IDENTIFIER is the party.
+
+    This deliberately reverses a rule this codebase argued for twice — gotcha
+    19's "a VPA whose local part is only a phone number… names nobody", and the
+    commit "A payment app and a bare account number are not parties". Gopi
+    overruled both, in writing:
+
+        "party names can be numbers when it is account or mobile number or upi
+         id — if the name is not given in the descriptor"
+        "UPI ID should be party name"
+
+    He is right about the product. An unnamed handle is not noise:
+    9963431346@ptyes recurs across a statement, so a credit team can still see
+    the same counterparty was paid eleven times. "unknown party" throws that
+    away. Twenty-six HDFC rows in his review were exactly this.
+
+    THE ORDER MATTERS. This runs LAST, after resolve_identifiers has used bare
+    numbers as join keys and drop_useless_identifiers has cleared them again —
+    so it only ever fills a row every naming rule already declined, and can
+    never outrank a real name recovered from a sibling row.
+
+    Rows that are un-nameable BY NATURE keep their blank: an ATM withdrawal
+    names a machine and a cash deposit names a branch, so there is no
+    counterparty for an identifier to stand in for.
+    """
+    for t in txns:
+        if t.counterparty or _UNNAMEABLE.search(t.description):
+            continue
+        m = _VPA_ANY.search(t.description)
+        if m:
+            t.counterparty = _trim_vpa(m.group(1))
+            continue
+        m = _MOBILE.search(t.description)
+        if m:
+            t.counterparty = m.group(1)
+            continue
+        # An account number, but never the statement's OWN — resolve_identifiers
+        # already refuses to treat our side of the transfer as a party.
+        for m in _ACCT_NO.finditer(t.description):
+            cand = m.group(1)
+            if t.account_no and cand.endswith(str(t.account_no)[-4:]):
+                continue
+            t.counterparty = cand
+            break
+
 def drop_opening_rows(txns: list[Txn]) -> list[Txn]:
     """Every row that is a transaction, and nothing else.
 
@@ -1326,8 +1412,20 @@ def name_instrument_parties(txns: list[Txn]) -> None:
                     t.counterparty = name
                     break
 
+# "party name (remove \"family of\")" — Gopi, 31 Aug. Some banks prefix the
+# beneficiary with the relationship; the relationship is not the name.
+# ONLY "family of". Honorifics were in an earlier draft of this and the test
+# suite caught it immediately -- "Ms Madhuri" is pinned, because Ms is part of
+# how that payee is printed and stripping it makes two spellings of one person.
+_RELATION_PREFIX = re.compile(r"^family\s+of\s+", re.I)
+
+
 def _sanitise_party(p: str) -> str:
     p = re.sub(r"\s+", " ", p or "").strip(" -/*.:")
+    if not p:
+        return ""
+    # "family of RAMESH" is Ramesh. The relationship is not the name.
+    p = _RELATION_PREFIX.sub("", p).strip(" -/*.:")
     if not p:
         return ""
     # a glued reference tail after a real name ("SAHU CONSTRUCTION AND BORWELLS

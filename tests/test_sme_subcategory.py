@@ -126,7 +126,9 @@ def test_every_subcategory_declares_a_group_from_the_masters_column_a():
     # FSSAI renewal reading as a bank penalty), Bank Charges & Processing Fees
     # (SMS-alert and ATM fees sitting in Misc. debit on size alone) and
     # Reversals & refunds (a failed UPI push reading as a cheque return).
-    assert len(subs) == 39
+    # ...and Staff Welfare, Food & Pantry, which Praveen added on 1 Sep so
+    # that canteen and staff-meal spend stops inflating supplier reliance.
+    assert len(subs) == 40
     for s in subs:
         assert s["group"], s["name"]
         assert group_of(s["name"]) == s["group"]
