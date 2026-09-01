@@ -30,7 +30,9 @@ credit:
     group: Misc. Credit
     sheet: ""
     tags: []
-    patterns: []
+    # A government subsidy lands here by NAME as well as by size: Gopi's
+    # curated file puts the ₹364.28 rows here too, and those clear the ceiling.
+    patterns: [SUBSIDY]
     max_abs_amount: 50
 
   - name: Business income
@@ -79,14 +81,14 @@ credit:
     tags: [return / refund, Regular credit]
     patterns: [GST REFUND, ITR REFUND, INCOME TAX REFUND, CUSTOMS DRAWBACK,
                DRAWBACK, REFUND OF TAX, TDS REFUND, IT REFUND, CBDT,
-               # "subsidy go to tax & duty refunds" — the reviewer, 1 Sep. A
-               # state subsidy is a government receipt on the same footing as a
-               # refund, and counting it as Business income overstates turnover,
-               # which is the circularity gotcha 18 exists to prevent. The LPG
-               # subsidy is the common one ("APBSC-HPCLLPGSUBSIDY-P1125028DE535",
-               # eleven rows split between Misc. credit and Business income);
-               # PAHAL and DBTL are its scheme names.
-               SUBSIDY, PAHAL, DBTL]
+               # SUBSIDY was here, on the strength of Gopi's message "subsidy
+               # go to tax & duty refunds". His CURATED workbook then marked
+               # all eleven LPG-subsidy rows "Misc. credit" instead -- both the
+               # ₹40.72 ones and the ₹364.28 ones, so it is a deliberate edit
+               # and not just the size ceiling. The file is the later word and
+               # he called it "all errors corrected", so the rule moved to
+               # Misc. credit and the contradiction went back to him.
+               PAHAL, DBTL]
 
   - name: Loan Disbursal
     group: Capital & Financing
@@ -146,7 +148,11 @@ credit:
     group: Contra / Technical
     sheet: ""
     tags: [return / refund, Regular credit]
-    patterns: [REV-UPI, RVSL, UPI REVERSAL, PAYMENT REVERSAL]
+    # "PHONEPEREVERS" is how PhonePe stamps a reversed collection; it carries
+    # neither REV-UPI nor RVSL, so the row read as a POS settlement until
+    # Gopi's curated file marked it Reversals & refunds.
+    patterns: [REV-UPI, RVSL, UPI REVERSAL, PAYMENT REVERSAL, PHONEPEREVERS,
+               REVERSAL]
 
   - name: Outward Cheque / Mandate Returns
     group: Contra / Technical
@@ -268,13 +274,16 @@ debit:
                DTAX]
 
   # Added 1 Sep after the reviewer put a new line in the master to catch FSSAI.
+  # NAME CONFIRMED from Gopi's curated workbook, which calls it "Compliance
+  # Fees" -- the name I had invented was "Statutory Licences & Regulatory
+  # Fees", and it was wrong.
   # The food-safety licence fee had been reading as a bank penalty, on a "MAB"
   # token taken out of the payee's VPA (see sme_taxonomy._TOKEN). Fixing the
   # token alone would have left it as a generic supplier payment, which is not
   # what a licence renewal is: it is a statutory cost of staying open, and an
   # underwriter reads it as such. NAME NOT YET CONFIRMED against the master's
   # own spelling — flagged to the reviewer.
-  - name: Statutory Licences & Regulatory Fees
+  - name: Compliance Fees
     group: Statutory & Compliance
     sheet: Regular Debits
     tags: [Regular debit, ECS transaction]

@@ -122,7 +122,7 @@ def test_a_subcategory_cannot_cross_the_credit_debit_line():
 def test_every_subcategory_declares_a_group_from_the_masters_column_a():
     subs = subcategories()
     # The master's 34, plus Misc. credit and Misc. debit, plus the three lines
-    # the reviewer added on 1 Sep: Statutory Licences & Regulatory Fees (an
+    # the reviewer added on 1 Sep: Compliance Fees (an
     # FSSAI renewal reading as a bank penalty), Bank Charges & Processing Fees
     # (SMS-alert and ATM fees sitting in Misc. debit on size alone) and
     # Reversals & refunds (a failed UPI push reading as a cheque return).

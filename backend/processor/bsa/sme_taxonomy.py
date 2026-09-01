@@ -163,8 +163,24 @@ def sme_subcategory(t) -> str:
         if e["side"] != side:
             continue
         if e["max_abs_amount"] is not None:
-            if amount < e["max_abs_amount"] and not e["patterns"]:
+            # A ceiling line is normally chosen by SIZE alone, and is held back
+            # as a residual (see below). But it may also carry patterns, and
+            # then a pattern match selects it OUTRIGHT, ceiling or not: Gopi's
+            # curated file puts a ₹364.28 LPG subsidy in Misc. credit, well
+            # over the ₹50 ceiling. The old test — "and not e['patterns']" —
+            # meant adding a single pattern silently switched the size rule
+            # off, which would have quietly undone gotcha 23.
+            if amount < e["max_abs_amount"]:
                 misc_name = e["name"]
+            for p in e["patterns"]:
+                if not p:
+                    continue
+                if len(p) <= SHORT_PATTERN:
+                    if p not in tokens:
+                        continue
+                elif p not in hay:
+                    continue
+                return e["name"]
             continue
         # An empty tag set means "any row on this side" — the speculative and
         # high-risk groups, which are defined by who was paid, not by the tag.
