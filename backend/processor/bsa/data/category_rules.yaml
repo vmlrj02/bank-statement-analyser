@@ -19,6 +19,15 @@ lenders:
   # is a finance company, not a bank.
   - Krazybee
   - Kreditbee
+  # Found by the review pack, not by a reviewer: three NBFCs whose UPI
+  # collections were reading as supplier payments across 309 corpus rows.
+  # Aditya Birla is already listed as "Aditya Birla Fin", but its handle prints
+  # as "ABFLONLINE@ybl" and never matched the spelled-out name.
+  - Kisetsu
+  - Saison
+  - SMFG
+  - SMFGINDIA
+  - ABFL
   - Kinara Capital
   - Clix Capital
   - Bajaj Fin

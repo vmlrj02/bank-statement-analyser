@@ -326,7 +326,22 @@ debit:
                FEE-ATMCASH, FEE-ATMNONCASH, ATMCASH, ATMNONCASH,
                NEFT CHG, NEFT CHRG, RTGS CHG, IMPS CHG, CHQ BOOK,
                FOLIO CHG, CARD FEE, ANNUAL FEE, PROCESSING FEE,
-               SERVICE CHG, INCIDENTAL CHARGES]
+               SERVICE CHG, INCIDENTAL CHARGES,
+               # The per-transaction IMPS fee, which prints as its own row at
+               # ₹5.90 a time: ".IMPSP2P515023357649#30/05/2025300525-MIR…".
+               # 78 corpus rows, every one of them sitting in Misc. debit purely
+               # because it is under the ₹50 ceiling.
+               IMPSP2P, IMPS P2P,
+               # "CASH DEPOSIT CHARGES FORAUG`25", "Charges for PORD T17580785".
+               CHARGES FOR,
+               # The channel fees Praveen's instruction covers but the NEFT
+               # spelling missed. DELIBERATELY NOT the bare "Chrgs Incl GST":
+               # that phrase also ends "ECS Return Chrgs Incl GST" and "Chq
+               # Rtrn Chrgs Incl GST", which are bounce penalties and must stay
+               # on row 34 (gotcha 25). Naming each non-penal channel keeps
+               # them apart.
+               RTGS CHRGS, IMPS CHRGS, NEFT CHRGS, ECS TXN CHRGS,
+               BNA TXN CHRGS, POS GST, ATM TXN CHRGS]
 
   - name: Cash Withdrawals
     group: Cash & Non-Operating
