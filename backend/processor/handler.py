@@ -603,10 +603,19 @@ def lambda_handler(event, _ctx):
                 for m in metas:
                     for k, v in (getattr(m, "declared_totals", None) or {}).items():
                         decl[k] = decl.get(k, 0) + v
-                nd = sum(1 for t in txns if t.amount < 0)
-                nc = sum(1 for t in txns if t.amount > 0)
-                sd = sum(-t.amount for t in txns if t.amount < 0)
-                sc = sum(t.amount for t in txns if t.amount > 0)
+                # BY COLUMN, not by sign — the same rule publish.py uses, and
+                # it has to be the same here or the two disagree. It did: the
+                # workbook reported HDFC's split as the bank does (1546/735)
+                # while this block, which feeds the API and the account card,
+                # still said 1544/737. A reversal is printed as a NEGATIVE
+                # figure in the withdrawal column, so it raises the balance
+                # while remaining a debit row. Caught by running a real job
+                # through production, not by any test.
+                from bsa.models import is_credit_side
+                nd = sum(1 for t in txns if not is_credit_side(t))
+                nc = sum(1 for t in txns if is_credit_side(t))
+                sd = sum(-t.amount for t in txns if not is_credit_side(t))
+                sc = sum(t.amount for t in txns if is_credit_side(t))
                 completeness = check_completeness(len(txns), nd, nc, decl, sd, sc)
                 cs = credit_summary(txns, integ, acct_status)
                 if completeness.get("checked") and not completeness.get("complete"):
