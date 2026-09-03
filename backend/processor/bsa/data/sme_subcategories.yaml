@@ -76,6 +76,11 @@ credit:
                VEHICLE SALE]
 
   - name: Tax & Duty Refunds
+    # Above Reversals & refunds (10), which now matches a bare REFUND. A tax
+    # refund IS a refund, so without this the state's money would read as a
+    # merchant reversal -- "NEFT/SBIN…/ITDTAX REFUND 2025 26" is ₹4.15 lakh
+    # from the income tax department.
+    priority: 20
     group: Non-Operating Receipts
     sheet: ""
     tags: [return / refund, Regular credit]
@@ -88,7 +93,7 @@ credit:
                # and not just the size ceiling. The file is the later word and
                # he called it "all errors corrected", so the rule moved to
                # Misc. credit and the contradiction went back to him.
-               PAHAL, DBTL]
+               PAHAL, DBTL, ITDTAX, TAX REFUND, ITD REFUND]
 
   - name: Loan Disbursal
     group: Capital & Financing
@@ -151,8 +156,15 @@ credit:
     # "PHONEPEREVERS" is how PhonePe stamps a reversed collection; it carries
     # neither REV-UPI nor RVSL, so the row read as a POS settlement until
     # Gopi's curated file marked it Reversals & refunds.
+    # A bare REFUND, finally. Held back once because it touched 74 rows across
+    # six categories and the right home differed per case. Reading them settled
+    # it: 25 merchant refunds (Swiggy, Razorpay), 32 small merchant credits
+    # (LoungeOne), 4 travel (Cleartrip, IndiGo, redBus), and the ₹625,000
+    # outlier is a real refund too ("ATAKINDIA SALES OPC…-//REFUND-//OP").
+    # The only ones that must NOT land here are tax refunds, held out by
+    # raising Tax & Duty Refunds above this line.
     patterns: [REV-UPI, RVSL, UPI REVERSAL, PAYMENT REVERSAL, PHONEPEREVERS,
-               REVERSAL]
+               REVERSAL, REFUND]
 
   - name: Outward Cheque / Mandate Returns
     group: Contra / Technical
@@ -209,9 +221,16 @@ debit:
     # nobody had flagged. Whether a Blinkit order is the office pantry or the
     # promoter's groceries is a judgement the reviewer has to make, not one a
     # brand name can carry. Raised with Praveen rather than guessed.
+    # The delivery brands are in now. Pulled once because they moved 89 rows on
+    # an SBI statement and the call was not mine to make; the numbers since say
+    # this is the right home -- 1,562 debits, median ₹436, 90th percentile
+    # ₹1,065. Staff meals and pantry runs, not procurement, and 1,536 of them
+    # were in Supplier / Vendor Settlements inflating supplier reliance.
+    # NOT yet confirmed by Praveen or Gopi; one line reverts it.
     patterns: [STAFF WELFARE, PANTRY, CANTEEN, CATERING, CATERERS,
                REFRESHMENT, TEA SUPPLY, MESS BILL, STAFF FOOD,
-               EMPLOYEE WELFARE, STAFF REFRESHMENT]
+               EMPLOYEE WELFARE, STAFF REFRESHMENT,
+               SWIGGY, ZOMATO, BLINKIT, ZEPTO, INSTAMART, BIGBASKET, DUNZO]
 
   - name: Commercial Rent & Utilities
     group: Operating Expenses (OpEx)

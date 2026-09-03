@@ -1032,6 +1032,7 @@ def normalize(extract: StatementExtract) -> list[Txn]:
     drop_useless_identifiers(txns)
     name_instrument_parties(txns)
     name_from_identifier(txns)
+    resolve_balance_orientation(txns)
 
     # uid + duplicate flagging (same content key => occurrence index disambiguates
     # genuine same-day identical reversal pairs; a repeat of the SAME occurrence
@@ -1380,6 +1381,55 @@ def name_from_identifier(txns: list[Txn]) -> None:
         #
         # A VPA and a ten-digit mobile are self-identifying; an account number
         # is not, so it waits for a real example rather than a guess.
+
+
+def resolve_balance_orientation(txns: list[Txn]) -> None:
+    """Decide from the DATA whether the balance chain is inverted.
+
+    `invert_balance` is declared by the layout, because a cash-credit or
+    overdraft account prints the balance as an amount OWED — a debit increases
+    it. That is true of the statement shape the descriptor was written for, and
+    it is a property of the ACCOUNT, not of the layout.
+
+    Axis proves the difference. `axis_cc_statement` fingerprints on nothing more
+    than "Transaction Particulars" and "DR/CR", so an ordinary current account
+    matches it, inherits invert_balance, and every row then fails
+    reconciliation: HARSHA HOMES showed 1,742 rows of "prev 95811.44 + amount
+    +20000.00 = 115811.44, statement says 75811.44" when the parser had in fact
+    read the columns perfectly. The account card said BALANCE FAILED and the
+    numbers behind it were sound.
+
+    The chain itself settles it. Walk the printed balances and count how many
+    steps reconcile each way; if one orientation is decisively better, use it.
+    A genuine cash-credit statement still reconciles inverted and is untouched;
+    a misidentified ordinary account is corrected without anyone writing a
+    fingerprint for it.
+    """
+    rows = [t for t in txns if not getattr(t, "is_opening", False)]
+    if len(rows) < 6:
+        return                       # too short to be sure of anything
+    plain = inverted = 0
+    prev = None
+    for t in rows:
+        if prev is not None:
+            tol = max(0.02, t.balance_tolerance)
+            if abs(round(prev + t.amount, 2) - t.balance) <= tol:
+                plain += 1
+            if abs(round(prev - t.amount, 2) - t.balance) <= tol:
+                inverted += 1
+        prev = t.balance
+    steps = len(rows) - 1
+    if not steps:
+        return
+    want = None
+    if plain >= 0.8 * steps and inverted < 0.5 * steps:
+        want = False
+    elif inverted >= 0.8 * steps and plain < 0.5 * steps:
+        want = True
+    if want is None:
+        return                       # ambiguous — leave the layout's word alone
+    for t in txns:
+        t.balance_inverted = want
 
 def drop_opening_rows(txns: list[Txn]) -> list[Txn]:
     """Every row that is a transaction, and nothing else.
