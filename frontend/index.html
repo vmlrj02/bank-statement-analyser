@@ -943,8 +943,17 @@ function validationChip(v){
    the API for whoever is underwriting. Balance validation is different and
    stays visible to everyone: that one is arithmetic, not suspicion. */
 function integrityChip(intg){
-  if(!IS_ADMIN || !intg || intg.assessment==='verified') return '';
-  return '<span class="chip warn">Integrity: review</span>';
+  // Removed from the card on Vimalraj's call, 3 Sep. The signal itself is
+  // untouched — account_integrity() still runs, the flags still reach the API
+  // and the workbook Summary, and the admin note further down still mentions
+  // it. What is gone is a bare "Integrity: review" chip beside the account
+  // name, which reads as an accusation to anyone who does not know it means
+  // something as ordinary as one page of the PDF being a scan.
+  //
+  // Balance validation is deliberately NOT removed with it. That one is
+  // arithmetic, it is the release gate (gotcha 4), and it now only fires when
+  // the chain genuinely does not reconcile.
+  return '';
 }
 function inr(n){return Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});}
 
