@@ -632,9 +632,18 @@ def categorize(txns: list[Txn], related_parties: list[str] | None = None,
         # ₹2.4 lakh reading as supplier payments. A credit line repaid through
         # an app names the app, never the lender, so nothing else on the row
         # could have said it was borrowing.
+        # (?<![A-Z]) rather than (?<![A-Z0-9]): banks glue the marker to the
+        # loan account number, so "505201167318EMI HDFCN5202505…" carries no
+        # boundary a digit-blocking lookbehind can see, and 35 EMIs were
+        # reading as supplier payments. A LETTER before EMI still blocks it,
+        # which is what keeps PREMIUM and ACADEMIC out.
+        #
+        # "Loan Recovery For921060057369385" is the same idea in words — 79
+        # rows, ₹1.89 lakh and ₹2.68 lakh a time, all landing on Supplier /
+        # Vendor Settlements.
         elif not credit and re.search(
-                r"(?<![A-Z0-9])EMI(?![A-Z0-9])|\bLOAN\s*REPAY|\bLOAN\s*REP\b"
-                r"|\bREPAYMENT\b",
+                r"(?<![A-Z])EMI(?![A-Z0-9])|\bLOAN\s*REPAY|\bLOAN\s*REP\b"
+                r"|\bREPAYMENT\b|\bLOAN\s*RECOVERY\b",
                 d, re.I):
             tag = "EMI transaction"
             # The lender is the counterparty on a repayment, and here the only

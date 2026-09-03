@@ -28,6 +28,14 @@ lenders:
   - SMFG
   - SMFGINDIA
   - ABFL
+  # Praveen, 2 Sep: a ₹14.86 lakh credit from Adithya Finance reading as
+  # Business income. Gopi settled the category — "Loan disbursal only. No need
+  # of new category for this" — so it is the lender list that was missing the
+  # name, not the taxonomy that was missing a line.
+  - Adithya Financ
+  # Found in the same sweep: ₹2.75 lakh leaving on the same day every month.
+  - Sanchetna Financial
+  - Sanchetnafinancial
   - Kinara Capital
   - Clix Capital
   - Bajaj Fin

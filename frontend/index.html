@@ -438,7 +438,7 @@ td{padding:7px 11px;border-bottom:1px solid var(--line);vertical-align:top}
   <header>
     <div>
       <h1 class="wordmark"><span class="b1">Get It</span> <span class="b2">Right</span></h1>
-      <p class="sub">Bank Statement Analyser · <em>All You Need to Invest Right</em></p>
+      <p class="sub">Bank Statement Analyser</p>
     </div>
     <div class="who">
       <span id="whoami"></span><span class="chip done" id="role" hidden></span>
@@ -1289,9 +1289,15 @@ function render(){
   const sel = accts.find(e=>e.slug===selSlug);
   // Content first: the account leads, operational notices ride above it as a
   // single folded line. With no account to show they expand in its place.
+  // Gopi asked for this strip to go (3 Sep). It supersedes the second half of
+  // gotcha 13, which allowed exactly two things to sit above the cards: an
+  // upload still processing, and files that could not be read. The reasoning
+  // there still holds for NEEDS-REVIEW and is unchanged; what he objected to
+  // is a persistent bar reporting a failure from days ago on every visit.
+  // The detail is not lost — uploadNotices() still builds it and the dialog
+  // still opens from the uploads list.
   const ntBtn = $('ntBtn');
-  ntBtn.hidden = !nt.n;
-  if(nt.n) ntBtn.innerHTML = `<span class="nb-t">${noticeLine(nt)}</span><span class="nb-x">View</span>`;
+  ntBtn.hidden = true;
   refreshNotes(nt);
   $('active').innerHTML =
       (sel ? accountCard(sel)
