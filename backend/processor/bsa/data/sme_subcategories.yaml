@@ -385,8 +385,20 @@ debit:
     group: Cash & Non-Operating
     sheet: ""
     tags: [Regular debit, ECS transaction]
+    # A premium is a premium whatever the business does, which is what makes
+    # this one safe to call from the narration alone: POLICYBAZAAR, NEW INDIA
+    # ASSURANCE, LIFE INSURANCE CORPORATION. 100 rows were in Supplier /
+    # Vendor Settlements. "INSURANCE PREMIUM" needed both words and almost
+    # never got them.
+    #
+    # FUEL was the obvious next candidate and is deliberately NOT here. It
+    # looked like 839 rows, but on a petroleum TRADER's account "GREEN PETRO
+    # FUELS" is a ₹25 lakh receipt and "BHARAT PETROLEUM CORPORATION" is
+    # wholesale stock. Whether a fuel row is conveyance or trade depends on
+    # what the business sells, so no narration rule can decide it.
     patterns: [MUTUAL FUND, SIP, MF PURCHASE, LIC, INSURANCE PREMIUM,
-               FIXED DEPOSIT, RD INSTAL, PPF, NPS]
+               FIXED DEPOSIT, RD INSTAL, PPF, NPS,
+               INSURANCE, ASSURANCE, POLICYBAZAAR]
 
   # Row 34 of the master, and the sheet the founder moved here from row 33 on
   # 30 Aug: the CHARGE is what lands on Bounced-Penal Xns, not the return event.
